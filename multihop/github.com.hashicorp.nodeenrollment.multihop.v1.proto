@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+option go_package = "github.com/hashicorp/nodeenrollment/multihop";
+
+package github.com.hashicorp.nodeenrollment.multihop.v1;
+
+import "nodetypes/github.com.hashicorp.nodeenrollment.nodetypes.v1.proto";
+
+service MultihopService {
+  // FetchNodeCredentials provides lookup capability for node credentials
+  rpc FetchNodeCredentials(github.com.hashicorp.nodeenrollment.nodetypes.v1.FetchNodeCredentialsRequest) returns (github.com.hashicorp.nodeenrollment.nodetypes.v1.FetchNodeCredentialsResponse) {}
+  rpc GenerateServerCertificates(github.com.hashicorp.nodeenrollment.nodetypes.v1.GenerateServerCertificatesRequest) returns (github.com.hashicorp.nodeenrollment.nodetypes.v1.GenerateServerCertificatesResponse) {}
+}

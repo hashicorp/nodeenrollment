@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+option go_package = "github.com/hashicorp/nodeenrollment/nodetypes";
+
+package github.com.hashicorp.nodeenrollment.nodetypes.v1;
+
+import "google/protobuf/timestamp.proto";
+
+enum KEYTYPE {
+  KEYTYPE_UNSPECIFIED = 0;
+  KEYTYPE_ED25519 = 1;
+  KEYTYPE_X25519 = 2;
+}
+
+message CertificateBundle {
+  bytes node_certificate_der = 1 [json_name="node_certificate_der"];
+  bytes server_certificate_der = 2 [json_name="server_certificate_der"];
+  google.protobuf.Timestamp certificate_not_before = 7 [json_name="certificate_not_before"];
+  google.protobuf.Timestamp certificate_not_after = 8 [json_name="certificate_not_after"];
+}
+
+// RootCertificate contains information about a root CA certificate and
+// associated private key. There may be multiple of these present in the system.
+message RootCertificate {
+  string id = 1; // "current" or "next"
+  bytes public_key_pkix = 2 [json_name="public_key_pkix"];
+  bytes private_key_pkcs8 = 4 [json_name="private_key_pkcs8"];
+  KEYTYPE private_key_type = 5 [json_name="private_key_type"];
+  bytes certificate_der = 6 [json_name="certificate_der"];
+  google.protobuf.Timestamp not_before = 7 [json_name="not_before"];
+  google.protobuf.Timestamp not_after = 8 [json_name="not_after"];
+  
+  string wrapping_key_id = 30 [json_name="wrapping_key_id"];
+}
+
+// NodeInformation contains server-side information about a node -- its
+// certificate and the corresponding server key information. Nonce may or may
+// not have a value depending on the flow used to register the node. The ID
+// corresponds to a key identifier; in a system using this library, a node may
+// have multiple of these to accommodate multiple sets of credentials due to
+// rotation; it is up to the user of the library to handle that association as
+// deemed valid for the use case.
+message NodeInformation {
+  string id = 1; // Key id derived from pkix public key
+  bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
+  KEYTYPE certificate_public_key_type = 3 [json_name="certificate_public_key_type"];
+  repeated CertificateBundle certificate_bundles = 6 [json_name="certificate_bundles"];
+
+  bytes encryption_public_key_bytes = 10 [json_name="encryption_public_key_bytes"];
+  KEYTYPE encryption_public_key_type = 11 [json_name="encryption_public_key_type"];
+  bytes server_encryption_private_key_bytes = 12 [json_name="server_encryption_private_key_bytes"];
+  KEYTYPE server_encryption_private_key_type = 13 [json_name="server_encryption_private_key_type"];
+
+  bytes registration_nonce = 20 [json_name="registration_nonce"];
+  google.protobuf.Timestamp first_seen = 22 [json_name="first_seen"];
+  bool authorized = 23;
+
+  string wrapping_key_id = 30 [json_name="wrapping_key_id"];
+}
+
+// OperatorLedRegistrationRequest is a request for the "operator-led" registration
+// flow. Although currently empty it's required to ensure that we can add
+// parameters later without an API change.
+message OperatorLedRegistrationRequest {
+}
+
+message OperatorLedRegistrationResponse {
+}
+
+// NodeCredentials is a response to a registration request. It may be fully set
+// or partially set by the server, with the node providing the rest of the
+// information, based on which flow is used.
+message NodeCredentials {
+  string id = 1; // "current" or "next"
+  bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
+  bytes certificate_private_key_pkcs8 = 4 [json_name="certificate_private_key_pkcs8"];
+  KEYTYPE certificate_private_key_type = 5 [json_name="certificate_private_key_type"];
+  repeated CertificateBundle certificate_bundles = 6 [json_name="certificate_bundles"];
+
+  bytes encryption_private_key_bytes = 10 [json_name="encryption_private_key_bytes"];
+  KEYTYPE encryption_private_key_type = 11 [json_name="encryption_private_key_type"];
+
+  bytes server_encryption_public_key_bytes = 12 [json_name="server_encryption_public_key_bytes"];
+  KEYTYPE server_encryption_public_key_type = 13 [json_name="server_encryption_public_key_type"];
+
+  bytes registration_nonce = 20 [json_name="registration_nonce"];
+
+  string wrapping_key_id = 30 [json_name="wrapping_key_id"];
+}
+
+message RootCertificates {
+  RootCertificate current = 1;
+  RootCertificate next = 2;
+}
+
+message FetchNodeCredentialsInfo {
+  string id = 1; // Key id derived from pkix public key
+
+  bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
+  KEYTYPE certificate_public_key_type = 3 [json_name="certificate_public_key_type"];
+
+  bytes encryption_public_key_bytes = 10 [json_name="encryption_public_key_bytes"];
+  KEYTYPE encryption_public_key_type = 11 [json_name="encryption_public_key_type"];
+
+  bytes nonce = 20;
+}
+
+message FetchNodeCredentialsRequest {
+  bytes bundle = 28;
+  bytes bundle_signature = 29 [json_name="bundle_signature"];
+}
+
+message FetchNodeCredentialsResponse {
+  bytes server_encryption_public_key_bytes = 12 [json_name="encryption_public_key_bytes"];
+  KEYTYPE server_encryption_public_key_type = 13 [json_name="encryption_public_key_type"];
+
+  bool authorized = 23;
+
+  bytes encrypted_node_credentials = 40 [json_name="encrypted_node_credentials"];
+  bytes encrypted_node_credentials_signature = 41 [json_name="encrypted_node_credentials_signature"];
+}
+
+message GenerateServerCertificatesRequest {
+  bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
+  bytes nonce = 20;
+  bytes nonce_signature = 21 [json_name="nonce_signature"];
+  string common_name = 24 [json_name="common_name"];
+  bool skip_verification = 25 [json_name="skip_verification"];
+}
+
+message GenerateServerCertificatesResponse {
+  bytes certificate_private_key_pkcs8 = 4 [json_name="certificate_private_key_pkcs8"];
+  KEYTYPE certificate_private_key_type = 5 [json_name="certificate_private_key_type"];
+  repeated CertificateBundle certificate_bundles = 6 [json_name="certificate_bundles"];
+}
