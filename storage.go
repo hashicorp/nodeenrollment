@@ -2,8 +2,6 @@ package nodee
 
 import (
 	"context"
-	"fmt"
-	"reflect"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -36,25 +34,6 @@ type Storage interface {
 type MessageWithId interface {
 	proto.Message
 	GetId() string
-}
-
-// ValidateMsg contains some common functions that can be used to ensure that
-// the message is valid before further processing:
-//
-// * It's not nil
-// * It's a pointer
-//
-// What this doesn't do is tell you whether it's one of the known package types,
-// to avoid circular dependencies.
-func ValidateMsg(msg MessageWithId) error {
-	const op = "nodee.ValidateMsg"
-	if msg == nil {
-		return fmt.Errorf("(%s) nil message passed in to validate", op)
-	}
-	if reflect.TypeOf(msg).Kind() != reflect.Pointer {
-		return fmt.Errorf("(%s) input message is not a pointer", op)
-	}
-	return nil
 }
 
 // TransactionalStorage is storage that supports transactions. If the underlying
