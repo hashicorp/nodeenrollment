@@ -63,3 +63,43 @@ func Test_TestStorage_RootCertificates(t *testing.T) {
 		assert.Equal(string(root.PrivateKeyPkcs8), rootId)
 	}
 }
+
+func Test_TestStorage_BaseDirOpt(t *testing.T) {
+	ctx := context.Background()
+
+	testCases := []struct {
+		name    string
+		path    string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name:    "nonexistent_dir",
+			path:    "nonexistent-dir",
+			wantErr: true,
+			errMsg:  "no such file or directory",
+		},
+		{
+			name:    "relative_dir",
+			path:    "..",
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			fs, err := NewFileStorage(ctx, WithFileStorageBaseDirectory(tc.path))
+			if tc.wantErr {
+				assert.Contains(err.Error(), tc.errMsg)
+			} else {
+				assert.NoError(err)
+				assert.Equal(fs,
+					&FileStorage{
+						baseDir:     tc.path,
+						skipCleanup: false,
+					})
+			}
+		})
+	}
+}

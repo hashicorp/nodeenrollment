@@ -18,6 +18,7 @@ const (
 	nodeInfoSubPath           = "nodeinfo"
 	nodeCredsSubPath          = "nodecreds"
 	awaitingAuthzEntrySubPath = "awaiting-authz"
+	tempDirName               = "nodeenroll-temp"
 )
 
 type FileStorage struct {
@@ -54,9 +55,31 @@ func NewFileStorage(ctx context.Context, opt ...FileStorageOption) (*FileStorage
 		if err != nil {
 			return nil, fmt.Errorf("error creating temp directory: %w", err)
 		}
+	} else {
+		fi, err := os.Stat(ts.baseDir)
+		if err != nil {
+			return nil, fmt.Errorf("error reading base directory: %w", err)
+		}
+		m := fi.Mode()
+		if !m.IsDir() {
+			return nil, fmt.Errorf("given base directory is not a valid directory.")
+		}
+		// check that the user has write permissions in this directory
+		err = checkDirIsWritable(ts.baseDir)
+		if err != nil {
+			return nil, err
+		}
 	}
-
 	return ts, nil
+}
+
+func checkDirIsWritable(dirPath string) error {
+	f, err := os.CreateTemp(dirPath, tempDirName)
+	if err != nil {
+		return fmt.Errorf("directory is not writable, %w", err)
+	}
+	os.Remove(f.Name())
+	return nil
 }
 
 // Returns the base directory being used, useful for displaying in tests for
