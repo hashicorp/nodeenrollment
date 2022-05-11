@@ -1,4 +1,4 @@
-package nodetesting
+package testing
 
 import (
 	"context"
