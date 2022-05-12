@@ -19,7 +19,7 @@ const (
 
 	// FetchNodeCredsNextProtoV1Prefix is the ALPN NextProto used when a node is
 	// trying to fetch credentials
-	FetchNodeCredsNextProtoV1Prefix = "v1-nodee-fetch-node-creds"
+	FetchNodeCredsNextProtoV1Prefix = "v1-nodee-fetch-node-creds-"
 
 	// AuthenticateNodeNextProtoV1Prefix is the ALPN NextProto used when a node
 	// is trying to authenticate
