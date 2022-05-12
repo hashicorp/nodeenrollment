@@ -27,7 +27,7 @@ func GetOpts(opt ...Option) (*Options, error) {
 // Options contains various options. The values are exported since the options
 // are parsed in various other packages.
 type Options struct {
-	WithDuration             time.Duration
+	WithCertificateLifetime  time.Duration
 	WithRandomReader         io.Reader
 	WithNonce                string
 	WithTlsVerifyOptionsFunc func(*x509.CertPool) x509.VerifyOptions
@@ -42,16 +42,16 @@ type Option func(*Options) error
 
 func getDefaultOptions() *Options {
 	return &Options{
-		WithDuration:     DefaultDuration,
-		WithRandomReader: rand.Reader,
+		WithCertificateLifetime: DefaultCertificateLifetime,
+		WithRandomReader:        rand.Reader,
 	}
 }
 
-// WithDuration allows overriding a default duration, e.g. for certificate
+// WithCertificateLifetime allows overriding a default duration, e.g. for certificate
 // creation
-func WithDuration(with time.Duration) Option {
+func WithCertificateLifetime(with time.Duration) Option {
 	return func(o *Options) error {
-		o.WithDuration = with
+		o.WithCertificateLifetime = with
 		return nil
 	}
 }

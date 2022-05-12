@@ -23,10 +23,10 @@ func Test_GetOpts(t *testing.T) {
 		assert, require := assert.New(t), require.New(t)
 		opts, err := GetOpts()
 		require.NoError(err)
-		assert.Equal(DefaultDuration, opts.WithDuration)
-		opts, err = GetOpts(WithDuration(time.Hour))
+		assert.Equal(DefaultCertificateLifetime, opts.WithCertificateLifetime)
+		opts, err = GetOpts(WithCertificateLifetime(time.Hour))
 		require.NoError(err)
-		assert.Equal(time.Hour, opts.WithDuration)
+		assert.Equal(time.Hour, opts.WithCertificateLifetime)
 	})
 	t.Run("with-random-reader", func(t *testing.T) {
 		assert, require := assert.New(t), require.New(t)

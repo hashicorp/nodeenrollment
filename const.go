@@ -6,9 +6,9 @@ import (
 )
 
 const (
-	// The default duration of a given credential, set to two weeks. Rotations
-	// should happen at roughly half this.
-	DefaultDuration = time.Hour * 24 * 14
+	// The default duration of a certificate, set to two weeks. Rotations should
+	// happen at roughly half this.
+	DefaultCertificateLifetime = time.Hour * 24 * 14
 
 	// In most cases we actually do not care about common name or DNS SAN
 	// verification, and when we do we have an explicit test for it. In all
