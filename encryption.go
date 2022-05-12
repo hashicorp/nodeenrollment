@@ -28,7 +28,7 @@ type X25519Producer interface {
 //
 // Supported options: WithRandomReader
 func EncryptMessage(ctx context.Context, id string, msg proto.Message, keySource X25519Producer, opt ...Option) ([]byte, error) {
-	const op = "nodee.EncryptMessage"
+	const op = "nodeenrollment.EncryptMessage"
 	switch {
 	case msg == nil:
 		return nil, fmt.Errorf("(%s) incoming message is nil", op)
@@ -85,7 +85,7 @@ func EncryptMessage(ctx context.Context, id string, msg proto.Message, keySource
 // passed as additional authenticated data to the decryption function, if
 // supported.
 func DecryptMessage(ctx context.Context, id string, ct []byte, keySource X25519Producer, result proto.Message, _ ...Option) error {
-	const op = "nodee.DecryptMessage"
+	const op = "nodeenrollment.DecryptMessage"
 	switch {
 	case len(ct) == 0:
 		return fmt.Errorf("(%s) incoming ciphertext is empty", op)

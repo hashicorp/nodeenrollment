@@ -44,7 +44,7 @@ type Storage interface {
 // some of the helper packages (especially those handling TLS) to ensure that
 // values read and written are consistent. If the underlying storage does not
 // support transactions, and this is acceptable, use NopTransactionStorage() to
-// wrap any nodee.Storage implementation.
+// wrap any nodeenrollment.Storage implementation.
 type TransactionalStorage interface {
 	Storage
 
