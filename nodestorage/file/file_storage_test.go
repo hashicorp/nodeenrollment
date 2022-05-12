@@ -68,38 +68,27 @@ func Test_TestStorage_BaseDirOpt(t *testing.T) {
 	ctx := context.Background()
 
 	testCases := []struct {
-		name    string
-		path    string
-		wantErr bool
-		errMsg  string
+		name        string
+		path        string
+		skipCleanup bool
 	}{
 		{
-			name:    "nonexistent_dir",
-			path:    "nonexistent-dir",
-			wantErr: true,
-			errMsg:  "no such file or directory",
+			name:        "nonexistent_dir",
+			path:        "nonexistent-dir",
+			skipCleanup: true,
 		},
 		{
-			name:    "relative_dir",
-			path:    "..",
-			wantErr: false,
+			name:        "relative_dir",
+			path:        "..",
+			skipCleanup: false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
-			fs, err := NewFileStorage(ctx, WithFileStorageBaseDirectory(tc.path))
-			if tc.wantErr {
-				assert.Contains(err.Error(), tc.errMsg)
-			} else {
-				assert.NoError(err)
-				assert.Equal(fs,
-					&FileStorage{
-						baseDir:     tc.path,
-						skipCleanup: false,
-					})
-			}
+			fs, _ := NewFileStorage(ctx, WithFileStorageBaseDirectory(tc.path), WithFileStorageSkipCleanup(false))
+			assert.Equal(fs.skipCleanup, tc.skipCleanup)
 		})
 	}
 }
