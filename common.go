@@ -1,13 +1,13 @@
 package nodeenrollment
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"crypto/x509"
 	"fmt"
 	"strings"
 
 	"github.com/sethvargo/go-diceware/diceware"
+	"golang.org/x/crypto/hkdf"
 )
 
 // SubjectKeyInfoAndKeyIdFromPubKey returns the PKIX-encoded public key and the
@@ -29,10 +29,10 @@ func SubjectKeyInfoAndKeyIdFromPubKey(pubKey any) ([]byte, string, error) {
 // key
 func KeyIdFromPkix(pkixKey []byte) (string, error) {
 	const op = "nodeenrollment.KeyIdFromPkix"
-	shaPubKey := sha256.Sum256(pkixKey)
 	// This never returns a non-nil error (nor is there reason for it to), so
 	// ignore
-	gen, _ := diceware.NewGenerator(&diceware.GeneratorInput{RandReader: bytes.NewReader(shaPubKey[:])})
+	reader := hkdf.New(sha256.New, pkixKey, pkixKey, pkixKey)
+	gen, _ := diceware.NewGenerator(&diceware.GeneratorInput{RandReader: reader})
 	words, err := gen.Generate(KeyIdNumWords)
 	if err != nil {
 		return "", fmt.Errorf("(%s) error generating key id: %w", op, err)
