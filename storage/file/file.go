@@ -15,10 +15,9 @@ import (
 
 // These paths are used for different kinds of storage
 const (
-	rootsSubPath              = "roots"
-	nodeInfoSubPath           = "nodeinfo"
-	nodeCredsSubPath          = "nodecreds"
-	awaitingAuthzEntrySubPath = "awaiting-authz"
+	rootsSubPath     = "roots"
+	nodeInfoSubPath  = "nodeinfo"
+	nodeCredsSubPath = "nodecreds"
 )
 
 type FileStorage struct {
@@ -81,8 +80,6 @@ func (ts *FileStorage) Cleanup() {
 func subPathFromMsg(msg proto.Message) (string, error) {
 	const op = "nodeenrollment.storage.file.(FileStorage).subPathFromMsg"
 	switch t := msg.(type) {
-	case *types.FetchNodeCredentialsRequest:
-		return awaitingAuthzEntrySubPath, nil
 	case *types.NodeCredentials:
 		return nodeCredsSubPath, nil
 	case *types.NodeInformation:

@@ -17,10 +17,6 @@ func TestValidateMessage(t *testing.T) {
 		wantErrContains string
 	}{
 		{
-			name: "valid-fetch-node-credentials",
-			msg:  new(FetchNodeCredentialsRequest),
-		},
-		{
 			name: "valid-node-credentials",
 			msg:  new(NodeCredentials),
 		},

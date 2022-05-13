@@ -19,7 +19,6 @@ func ValidateMessage(msg proto.Message) error {
 		return fmt.Errorf("(%s) nil message passed in to validate", op)
 	}
 	switch t := msg.(type) {
-	case *FetchNodeCredentialsRequest:
 	case *NodeCredentials,
 		*NodeInformation,
 		*RootCertificate:

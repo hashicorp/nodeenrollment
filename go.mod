@@ -7,7 +7,6 @@ require (
 	github.com/hashicorp/go-kms-wrapping/v2 v2.0.5
 	github.com/sethvargo/go-diceware v0.3.0
 	github.com/stretchr/testify v1.7.1
-	github.com/tj/assert v0.0.3
 	golang.org/x/crypto v0.0.0-20220331220935-ae2d96664a29
 	google.golang.org/protobuf v1.27.1
 )
