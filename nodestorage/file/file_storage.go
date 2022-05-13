@@ -24,6 +24,7 @@ const (
 type FileStorage struct {
 	baseDir     string
 	skipCleanup bool
+	isTempDir   bool
 }
 
 // Ensure we implement the Storage interfaces
@@ -48,6 +49,7 @@ func NewFileStorage(ctx context.Context, opt ...FileStorageOption) (*FileStorage
 	ts := &FileStorage{
 		baseDir:     opts.withBaseDirectory,
 		skipCleanup: opts.withSkipCleanup,
+		isTempDir:   false,
 	}
 
 	if ts.baseDir == "" {
@@ -55,12 +57,7 @@ func NewFileStorage(ctx context.Context, opt ...FileStorageOption) (*FileStorage
 		if err != nil {
 			return nil, fmt.Errorf("error creating temp directory: %w", err)
 		}
-	} else {
-		// If the specified base directory entry already exists, cleanup is _always_ skipped.
-		_, err = os.Stat(ts.baseDir)
-		if !os.IsNotExist(err) {
-			ts.skipCleanup = true
-		}
+		ts.isTempDir = true
 	}
 	return ts, nil
 }
@@ -73,7 +70,7 @@ func (ts *FileStorage) BaseDir() string {
 
 // Cleanup provides a function to clean up after tests
 func (ts *FileStorage) Cleanup() {
-	if ts.skipCleanup {
+	if ts.skipCleanup && ts.isTempDir {
 		return
 	}
 	os.RemoveAll(ts.baseDir)
