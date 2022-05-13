@@ -11,7 +11,6 @@ import (
 // that the message is valid before further processing:
 //
 // * It's not nil
-// * It's a pointer
 // * It's a known type
 func ValidateMessage(msg proto.Message) error {
 	const op = "nodeenrollment.ValidateMessage"
