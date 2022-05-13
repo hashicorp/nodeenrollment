@@ -19,7 +19,7 @@ func Test_GetOpts(t *testing.T) {
 		assert.NoError(err)
 		assert.NotNil(opts)
 	})
-	t.Run("with-duration", func(t *testing.T) {
+	t.Run("with-certificate-lifetime", func(t *testing.T) {
 		assert, require := assert.New(t), require.New(t)
 		opts, err := GetOpts()
 		require.NoError(err)
