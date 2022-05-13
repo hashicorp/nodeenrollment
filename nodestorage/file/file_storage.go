@@ -68,9 +68,13 @@ func (ts *FileStorage) BaseDir() string {
 	return ts.baseDir
 }
 
+func (ts *FileStorage) SkipCleanup() bool {
+	return ts.skipCleanup
+}
+
 // Cleanup provides a function to clean up after tests
 func (ts *FileStorage) Cleanup() {
-	if ts.skipCleanup && ts.isTempDir {
+	if !ts.isTempDir || ts.skipCleanup {
 		return
 	}
 	os.RemoveAll(ts.baseDir)
