@@ -17,7 +17,7 @@ var _ nodeenrollment.X25519Producer = (*NodeInformation)(nil)
 //
 // Supported options: WithWrapper
 func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) error {
-	const op = "nodeenrollment.nodetypes.(NodeInformation).Store"
+	const op = "nodeenrollment.types.(NodeInformation).Store"
 
 	if n.Id == "" {
 		return fmt.Errorf("(%s) node is missing id", op)
@@ -78,7 +78,7 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 //
 // Supported options: WithWrapper
 func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id string, opt ...nodeenrollment.Option) (*NodeInformation, error) {
-	const op = "nodeenrollment.nodetypes.LoadNodeInformation"
+	const op = "nodeenrollment.types.LoadNodeInformation"
 	if id == "" {
 		return nil, fmt.Errorf("(%s) empty identifier", op)
 	}
@@ -134,7 +134,7 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 // X25519EncryptionKey uses the NodeInformation's values to produce a shared
 // encryption key via X25519
 func (n *NodeInformation) X25519EncryptionKey() ([]byte, error) {
-	const op = "nodeenrollment.nodetypes.(NodeInformation).X25519EncryptionKey"
+	const op = "nodeenrollment.types.(NodeInformation).X25519EncryptionKey"
 
 	switch {
 	case len(n.ServerEncryptionPrivateKeyBytes) == 0:

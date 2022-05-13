@@ -21,7 +21,7 @@ var _ nodeenrollment.X25519Producer = (*NodeCredentials)(nil)
 //
 // Supported options: WithWrapper
 func (n *NodeCredentials) Store(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) error {
-	const op = "nodeenrollment.nodetypes.(NodeCredentials).Store"
+	const op = "nodeenrollment.types.(NodeCredentials).Store"
 
 	switch n.Id {
 	case "":
@@ -99,7 +99,7 @@ func (n *NodeCredentials) Store(ctx context.Context, storage nodeenrollment.Stor
 //
 // Supported options: WithWrapper
 func LoadNodeCredentials(ctx context.Context, storage nodeenrollment.Storage, id string, opt ...nodeenrollment.Option) (*NodeCredentials, error) {
-	const op = "nodeenrollment.nodetypes.LoadNodeCredentials"
+	const op = "nodeenrollment.types.LoadNodeCredentials"
 
 	switch id {
 	case "":
@@ -194,7 +194,7 @@ func (n *NodeCredentials) GenerateRegistrationParameters(
 	storage nodeenrollment.Storage,
 	opt ...nodeenrollment.Option,
 ) error {
-	const op = "nodeenrollment.nodetypes.GenerateRegistrationParameters"
+	const op = "nodeenrollment.types.GenerateRegistrationParameters"
 
 	switch {
 	case len(n.CertificatePrivateKeyPkcs8) != 0,
@@ -266,7 +266,7 @@ func (n *NodeCredentials) GenerateRegistrationParameters(
 // CreateFetchNodeCredentialsRequest returns the fetch request based on the
 // current node creds
 func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(ctx context.Context, opt ...nodeenrollment.Option) (*FetchNodeCredentialsRequest, error) {
-	const op = "nodeenrollment.nodetypes.(NodeCredentials).CreateFetchNodeCredentialsRequest"
+	const op = "nodeenrollment.types.(NodeCredentials).CreateFetchNodeCredentialsRequest"
 
 	opts, err := nodeenrollment.GetOpts(opt...)
 	if err != nil {
@@ -371,7 +371,7 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 // X25519EncryptionKey uses the NodeCredentials values to produce a shared
 // encryption key via X25519
 func (n *NodeCredentials) X25519EncryptionKey() ([]byte, error) {
-	const op = "nodeenrollment.nodetypes.(NodeCredentials).X25519EncryptionKey"
+	const op = "nodeenrollment.types.(NodeCredentials).X25519EncryptionKey"
 	switch {
 	case len(n.EncryptionPrivateKeyBytes) == 0:
 		return nil, fmt.Errorf("(%s) encryption private key bytes is empty", op)

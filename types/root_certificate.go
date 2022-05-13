@@ -17,7 +17,7 @@ import (
 //
 // Supported options: WithWrapper
 func (r *RootCertificate) Store(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) error {
-	const op = "nodeenrollment.nodetypes.(RootCertificate).Store"
+	const op = "nodeenrollment.types.(RootCertificate).Store"
 
 	switch r.Id {
 	case "":
@@ -67,7 +67,7 @@ func (r *RootCertificate) Store(ctx context.Context, storage nodeenrollment.Stor
 //
 // Supported options: WithWrapper
 func LoadRootCertificate(ctx context.Context, storage nodeenrollment.Storage, id string, opt ...nodeenrollment.Option) (*RootCertificate, error) {
-	const op = "nodeenrollment.nodetypes.LoadRootCertificate"
+	const op = "nodeenrollment.types.LoadRootCertificate"
 
 	switch id {
 	case "":
@@ -118,7 +118,7 @@ func LoadRootCertificate(ctx context.Context, storage nodeenrollment.Storage, id
 // LoadRootCertificates is a shortcut for calling LoadRootCertificate twice with
 // nodeenrollment.CurrentId and nodeenrollment.NextId
 func LoadRootCertificates(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) (*RootCertificates, error) {
-	const op = "nodeenrollment.nodetypes.LoadRootCertificates"
+	const op = "nodeenrollment.types.LoadRootCertificates"
 	ret := new(RootCertificates)
 	for _, id := range []string{nodeenrollment.CurrentId, nodeenrollment.NextId} {
 		root, err := LoadRootCertificate(ctx, storage, id, opt...)
@@ -136,7 +136,7 @@ func LoadRootCertificates(ctx context.Context, storage nodeenrollment.Storage, o
 }
 
 func (r *RootCertificate) SigningParams(ctx context.Context) (*x509.Certificate, crypto.Signer, error) {
-	const op = "nodeenrollment.nodetypes.(RootCertificate).SigningParams"
+	const op = "nodeenrollment.types.(RootCertificate).SigningParams"
 	switch {
 	case len(r.PrivateKeyPkcs8) == 0:
 		return nil, nil, fmt.Errorf("(%s) no private key found in root", op)
