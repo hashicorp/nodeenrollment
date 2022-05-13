@@ -8,7 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestValidateMsg(t *testing.T) {
+func TestValidateMessage(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
