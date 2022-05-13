@@ -99,7 +99,7 @@ func subPathFromMsg(msg proto.Message) (string, error) {
 // If the message already exists, it is overwritten.
 func (ts *FileStorage) Store(ctx context.Context, msg nodeenrollment.MessageWithId) error {
 	const op = "nodeenrollment.storage.file.(FileStorage).Store"
-	if err := types.ValidateMsg(msg); err != nil {
+	if err := types.ValidateMessage(msg); err != nil {
 		return fmt.Errorf("(%s) given message cannot be stored: %w", op, err)
 	}
 	subPath, err := subPathFromMsg(msg)
@@ -112,7 +112,7 @@ func (ts *FileStorage) Store(ctx context.Context, msg nodeenrollment.MessageWith
 // Load implements the Storage interface
 func (ts *FileStorage) Load(ctx context.Context, msg nodeenrollment.MessageWithId) error {
 	const op = "nodeenrollment.storage.file.(FileStorage).Load"
-	if err := types.ValidateMsg(msg); err != nil {
+	if err := types.ValidateMessage(msg); err != nil {
 		return fmt.Errorf("(%s) given message cannot be loaded: %w", op, err)
 	}
 	subPath, err := subPathFromMsg(msg)
@@ -129,7 +129,7 @@ func (ts *FileStorage) Load(ctx context.Context, msg nodeenrollment.MessageWithI
 // Remove implements the Storage interface
 func (ts *FileStorage) Remove(ctx context.Context, msg nodeenrollment.MessageWithId) error {
 	const op = "nodeenrollment.storage.file.(FileStorage).Remove"
-	if err := types.ValidateMsg(msg); err != nil {
+	if err := types.ValidateMessage(msg); err != nil {
 		return fmt.Errorf("(%s) given message cannot be removed: %w", op, err)
 	}
 	subPath, err := subPathFromMsg(msg)
