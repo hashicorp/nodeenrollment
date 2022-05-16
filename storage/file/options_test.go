@@ -31,6 +31,6 @@ func Test_GetOpts(t *testing.T) {
 		assert.Equal(false, opts.withSkipCleanup)
 		opts, err = getOpts(WithSkipCleanup(true))
 		require.NoError(err)
-		assert.Nil(opts.withSkipCleanup)
+		assert.True(opts.withSkipCleanup)
 	})
 }
