@@ -18,7 +18,7 @@ import (
 // RotateRootCertificates generates roots: private keys and self-signed CA root
 // certificates. At the end of this function, there should always be two
 // certificates in existence. Howe we get there depends on the current state;
-// see the switch statemeent below.
+// see the switch statement below.
 //
 // If things seem off in a way that this function should not allow to occur (for
 // instance, one root is missing, or timing is weird), err on the side of
