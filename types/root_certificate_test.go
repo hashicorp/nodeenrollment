@@ -87,7 +87,7 @@ func TestRootCertificate_StoreLoad(t *testing.T) {
 			storeStorageNil: true,
 		},
 		{
-			name: "store-invalid-no key",
+			name: "store-invalid-no-key",
 			storeSetupFn: func(root *types.RootCertificate) (*types.RootCertificate, string) {
 				root.PrivateKeyPkcs8 = nil
 				return root, "no private key"
