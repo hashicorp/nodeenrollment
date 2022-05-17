@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
+	"github.com/hashicorp/go-kms-wrapping/v2/aead"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/curve25519"
@@ -30,7 +31,7 @@ func Test_EncryptionDecryption(t *testing.T) {
 	tRequire := require.New(t)
 	ctx := context.Background()
 
-	wrapper := new(wrapping.TestWrapper)
+	wrapper := aead.TestWrapper(t)
 
 	node1Priv := make([]byte, curve25519.ScalarSize)
 	n, err := rand.Read(node1Priv)
