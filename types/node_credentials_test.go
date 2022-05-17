@@ -34,6 +34,7 @@ func TestNodeCredentials_StoreLoad(t *testing.T) {
 	require.Equal(t, n, curve25519.ScalarSize)
 
 	nodeCreds := &types.NodeCredentials{
+		Id:                        string(nodeenrollment.CurrentId),
 		EncryptionPrivateKeyBytes: privKey,
 	}
 
@@ -43,9 +44,6 @@ func TestNodeCredentials_StoreLoad(t *testing.T) {
 	nodeCreds.CertificatePublicKeyPkix, err = x509.MarshalPKIXPublicKey(pubKey)
 	require.NoError(t, err)
 	nodeCreds.CertificatePrivateKeyPkcs8, err = x509.MarshalPKCS8PrivateKey(signingKey)
-	require.NoError(t, err)
-
-	nodeCreds.Id, err = nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)
 	nodeCreds.RegistrationNonce = pubKey
 
@@ -110,7 +108,7 @@ func TestNodeCredentials_StoreLoad(t *testing.T) {
 			name: "store-invalid-no-encryption-key",
 			storeSetupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
 				nodeCreds.EncryptionPrivateKeyBytes = nil
-				return nodeCreds, "no enryption private key"
+				return nodeCreds, "no encryption private key"
 			},
 		},
 		{
@@ -124,7 +122,7 @@ func TestNodeCredentials_StoreLoad(t *testing.T) {
 		{
 			name:                "load-invalid-bad-id",
 			loadIdOverride:      []byte("foo"),
-			loadWantErrContains: nodeenrollment.ErrNotFound.Error(),
+			loadWantErrContains: "invalid node credentials id",
 		},
 		{
 			name:                "load-invalid-nil-storage",
@@ -307,6 +305,309 @@ func TestNodeCredentials_X25519(t *testing.T) {
 				require.NoError(err)
 				assert.NotEmpty(out)
 			}
+		})
+	}
+}
+
+func TestNodeCredentials_New(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	fileStorage, err := file.NewFileStorage(ctx)
+	require.NoError(t, err)
+	t.Cleanup(fileStorage.Cleanup)
+
+	tests := []struct {
+		name            string
+		storage         nodeenrollment.Storage
+		wantErrContains string
+	}{
+		{
+			name:    "valid",
+			storage: fileStorage,
+		},
+		{
+			name:            "nil-storage",
+			wantErrContains: "storage is nil",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require, assert := require.New(t), assert.New(t)
+			n, err := types.NewNodeCredentials(ctx, tt.storage)
+			if tt.wantErrContains != "" {
+				require.Error(err)
+				assert.Contains(err.Error(), tt.wantErrContains)
+				return
+			}
+			require.NoError(err)
+			assert.NotEmpty(n.CertificatePrivateKeyPkcs8)
+			assert.Equal(types.KEYTYPE_KEYTYPE_ED25519, n.CertificatePrivateKeyType)
+			assert.NotEmpty(n.CertificatePublicKeyPkix)
+			assert.NotEmpty(n.EncryptionPrivateKeyBytes)
+			assert.Equal(types.KEYTYPE_KEYTYPE_X25519, n.EncryptionPrivateKeyType)
+			assert.NotEmpty(n.RegistrationNonce)
+
+			testNodeCreds := &types.NodeCredentials{Id: n.Id}
+			require.NoError(tt.storage.Load(ctx, testNodeCreds))
+			assert.Empty(cmp.Diff(n, testNodeCreds, protocmp.Transform()))
+		})
+	}
+}
+
+func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	fileStorage, err := file.NewFileStorage(ctx)
+	require.NoError(t, err)
+	t.Cleanup(fileStorage.Cleanup)
+
+	// Generate a suitable root
+	nodeCreds, err := types.NewNodeCredentials(ctx, fileStorage)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name string
+		// Return a modified node information and a "want err contains" string
+		setupFn func(*types.NodeCredentials) (*types.NodeCredentials, string)
+	}{
+		{
+			name: "invalid-nil",
+			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+				return nil, "is nil"
+			},
+		},
+		{
+			name: "invalid-no-encryption-privkey-bytes",
+			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+				nodeCreds.EncryptionPrivateKeyBytes = nil
+				return nodeCreds, "encryption private key is empty"
+			},
+		},
+		{
+			name: "invalid-no-certificate-pubkey-bytes",
+			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+				nodeCreds.CertificatePublicKeyPkix = nil
+				return nodeCreds, "pkix public key is empty"
+			},
+		},
+		{
+			name: "invalid-no-certificate-privkey-bytes",
+			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+				nodeCreds.CertificatePrivateKeyPkcs8 = nil
+				return nodeCreds, "pkcs8 private key is empty"
+			},
+		},
+		{
+			name: "invalid-no-registration-nonce",
+			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+				nodeCreds.RegistrationNonce = nil
+				return nodeCreds, "registration nonce is empty"
+			},
+		},
+		{
+			name: "valid",
+			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+				return nodeCreds, ""
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require, assert := require.New(t), assert.New(t)
+			n := nodeCreds
+			var wantErrContains string
+			if tt.setupFn != nil {
+				n, wantErrContains = tt.setupFn(proto.Clone(n).(*types.NodeCredentials))
+			}
+			out, err := n.CreateFetchNodeCredentialsRequest(ctx)
+			if wantErrContains != "" {
+				require.Error(err)
+				assert.Contains(err.Error(), wantErrContains)
+				return
+			}
+
+			require.NoError(err)
+			assert.NotEmpty(out)
+
+			// Now test the output
+			require.NotEmpty(out.Bundle)
+			require.NotEmpty(out.BundleSignature)
+
+			var fetchInfo types.FetchNodeCredentialsInfo
+			require.NoError(proto.Unmarshal(out.Bundle, &fetchInfo))
+
+			require.NotEmpty(fetchInfo.CertificatePublicKeyPkix)
+			assert.Equal(types.KEYTYPE_KEYTYPE_ED25519, fetchInfo.CertificatePublicKeyType)
+			assert.Equal(nodeCreds.RegistrationNonce, fetchInfo.Nonce)
+			assert.NotEmpty(fetchInfo.EncryptionPublicKeyBytes)
+			assert.Equal(types.KEYTYPE_KEYTYPE_X25519, fetchInfo.EncryptionPublicKeyType)
+
+			pubKey, err := x509.ParsePKIXPublicKey(fetchInfo.CertificatePublicKeyPkix)
+			require.NoError(err)
+			assert.True(ed25519.Verify(pubKey.(ed25519.PublicKey), out.Bundle, out.BundleSignature))
+		})
+	}
+}
+
+func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	fileStorage, err := file.NewFileStorage(ctx)
+	require.NoError(t, err)
+	t.Cleanup(fileStorage.Cleanup)
+
+	// Generate a suitable root
+	nodeCreds, err := types.NewNodeCredentials(ctx, fileStorage)
+	require.NoError(t, err)
+	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
+	require.NoError(t, err)
+
+	// Create server keys
+	serverPrivKey := make([]byte, curve25519.ScalarSize)
+	n, err := rand.Read(serverPrivKey)
+	require.NoError(t, err)
+	require.Equal(t, n, curve25519.ScalarSize)
+	serverPubKey, err := curve25519.X25519(serverPrivKey, curve25519.Basepoint)
+	require.NoError(t, err)
+
+	// Create node keys
+	nodePrivKey := make([]byte, curve25519.ScalarSize)
+	n, err = rand.Read(nodePrivKey)
+	require.NoError(t, err)
+	require.Equal(t, n, curve25519.ScalarSize)
+	nodePubKey, err := curve25519.X25519(nodePrivKey, curve25519.Basepoint)
+	require.NoError(t, err)
+
+	// Create and sign encrypted creds
+	serverNodeCreds := &types.NodeCredentials{
+		ServerEncryptionPublicKeyBytes: serverPubKey,
+		ServerEncryptionPublicKeyType:  types.KEYTYPE_KEYTYPE_X25519,
+		RegistrationNonce:              nodeCreds.RegistrationNonce,
+		CertificateBundles: []*types.CertificateBundle{
+			{
+				CertificateDer:   []byte("cert"),
+				CaCertificateDer: []byte("ca"),
+			},
+		},
+	}
+	nodeInfo := &types.NodeInformation{
+		ServerEncryptionPrivateKeyBytes: serverPrivKey,
+		ServerEncryptionPrivateKeyType:  types.KEYTYPE_KEYTYPE_X25519,
+		EncryptionPublicKeyBytes:        nodePubKey,
+		EncryptionPublicKeyType:         types.KEYTYPE_KEYTYPE_X25519,
+	}
+	encryptedCreds, err := nodeenrollment.EncryptMessage(ctx, keyId, serverNodeCreds, nodeInfo)
+	require.NoError(t, err)
+
+	fetchNodeCredsResp := &types.FetchNodeCredentialsResponse{
+		ServerEncryptionPublicKeyBytes: serverPubKey,
+		ServerEncryptionPublicKeyType:  types.KEYTYPE_KEYTYPE_X25519,
+		EncryptedNodeCredentials:       encryptedCreds,
+	}
+
+	tests := []struct {
+		name             string
+		storage          nodeenrollment.Storage
+		nodeCredsSetupFn func(*types.NodeCredentials) (*types.NodeCredentials, string)
+		respSetupFn      func(*types.FetchNodeCredentialsResponse) (*types.FetchNodeCredentialsResponse, string)
+		wantErrContains  string
+	}{
+		{
+			name: "invalid-nodecreds-nil",
+			nodeCredsSetupFn: func(in *types.NodeCredentials) (*types.NodeCredentials, string) {
+				return nil, "node credentials is nil"
+			},
+			storage: fileStorage,
+		},
+		{
+			name: "invalid-resp-nil",
+			respSetupFn: func(in *types.FetchNodeCredentialsResponse) (*types.FetchNodeCredentialsResponse, string) {
+				return nil, "input is nil"
+			},
+			storage: fileStorage,
+		},
+		{
+			name: "invalid-resp-nil-creds",
+			respSetupFn: func(in *types.FetchNodeCredentialsResponse) (*types.FetchNodeCredentialsResponse, string) {
+				in.EncryptedNodeCredentials = nil
+				return in, "input encrypted node credentials"
+			},
+			storage: fileStorage,
+		},
+		{
+			name: "invalid-resp-nil-server-pubkey-bytes",
+			respSetupFn: func(in *types.FetchNodeCredentialsResponse) (*types.FetchNodeCredentialsResponse, string) {
+				in.ServerEncryptionPublicKeyBytes = nil
+				return in, "encryption public key bytes"
+			},
+			storage: fileStorage,
+		},
+		{
+			name: "invalid-resp-nil-server-pubkey-type",
+			respSetupFn: func(in *types.FetchNodeCredentialsResponse) (*types.FetchNodeCredentialsResponse, string) {
+				in.ServerEncryptionPublicKeyType = types.KEYTYPE_KEYTYPE_ED25519
+				return in, "encryption public key type"
+			},
+			storage: fileStorage,
+		},
+		{
+			name:            "invalid-nil storage",
+			wantErrContains: "nil storage",
+		},
+		{
+			name: "invalid-resp-tampered-encryption",
+			respSetupFn: func(in *types.FetchNodeCredentialsResponse) (*types.FetchNodeCredentialsResponse, string) {
+				in.EncryptedNodeCredentials[10] = 'w'
+				in.EncryptedNodeCredentials[20] = 'h'
+				in.EncryptedNodeCredentials[30] = 'y'
+				return in, "message authentication failed"
+			},
+			storage: fileStorage,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require, assert := require.New(t), assert.New(t)
+			n := nodeCreds
+			var wantNodeCredsErrContains string
+			if tt.nodeCredsSetupFn != nil {
+				n, wantNodeCredsErrContains = tt.nodeCredsSetupFn(proto.Clone(nodeCreds).(*types.NodeCredentials))
+			}
+
+			f := fetchNodeCredsResp
+			var wantFetchRespErrContains string
+			if tt.respSetupFn != nil {
+				f, wantFetchRespErrContains = tt.respSetupFn(proto.Clone(f).(*types.FetchNodeCredentialsResponse))
+			}
+
+			err = n.HandleFetchNodeCredentialsResponse(ctx, tt.storage, f)
+			if tt.wantErrContains != "" {
+				require.Error(err)
+				assert.Contains(err.Error(), tt.wantErrContains)
+				return
+			}
+			if wantNodeCredsErrContains != "" {
+				require.Error(err)
+				assert.Contains(err.Error(), wantNodeCredsErrContains)
+				return
+			}
+			if wantFetchRespErrContains != "" {
+				require.Error(err)
+				assert.Contains(err.Error(), wantFetchRespErrContains)
+				return
+			}
+			require.NoError(err)
+
+			// Now validate the decrypted/post-decryption
+			assert.Len(n.CertificateBundles, 1)
+			assert.Empty(n.RegistrationNonce)
+			assert.Equal(n.Id, string(nodeenrollment.CurrentId))
 		})
 	}
 }

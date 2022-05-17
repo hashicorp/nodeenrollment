@@ -231,34 +231,31 @@ func (n *NodeCredentials) X25519EncryptionKey() ([]byte, error) {
 	return out, nil
 }
 
-// GenerateRegistrationParameters creates and stores initial
-// NodeCredentials with suitable options for presenting for noderegistration.
-// The output is a string with the key ID to display to a user for verification.
+// NewNodeCredentials creates a new node credentials object and populates it
+// with suitable parameters for presenting for registration.
 //
 // Once registration succeeds, the node credentials stored here can be used to
 // decrypt the incoming bundle with the server's view of the node credentials,
-// which can then be merged.
+// which can then be merged; this happens in a different function.
 //
 // Supported options: WithRandomReader, WithWrapper (passed through to
 // NodeCredentials.Store)
-func (n *NodeCredentials) GenerateRegistrationParameters(
+func NewNodeCredentials(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
 	opt ...nodeenrollment.Option,
-) error {
-	const op = "nodeenrollment.nodetypes.GenerateRegistrationParameters"
+) (*NodeCredentials, error) {
+	const op = "nodeenrollment.types.NewNodeCredentials"
 
-	switch {
-	case len(n.CertificatePrivateKeyPkcs8) != 0,
-		len(n.EncryptionPrivateKeyBytes) != 0,
-		len(n.RegistrationNonce) != 0,
-		n.Id != "":
-		return fmt.Errorf("(%s) this function cannot be called on existing node credentials", op)
+	if nodeenrollment.IsNil(storage) {
+		return nil, fmt.Errorf("(%s) storage is nil", op)
 	}
+
+	n := new(NodeCredentials)
 
 	opts, err := nodeenrollment.GetOpts(opt...)
 	if err != nil {
-		return fmt.Errorf("(%s) error parsing options: %w", op, err)
+		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
 	var (
@@ -270,27 +267,27 @@ func (n *NodeCredentials) GenerateRegistrationParameters(
 	num, err := opts.WithRandomReader.Read(n.RegistrationNonce)
 	switch {
 	case err != nil:
-		return fmt.Errorf("(%s) error generating nonce: %w", op, err)
+		return nil, fmt.Errorf("(%s) error generating nonce: %w", op, err)
 	case num != nodeenrollment.NonceSize:
-		return fmt.Errorf("(%s) read incorrect number of bytes for nonce, wanted %d, got %d", op, nodeenrollment.NonceSize, num)
+		return nil, fmt.Errorf("(%s) read incorrect number of bytes for nonce, wanted %d, got %d", op, nodeenrollment.NonceSize, num)
 	}
 
 	// Create certificate keypair
 	{
 		certPubKey, certPrivKey, err = ed25519.GenerateKey(opts.WithRandomReader)
 		if err != nil {
-			return fmt.Errorf("(%s) error generating certificate keypair: %w", op, err)
+			return nil, fmt.Errorf("(%s) error generating certificate keypair: %w", op, err)
 		}
 
 		n.CertificatePrivateKeyPkcs8, err = x509.MarshalPKCS8PrivateKey(certPrivKey)
 		if err != nil {
-			return fmt.Errorf("(%s) error marshaling certificate private key: %w", op, err)
+			return nil, fmt.Errorf("(%s) error marshaling certificate private key: %w", op, err)
 		}
 		n.CertificatePrivateKeyType = KEYTYPE_KEYTYPE_ED25519
 
 		n.CertificatePublicKeyPkix, _, err = nodeenrollment.SubjectKeyInfoAndKeyIdFromPubKey(certPubKey)
 		if err != nil {
-			return fmt.Errorf("(%s) error fetching public key id: %w", op, err)
+			return nil, fmt.Errorf("(%s) error fetching public key id: %w", op, err)
 		}
 	}
 
@@ -300,25 +297,43 @@ func (n *NodeCredentials) GenerateRegistrationParameters(
 		num, err := opts.WithRandomReader.Read(n.EncryptionPrivateKeyBytes)
 		switch {
 		case err != nil:
-			return fmt.Errorf("(%s) error reading random bytes to generate node encryption key: %w", op, err)
+			return nil, fmt.Errorf("(%s) error reading random bytes to generate node encryption key: %w", op, err)
 		case num != curve25519.ScalarSize:
-			return fmt.Errorf("(%s) wrong number of random bytes read when generating node encryption key, expected %d but got %d", op, curve25519.ScalarSize, num)
+			return nil, fmt.Errorf("(%s) wrong number of random bytes read when generating node encryption key, expected %d but got %d", op, curve25519.ScalarSize, num)
 		}
 		n.EncryptionPrivateKeyType = KEYTYPE_KEYTYPE_X25519
 	}
 
 	n.Id = string(nodeenrollment.CurrentId)
 	if err := n.Store(ctx, storage, opt...); err != nil {
-		return fmt.Errorf("(%s) failed to store generated node creds: %w", op, err)
+		return nil, fmt.Errorf("(%s) failed to store generated node creds: %w", op, err)
 	}
 
-	return nil
+	return n, nil
 }
 
-// CreateFetchNodeCredentialsRequest returns the fetch request based on the
+// CreateFetchNodeCredentialsRequest creates and returns a fetch request based on the
 // current node creds
-func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(ctx context.Context, opt ...nodeenrollment.Option) (*FetchNodeCredentialsRequest, error) {
-	const op = "nodeenrollment.nodetypes.(NodeCredentials).CreateFetchNodeCredentialsRequest"
+//
+// Supported options: WithRandomReader
+func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
+	ctx context.Context,
+	opt ...nodeenrollment.Option,
+) (*FetchNodeCredentialsRequest, error) {
+	const op = "nodeenrollment.types.(NodeCredentials).CreateFetchNodeCredentialsRequest"
+
+	switch {
+	case nodeenrollment.IsNil(n):
+		return nil, fmt.Errorf("(%s) node credentials is nil", op)
+	case len(n.CertificatePrivateKeyPkcs8) == 0:
+		return nil, fmt.Errorf("(%s) node credentials pkcs8 private key is empty", op)
+	case len(n.CertificatePublicKeyPkix) == 0:
+		return nil, fmt.Errorf("(%s) node credentials pkix public key is empty", op)
+	case len(n.RegistrationNonce) == 0:
+		return nil, fmt.Errorf("(%s) node credentials registration nonce is empty", op)
+	case len(n.EncryptionPrivateKeyBytes) == 0:
+		return nil, fmt.Errorf("(%s) node credentials encryption private key is empty", op)
+	}
 
 	opts, err := nodeenrollment.GetOpts(opt...)
 	if err != nil {
@@ -357,21 +372,20 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(ctx context.Context,
 }
 
 // HandleFetchNodeCredentialsResponse parses the response from a server for node
-// credentials and attempts to decrypt and merge with existing on-disk
-// NodeCredentials, storing the result. It returns the updated node credentials
-// (same as were stored to disk) to avoid having to do a lookup since the next
-// operation is likely to establish a session.
+// credentials and attempts to decrypt and merge with the existing
+// NodeCredentials, storing the result.
 //
-// Supported options: WithRandomReader, WithWrapping (passed through to
-// NodeCredentials.Store)
+// Supported options: WithWrapping (passed through to NodeCredentials.Store)
 func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
 	input *FetchNodeCredentialsResponse,
 	opt ...nodeenrollment.Option,
 ) error {
-	const op = "nodeenrollment.noderegistration.HandleFetchNodeCredentialsResponse"
+	const op = "nodeenrollment.types.(NodeCredentials).HandleFetchNodeCredentialsResponse"
 	switch {
+	case n == nil:
+		return fmt.Errorf("(%s) node credentials is nil", op)
 	case input == nil:
 		return fmt.Errorf("(%s) input is nil", op)
 	case len(input.EncryptedNodeCredentials) == 0:
@@ -379,9 +393,9 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 	case len(input.ServerEncryptionPublicKeyBytes) == 0:
 		return fmt.Errorf("(%s) server encryption public key bytes is nil", op)
 	case input.ServerEncryptionPublicKeyType != KEYTYPE_KEYTYPE_X25519:
-		return fmt.Errorf("(%s) server encryption public key is of unknown type", op)
-	case storage == nil:
-		return fmt.Errorf("(%s) nil storage passed in", op)
+		return fmt.Errorf("(%s) server encryption public key type is unknown", op)
+	case nodeenrollment.IsNil(storage):
+		return fmt.Errorf("(%s) nil storage", op)
 	}
 
 	n.ServerEncryptionPublicKeyBytes = input.ServerEncryptionPublicKeyBytes
