@@ -25,9 +25,14 @@ func TestRotateRootCertificates(t *testing.T) {
 	require.NoError(err)
 	t.Cleanup(storage.Cleanup)
 
+	// Ensure nil storage fails
+	roots, err := RotateRootCertificates(ctx, nil)
+	require.Error(err)
+	assert.Nil(roots)
+
 	// First validate the generated parameters
 	var current, next *types.RootCertificate
-	roots, err := RotateRootCertificates(ctx, storage)
+	roots, err = RotateRootCertificates(ctx, storage)
 	for _, root := range []*types.RootCertificate{roots.Current, roots.Next} {
 		require.NoError(err)
 		assert.NotEmpty(root.Id)
@@ -38,7 +43,7 @@ func TestRotateRootCertificates(t *testing.T) {
 		assert.NotEmpty(root.PrivateKeyPkcs8)
 		assert.Equal(types.KEYTYPE_KEYTYPE_ED25519, root.PrivateKeyType)
 		assert.Empty(root.WrappingKeyId)
-		if root.Id == nodeenrollment.CurrentId {
+		if nodeenrollment.KnownId(root.Id) == nodeenrollment.CurrentId {
 			current = root
 		} else {
 			next = root
@@ -81,12 +86,12 @@ func TestDecideWhatToMake(t *testing.T) {
 		currentNotAfterOverride,
 		nextNotBeforeOverride,
 		nextNotAfterOverride time.Time
-		expToMake      []string
+		expToMake      []nodeenrollment.KnownId
 		expNextCurrent *types.RootCertificate
 	}{
 		{
 			name:      "all-nil",
-			expToMake: []string{nodeenrollment.CurrentId, nodeenrollment.NextId},
+			expToMake: []nodeenrollment.KnownId{nodeenrollment.CurrentId, nodeenrollment.NextId},
 		},
 		{
 			name:    "both-valid",
@@ -98,18 +103,18 @@ func TestDecideWhatToMake(t *testing.T) {
 			current:               roots.Current,
 			next:                  roots.Next,
 			nextNotBeforeOverride: time.Now().Add(-1 * time.Minute),
-			expToMake:             []string{nodeenrollment.NextId},
+			expToMake:             []nodeenrollment.KnownId{nodeenrollment.NextId},
 			expNextCurrent:        roots.Next,
 		},
 		{
 			name:      "no-current",
 			next:      roots.Next,
-			expToMake: []string{nodeenrollment.CurrentId, nodeenrollment.NextId},
+			expToMake: []nodeenrollment.KnownId{nodeenrollment.CurrentId, nodeenrollment.NextId},
 		},
 		{
 			name:      "no-next",
 			current:   roots.Current,
-			expToMake: []string{nodeenrollment.CurrentId, nodeenrollment.NextId},
+			expToMake: []nodeenrollment.KnownId{nodeenrollment.CurrentId, nodeenrollment.NextId},
 		},
 		{
 			name:                    "current-expired-next-not-ready",
@@ -117,7 +122,7 @@ func TestDecideWhatToMake(t *testing.T) {
 			next:                    roots.Next,
 			currentNotAfterOverride: time.Now().Add(-1 * time.Minute),
 			nextNotBeforeOverride:   time.Now().Add(time.Minute),
-			expToMake:               []string{nodeenrollment.CurrentId, nodeenrollment.NextId},
+			expToMake:               []nodeenrollment.KnownId{nodeenrollment.CurrentId, nodeenrollment.NextId},
 		},
 		{
 			name:                    "current-expired-next-ready",
@@ -125,7 +130,7 @@ func TestDecideWhatToMake(t *testing.T) {
 			next:                    roots.Next,
 			currentNotAfterOverride: time.Now().Add(-1 * time.Minute),
 			nextNotBeforeOverride:   time.Now().Add(-1 * time.Minute),
-			expToMake:               []string{nodeenrollment.NextId},
+			expToMake:               []nodeenrollment.KnownId{nodeenrollment.NextId},
 			expNextCurrent:          roots.Next,
 		},
 		{
@@ -134,21 +139,21 @@ func TestDecideWhatToMake(t *testing.T) {
 			next:                     roots.Next,
 			currentNotBeforeOverride: time.Now().Add(1 * time.Minute),
 			nextNotBeforeOverride:    time.Now().Add(-1 * time.Minute),
-			expToMake:                []string{nodeenrollment.CurrentId, nodeenrollment.NextId},
+			expToMake:                []nodeenrollment.KnownId{nodeenrollment.CurrentId, nodeenrollment.NextId},
 		},
 		{
 			name:                     "current-not-yet-valid-next-not-ready",
 			current:                  roots.Current,
 			next:                     roots.Next,
 			currentNotBeforeOverride: time.Now().Add(1 * time.Minute),
-			expToMake:                []string{nodeenrollment.CurrentId, nodeenrollment.NextId},
+			expToMake:                []nodeenrollment.KnownId{nodeenrollment.CurrentId, nodeenrollment.NextId},
 		},
 		{
 			name:                 "current-valid-next-expired",
 			current:              roots.Current,
 			next:                 roots.Next,
 			nextNotAfterOverride: time.Now().Add(-1 * time.Minute),
-			expToMake:            []string{nodeenrollment.NextId},
+			expToMake:            []nodeenrollment.KnownId{nodeenrollment.NextId},
 			expNextCurrent:       roots.Current,
 		},
 	}

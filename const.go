@@ -8,6 +8,8 @@ import (
 type KnownId string
 
 const (
+	MissingId KnownId = ""
+
 	// CurrentId is a const for when we are fetching the "current" value for
 	// various purposes
 	CurrentId KnownId = "current"
@@ -18,6 +20,10 @@ const (
 )
 
 const (
+	// NotBeforeDuration is the time to subtract from NotBefore to account for
+	// some clock skew
+	NotBeforeDuration = -5 * time.Minute
+
 	// DefaultCertificateLifetime is the default duration of a certificate, set
 	// to two weeks. Rotations should happen at roughly half this.
 	DefaultCertificateLifetime = time.Hour * 24 * 14

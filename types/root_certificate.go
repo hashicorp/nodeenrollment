@@ -19,22 +19,25 @@ import (
 func (r *RootCertificate) Store(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) error {
 	const op = "nodeenrollment.types.(RootCertificate).Store"
 
-	switch r.Id {
-	case "":
-		return fmt.Errorf("(%s) root is missing id", op)
-	case nodeenrollment.CurrentId, nodeenrollment.NextId:
-	default:
-		return fmt.Errorf("(%s) invalid root certificate id", op)
-	}
-
 	switch {
-	case storage == nil:
+	case nodeenrollment.IsNil(storage):
 		return fmt.Errorf("(%s) storage is nil", op)
+
+	case nodeenrollment.IsNil(r):
+		return fmt.Errorf("(%s) root certificate is nil", op)
 
 	case len(r.PrivateKeyPkcs8) == 0:
 		// This isn't really a validation function, but we want to avoid
 		// wrapping a nil key so we do a check here
 		return fmt.Errorf("(%s) refusing to store root with no private key", op)
+	}
+
+	switch nodeenrollment.KnownId(r.Id) {
+	case nodeenrollment.MissingId:
+		return fmt.Errorf("(%s) root is missing id", op)
+	case nodeenrollment.CurrentId, nodeenrollment.NextId:
+	default:
+		return fmt.Errorf("(%s) invalid root certificate id", op)
 	}
 
 	opts, err := nodeenrollment.GetOpts(opt...)
@@ -76,18 +79,18 @@ func (r *RootCertificate) Store(ctx context.Context, storage nodeenrollment.Stor
 // encrypted values if needed
 //
 // Supported options: WithWrapper
-func LoadRootCertificate(ctx context.Context, storage nodeenrollment.Storage, id string, opt ...nodeenrollment.Option) (*RootCertificate, error) {
+func LoadRootCertificate(ctx context.Context, storage nodeenrollment.Storage, id nodeenrollment.KnownId, opt ...nodeenrollment.Option) (*RootCertificate, error) {
 	const op = "nodeenrollment.types.LoadRootCertificate"
 
 	switch id {
-	case "":
+	case nodeenrollment.MissingId:
 		return nil, fmt.Errorf("(%s) missing id", op)
 	case nodeenrollment.CurrentId, nodeenrollment.NextId:
 	default:
 		return nil, fmt.Errorf("(%s) invalid id", op)
 	}
 
-	if storage == nil {
+	if nodeenrollment.IsNil(storage) {
 		return nil, fmt.Errorf("(%s) storage is nil", op)
 	}
 
@@ -97,7 +100,7 @@ func LoadRootCertificate(ctx context.Context, storage nodeenrollment.Storage, id
 	}
 
 	root := &RootCertificate{
-		Id: id,
+		Id: string(id),
 	}
 	if err := storage.Load(ctx, root); err != nil {
 		return nil, fmt.Errorf("(%s) error loading certificate from storage: %w", op, err)
@@ -110,7 +113,7 @@ func LoadRootCertificate(ctx context.Context, storage nodeenrollment.Storage, id
 		return nil, fmt.Errorf("(%s) root has encrypted parts with wrapper key id %q but wrapper not provided", op, root.WrappingKeyId)
 	case root.WrappingKeyId != "":
 		// Note: not checking the key IDs against each other because if using
-		// something like a PooledWrapper then the current encryping ID may not
+		// something like a PooledWrapper then the current encrypting ID may not
 		// match, or if the wrapper performs its own internal key selection.
 		blobInfo := new(wrapping.BlobInfo)
 		if err := proto.Unmarshal(root.PrivateKeyPkcs8, blobInfo); err != nil {
@@ -135,8 +138,13 @@ func LoadRootCertificate(ctx context.Context, storage nodeenrollment.Storage, id
 // nodeenrollment.CurrentId and nodeenrollment.NextId
 func LoadRootCertificates(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) (*RootCertificates, error) {
 	const op = "nodeenrollment.types.LoadRootCertificates"
+
+	if nodeenrollment.IsNil(storage) {
+		return nil, fmt.Errorf("(%s) nil storage", op)
+	}
+
 	ret := new(RootCertificates)
-	for _, id := range []string{nodeenrollment.CurrentId, nodeenrollment.NextId} {
+	for _, id := range []nodeenrollment.KnownId{nodeenrollment.CurrentId, nodeenrollment.NextId} {
 		root, err := LoadRootCertificate(ctx, storage, id, opt...)
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error loading root certificate: %w", op, err)
@@ -156,6 +164,8 @@ func LoadRootCertificates(ctx context.Context, storage nodeenrollment.Storage, o
 func (r *RootCertificate) SigningParams(ctx context.Context) (*x509.Certificate, crypto.Signer, error) {
 	const op = "nodeenrollment.types.(RootCertificate).SigningParams"
 	switch {
+	case nodeenrollment.IsNil(r):
+		return nil, nil, fmt.Errorf("(%s) root certificate is nil", op)
 	case len(r.PrivateKeyPkcs8) == 0:
 		return nil, nil, fmt.Errorf("(%s) no private key found in root", op)
 	case r.PrivateKeyType == KEYTYPE_KEYTYPE_UNSPECIFIED:
@@ -177,7 +187,12 @@ func (r *RootCertificate) SigningParams(ctx context.Context) (*x509.Certificate,
 			if err != nil {
 				return nil, nil, fmt.Errorf("(%s) error unmarshaling private key: %w", op, err)
 			}
-			signer = raw.(ed25519.PrivateKey)
+			var ok bool
+			signer, ok = raw.(ed25519.PrivateKey)
+			if !ok {
+				return nil, nil, fmt.Errorf("(%s) unmarshalled private key is not expected type, has type %T", op, raw)
+			}
+
 		default:
 			return nil, nil, fmt.Errorf("(%s) unsupported private key type %v", op, r.PrivateKeyType.String())
 		}
