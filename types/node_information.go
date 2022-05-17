@@ -160,6 +160,8 @@ func (n *NodeInformation) X25519EncryptionKey() ([]byte, error) {
 	const op = "nodeenrollment.types.(NodeInformation).X25519EncryptionKey"
 
 	switch {
+	case nodeenrollment.IsNil(n):
+		return nil, fmt.Errorf("(%s) node information is empty", op)
 	case len(n.ServerEncryptionPrivateKeyBytes) == 0:
 		return nil, fmt.Errorf("(%s) encryption private key bytes is empty", op)
 	case n.ServerEncryptionPrivateKeyType != KEYTYPE_KEYTYPE_X25519:
@@ -169,5 +171,10 @@ func (n *NodeInformation) X25519EncryptionKey() ([]byte, error) {
 	case n.EncryptionPublicKeyType != KEYTYPE_KEYTYPE_X25519:
 		return nil, fmt.Errorf("(%s) encryption public key type is not known", op)
 	}
-	return curve25519.X25519(n.ServerEncryptionPrivateKeyBytes, n.EncryptionPublicKeyBytes)
+
+	out, err := curve25519.X25519(n.ServerEncryptionPrivateKeyBytes, n.EncryptionPublicKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error performing x25519 operation: %w", op, err)
+	}
+	return out, nil
 }

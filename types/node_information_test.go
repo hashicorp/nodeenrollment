@@ -196,3 +196,92 @@ func TestNodeInformation_StoreLoad(t *testing.T) {
 		})
 	}
 }
+
+func TestNodeInformation_X25519(t *testing.T) {
+	t.Parallel()
+
+	// Generate a suitable root
+	privKey := make([]byte, curve25519.ScalarSize)
+	n, err := rand.Read(privKey)
+	require.NoError(t, err)
+	require.Equal(t, n, curve25519.ScalarSize)
+
+	privKey2 := make([]byte, curve25519.ScalarSize)
+	n, err = rand.Read(privKey2)
+	require.NoError(t, err)
+	require.Equal(t, n, curve25519.ScalarSize)
+	pubKey, err := curve25519.X25519(privKey2, curve25519.Basepoint)
+	require.NoError(t, err)
+
+	nodeInfo := &types.NodeInformation{
+		ServerEncryptionPrivateKeyBytes: privKey,
+		ServerEncryptionPrivateKeyType:  types.KEYTYPE_KEYTYPE_X25519,
+		EncryptionPublicKeyBytes:        pubKey,
+		EncryptionPublicKeyType:         types.KEYTYPE_KEYTYPE_X25519,
+	}
+
+	tests := []struct {
+		name string
+		// Return a modified node information and a "want err contains" string
+		setupFn func(*types.NodeInformation) (*types.NodeInformation, string)
+	}{
+		{
+			name: "invalid-nil",
+			setupFn: func(nodeInfo *types.NodeInformation) (*types.NodeInformation, string) {
+				return nil, "is empty"
+			},
+		},
+		{
+			name: "invalid-no-privkey-bytes",
+			setupFn: func(nodeInfo *types.NodeInformation) (*types.NodeInformation, string) {
+				nodeInfo.ServerEncryptionPrivateKeyBytes = nil
+				return nodeInfo, "private key bytes is empty"
+			},
+		},
+		{
+			name: "invalid-bad-privkey-type",
+			setupFn: func(nodeInfo *types.NodeInformation) (*types.NodeInformation, string) {
+				nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE_KEYTYPE_ED25519
+				return nodeInfo, "private key type is not known"
+			},
+		},
+		{
+			name: "invalid-no-pubkey-bytes",
+			setupFn: func(nodeInfo *types.NodeInformation) (*types.NodeInformation, string) {
+				nodeInfo.EncryptionPublicKeyBytes = nil
+				return nodeInfo, "public key bytes is empty"
+			},
+		},
+		{
+			name: "invalid-bad-pubkey-type",
+			setupFn: func(nodeInfo *types.NodeInformation) (*types.NodeInformation, string) {
+				nodeInfo.EncryptionPublicKeyType = types.KEYTYPE_KEYTYPE_ED25519
+				return nodeInfo, "public key type is not known"
+			},
+		},
+		{
+			name: "valid",
+			setupFn: func(nodeInfo *types.NodeInformation) (*types.NodeInformation, string) {
+				return nodeInfo, ""
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require, assert := require.New(t), assert.New(t)
+			n := nodeInfo
+			var wantErrContains string
+			if tt.setupFn != nil {
+				n, wantErrContains = tt.setupFn(proto.Clone(n).(*types.NodeInformation))
+			}
+			out, err := n.X25519EncryptionKey()
+			if wantErrContains != "" {
+				require.Error(err)
+				assert.Contains(err.Error(), wantErrContains)
+			} else {
+				require.NoError(err)
+				assert.NotEmpty(out)
+			}
+		})
+	}
+}
