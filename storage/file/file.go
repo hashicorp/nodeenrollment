@@ -48,9 +48,11 @@ func NewFileStorage(ctx context.Context, opt ...Option) (*FileStorage, error) {
 		skipCleanup: opts.withSkipCleanup,
 	}
 
+	const pattern = "nodeenrollment"
+
 	switch ts.baseDir {
 	case "":
-		ts.baseDir, err = os.MkdirTemp("", "nodeenrollment")
+		ts.baseDir, err = os.MkdirTemp("", pattern)
 		if err != nil {
 			return nil, fmt.Errorf("error creating temp directory: %w", err)
 		}
@@ -139,6 +141,15 @@ func (ts *FileStorage) Remove(ctx context.Context, msg nodeenrollment.MessageWit
 // List implements the Storage interface
 func (ts *FileStorage) List(ctx context.Context, msg proto.Message) ([]string, error) {
 	const op = "nodeenrollment.storage.file.(FileStorage).List"
+
+	switch t := msg.(type) {
+	case *types.NodeCredentials,
+		*types.NodeInformation,
+		*types.RootCertificate:
+	default:
+		return nil, fmt.Errorf("(%s) unknown message type %T", op, t)
+	}
+
 	subPath, err := subPathFromMsg(msg)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) given messages cannot be listed: %w", op, err)
