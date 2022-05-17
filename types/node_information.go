@@ -70,7 +70,7 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 		if len(infoToStore.RegistrationNonce) != 0 {
 			blobInfo, err = opts.WithWrapper.Encrypt(
 				ctx,
-				[]byte(infoToStore.RegistrationNonce),
+				infoToStore.RegistrationNonce,
 				wrapping.WithAad(infoToStore.CertificatePublicKeyPkix),
 			)
 			if err != nil {
@@ -90,7 +90,7 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 	return nil
 }
 
-// LoadNoadInformation loads the node information from storage, unwrapping encrypted
+// LoadNodeInformation loads the node information from storage, unwrapping encrypted
 // values if needed.
 //
 // Supported options: WithWrapper
@@ -123,7 +123,7 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 		return nil, fmt.Errorf("(%s) node information has encrypted parts with wrapper key id %q but wrapper not provided", op, nodeInfo.WrappingKeyId)
 	case nodeInfo.WrappingKeyId != "":
 		// Note: not checking the wrapper key IDs against each other because if
-		// using something like a PooledWrapper then the current encryping ID
+		// using something like a PooledWrapper then the current encrypting ID
 		// may not match, or if the wrapper performs its own internal key
 		// selection.
 		blobInfo := new(wrapping.BlobInfo)
