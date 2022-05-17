@@ -30,9 +30,9 @@ type X25519Producer interface {
 func EncryptMessage(ctx context.Context, id string, msg proto.Message, keySource X25519Producer, opt ...Option) ([]byte, error) {
 	const op = "nodeenrollment.EncryptMessage"
 	switch {
-	case msg == nil:
+	case IsNil(msg):
 		return nil, fmt.Errorf("(%s) incoming message is nil", op)
-	case keySource == nil:
+	case IsNil(keySource):
 		return nil, fmt.Errorf("(%s) incoming key source is nil", op)
 	}
 
@@ -61,7 +61,11 @@ func EncryptMessage(ctx context.Context, id string, msg proto.Message, keySource
 		return nil, fmt.Errorf("(%s) error marshaling incoming message: %w", op, err)
 	}
 
-	blobInfo, err := aeadWrapper.Encrypt(ctx, marshaledMsg, wrapping.WithAad([]byte(id)))
+	var aadOpt wrapping.Option
+	if id != "" {
+		aadOpt = wrapping.WithAad([]byte(id))
+	}
+	blobInfo, err := aeadWrapper.Encrypt(ctx, marshaledMsg, aadOpt)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error encrypting marshaled message: %w", op, err)
 	}
@@ -89,9 +93,9 @@ func DecryptMessage(ctx context.Context, id string, ct []byte, keySource X25519P
 	switch {
 	case len(ct) == 0:
 		return fmt.Errorf("(%s) incoming ciphertext is empty", op)
-	case keySource == nil:
+	case IsNil(keySource):
 		return fmt.Errorf("(%s) incoming key source is nil", op)
-	case result == nil:
+	case IsNil(result):
 		return fmt.Errorf("(%s) incoming result message is nil", op)
 	}
 
@@ -114,7 +118,11 @@ func DecryptMessage(ctx context.Context, id string, ct []byte, keySource X25519P
 		return fmt.Errorf("(%s) error unmarshaling incoming blob info: %w", op, err)
 	}
 
-	pt, err := aeadWrapper.Decrypt(ctx, blobInfo, wrapping.WithAad([]byte(id)))
+	var aadOpt wrapping.Option
+	if id != "" {
+		aadOpt = wrapping.WithAad([]byte(id))
+	}
+	pt, err := aeadWrapper.Decrypt(ctx, blobInfo, aadOpt)
 	if err != nil {
 		return fmt.Errorf("(%s) error decrypting blob info: %w", op, err)
 	}

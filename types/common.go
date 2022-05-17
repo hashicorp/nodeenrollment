@@ -14,7 +14,7 @@ import (
 // * It's a known type
 func ValidateMessage(msg proto.Message) error {
 	const op = "nodeenrollment.ValidateMessage"
-	if msg == nil {
+	if nodeenrollment.IsNil(msg) {
 		return fmt.Errorf("(%s) nil message passed in to validate", op)
 	}
 	switch t := msg.(type) {
