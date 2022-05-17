@@ -91,13 +91,6 @@ func TestNodeInformation_StoreLoad(t *testing.T) {
 			storeStorageNil: true,
 		},
 		{
-			name: "store-invalid-no-encryption-key",
-			storeSetupFn: func(nodeInfo *types.NodeInformation) (*types.NodeInformation, string) {
-				nodeInfo.ServerEncryptionPrivateKeyBytes = nil
-				return nodeInfo, "no server encryption private key"
-			},
-		},
-		{
 			name: "store-invalid-no-pkix-key",
 			storeSetupFn: func(nodeInfo *types.NodeInformation) (*types.NodeInformation, string) {
 				nodeInfo.CertificatePublicKeyPkix = nil

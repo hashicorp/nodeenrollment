@@ -26,11 +26,6 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 	case nodeenrollment.IsNil(n):
 		return fmt.Errorf("(%s) node information is nil", op)
 
-	case len(n.ServerEncryptionPrivateKeyBytes) == 0:
-		// This isn't really a validation function, but we want to avoid
-		// wrapping a nil key so we do a check here
-		return fmt.Errorf("(%s) refusing to store node information with no server encryption private key", op)
-
 	case len(n.CertificatePublicKeyPkix) == 0:
 		// This isn't really a validation function, but we want to avoid
 		// wrapping with nil AAD so we do a check here
@@ -54,21 +49,23 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 		n.WrappingKeyId = keyId
 		infoToStore = proto.Clone(n).(*NodeInformation)
 
-		blobInfo, err := opts.WithWrapper.Encrypt(
-			ctx,
-			infoToStore.ServerEncryptionPrivateKeyBytes,
-			wrapping.WithAad(infoToStore.CertificatePublicKeyPkix),
-		)
-		if err != nil {
-			return fmt.Errorf("(%s) error wrapping private key: %w", op, err)
-		}
-		infoToStore.ServerEncryptionPrivateKeyBytes, err = proto.Marshal(blobInfo)
-		if err != nil {
-			return fmt.Errorf("(%s) error marshaling wrapped private key: %w", op, err)
+		if len(infoToStore.ServerEncryptionPrivateKeyBytes) > 0 {
+			blobInfo, err := opts.WithWrapper.Encrypt(
+				ctx,
+				infoToStore.ServerEncryptionPrivateKeyBytes,
+				wrapping.WithAad(infoToStore.CertificatePublicKeyPkix),
+			)
+			if err != nil {
+				return fmt.Errorf("(%s) error wrapping private key: %w", op, err)
+			}
+			infoToStore.ServerEncryptionPrivateKeyBytes, err = proto.Marshal(blobInfo)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling wrapped private key: %w", op, err)
+			}
 		}
 
 		if len(infoToStore.RegistrationNonce) != 0 {
-			blobInfo, err = opts.WithWrapper.Encrypt(
+			blobInfo, err := opts.WithWrapper.Encrypt(
 				ctx,
 				infoToStore.RegistrationNonce,
 				wrapping.WithAad(infoToStore.CertificatePublicKeyPkix),
@@ -126,21 +123,23 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 		// using something like a PooledWrapper then the current encrypting ID
 		// may not match, or if the wrapper performs its own internal key
 		// selection.
-		blobInfo := new(wrapping.BlobInfo)
-		if err := proto.Unmarshal(nodeInfo.ServerEncryptionPrivateKeyBytes, blobInfo); err != nil {
-			return nil, fmt.Errorf("(%s) error unmarshaling private key blob info: %w", op, err)
+		if len(nodeInfo.ServerEncryptionPrivateKeyBytes) > 0 {
+			blobInfo := new(wrapping.BlobInfo)
+			if err := proto.Unmarshal(nodeInfo.ServerEncryptionPrivateKeyBytes, blobInfo); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling private key blob info: %w", op, err)
+			}
+			pt, err := opts.WithWrapper.Decrypt(ctx, blobInfo, wrapping.WithAad(nodeInfo.CertificatePublicKeyPkix))
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error decrypting private key: %w", op, err)
+			}
+			nodeInfo.ServerEncryptionPrivateKeyBytes = pt
 		}
-		pt, err := opts.WithWrapper.Decrypt(ctx, blobInfo, wrapping.WithAad(nodeInfo.CertificatePublicKeyPkix))
-		if err != nil {
-			return nil, fmt.Errorf("(%s) error decrypting private key: %w", op, err)
-		}
-		nodeInfo.ServerEncryptionPrivateKeyBytes = pt
 
 		if len(nodeInfo.RegistrationNonce) != 0 {
 			if len(nodeInfo.CertificatePublicKeyPkix) == 0 {
 				return nil, fmt.Errorf("(%s) decoded value has registration nonce but missing public key", err)
 			}
-			blobInfo = new(wrapping.BlobInfo)
+			blobInfo := new(wrapping.BlobInfo)
 			if err := proto.Unmarshal(nodeInfo.RegistrationNonce, blobInfo); err != nil {
 				return nil, fmt.Errorf("(%s) error unmarshaling registration nonce blob info: %w", op, err)
 			}
