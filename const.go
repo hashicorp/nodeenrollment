@@ -5,6 +5,18 @@ import (
 	"time"
 )
 
+type KnownId string
+
+const (
+	// CurrentId is a const for when we are fetching the "current" value for
+	// various purposes
+	CurrentId KnownId = "current"
+
+	// NextId is a const for when we are fetching the "next" value for various
+	// purposes
+	NextId KnownId = "next"
+)
+
 const (
 	// DefaultCertificateLifetime is the default duration of a certificate, set
 	// to two weeks. Rotations should happen at roughly half this.
@@ -24,14 +36,6 @@ const (
 	// AuthenticateNodeNextProtoV1Prefix is the ALPN NextProto used when a node
 	// is trying to authenticate
 	AuthenticateNodeNextProtoV1Prefix = "v1-nodee-authenticate-node-"
-
-	// CurrentId is a const for when we are fetching the "current" value for
-	// various purposes
-	CurrentId = "current"
-
-	// NextId is a const for when we are fetching the "next" value for various
-	// purposes
-	NextId = "next"
 
 	// NonceSize is our defined nonce size, in bytes
 	NonceSize = 32
