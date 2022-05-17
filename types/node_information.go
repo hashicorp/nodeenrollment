@@ -137,6 +137,9 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 		nodeInfo.ServerEncryptionPrivateKeyBytes = pt
 
 		if len(nodeInfo.RegistrationNonce) != 0 {
+			if len(nodeInfo.CertificatePublicKeyPkix) == 0 {
+				return nil, fmt.Errorf("(%s) decoded value has registration nonce but missing public key", err)
+			}
 			blobInfo = new(wrapping.BlobInfo)
 			if err := proto.Unmarshal(nodeInfo.RegistrationNonce, blobInfo); err != nil {
 				return nil, fmt.Errorf("(%s) error unmarshaling registration nonce blob info: %w", op, err)

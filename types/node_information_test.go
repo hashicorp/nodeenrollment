@@ -45,6 +45,7 @@ func TestNodeInformation_StoreLoad(t *testing.T) {
 
 	nodeInfo.Id, err = nodeenrollment.KeyIdFromPkix(nodeInfo.CertificatePublicKeyPkix)
 	require.NoError(t, err)
+	nodeInfo.RegistrationNonce = pubKey
 
 	validWrapper := aead.TestWrapper(t)
 	invalidWrapper := aead.TestWrapper(t)
@@ -171,6 +172,19 @@ func TestNodeInformation_StoreLoad(t *testing.T) {
 					require.Error(err)
 					assert.Contains(err.Error(), wantErrContains)
 					return
+				}
+			}
+
+			// Do a check on the registration nonce to ensure it's different
+			if !tt.skipStorage {
+				testNodeInfo := &types.NodeInformation{Id: nodeInfo.Id}
+				require.NoError(storage.Load(ctx, testNodeInfo))
+				if tt.storeWrapper != nil {
+					assert.NotEqualValues(pubKey, testNodeInfo.RegistrationNonce)
+					assert.NotEqualValues(nodeInfo.ServerEncryptionPrivateKeyBytes, testNodeInfo.ServerEncryptionPrivateKeyBytes)
+				} else {
+					assert.EqualValues(pubKey, testNodeInfo.RegistrationNonce)
+					assert.EqualValues(nodeInfo.ServerEncryptionPrivateKeyBytes, testNodeInfo.ServerEncryptionPrivateKeyBytes)
 				}
 			}
 
