@@ -177,6 +177,17 @@ func TestRootCertificate_StoreLoad(t *testing.T) {
 				}
 			}
 
+			// Do a check on the registration nonce to ensure it's different
+			if !tt.skipStorage {
+				testCert := &types.RootCertificate{Id: root.Id}
+				require.NoError(storage.Load(ctx, testCert))
+				if tt.storeWrapper != nil {
+					assert.NotEqualValues(root.PrivateKeyPkcs8, testCert.PrivateKeyPkcs8)
+				} else {
+					assert.EqualValues(root.PrivateKeyPkcs8, testCert.PrivateKeyPkcs8)
+				}
+			}
+
 			loadId := nodeenrollment.CurrentId
 			if tt.loadIdOverride != nil {
 				loadId = nodeenrollment.KnownId(tt.loadIdOverride)
