@@ -5,7 +5,25 @@ import (
 	"time"
 )
 
+type KnownId string
+
 const (
+	MissingId KnownId = ""
+
+	// CurrentId is a const for when we are fetching the "current" value for
+	// various purposes
+	CurrentId KnownId = "current"
+
+	// NextId is a const for when we are fetching the "next" value for various
+	// purposes
+	NextId KnownId = "next"
+)
+
+const (
+	// NotBeforeDuration is the time to subtract from NotBefore to account for
+	// some clock skew
+	NotBeforeDuration = -5 * time.Minute
+
 	// DefaultCertificateLifetime is the default duration of a certificate, set
 	// to two weeks. Rotations should happen at roughly half this.
 	DefaultCertificateLifetime = time.Hour * 24 * 14
@@ -24,14 +42,6 @@ const (
 	// AuthenticateNodeNextProtoV1Prefix is the ALPN NextProto used when a node
 	// is trying to authenticate
 	AuthenticateNodeNextProtoV1Prefix = "v1-nodee-authenticate-node-"
-
-	// CurrentId is a const for when we are fetching the "current" value for
-	// various purposes
-	CurrentId = "current"
-
-	// NextId is a const for when we are fetching the "next" value for various
-	// purposes
-	NextId = "next"
 
 	// NonceSize is our defined nonce size, in bytes
 	NonceSize = 32

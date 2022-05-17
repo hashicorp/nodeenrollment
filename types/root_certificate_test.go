@@ -32,7 +32,7 @@ func TestRootCertificate_StoreLoad(t *testing.T) {
 	privPkcs8, err := x509.MarshalPKCS8PrivateKey(privKey)
 	require.NoError(t, err)
 	root := &types.RootCertificate{
-		Id:              nodeenrollment.CurrentId,
+		Id:              string(nodeenrollment.CurrentId),
 		PrivateKeyPkcs8: privPkcs8,
 	}
 
@@ -140,7 +140,7 @@ func TestRootCertificate_StoreLoad(t *testing.T) {
 		{
 			name: "store-valid-nextid",
 			storeSetupFn: func(root *types.RootCertificate) (*types.RootCertificate, string) {
-				root.Id = nodeenrollment.NextId
+				root.Id = string(nodeenrollment.NextId)
 				return root, ""
 			},
 			loadIdOverride: []byte(nodeenrollment.NextId),
@@ -179,7 +179,7 @@ func TestRootCertificate_StoreLoad(t *testing.T) {
 
 			loadId := nodeenrollment.CurrentId
 			if tt.loadIdOverride != nil {
-				loadId = string(tt.loadIdOverride)
+				loadId = nodeenrollment.KnownId(tt.loadIdOverride)
 			}
 			var loadStorage nodeenrollment.Storage
 			if !tt.loadStorageNil {
@@ -199,7 +199,7 @@ func TestRootCertificate_StoreLoad(t *testing.T) {
 
 			// Now test the multi-load function
 			certs, err := types.LoadRootCertificates(ctx, loadStorage, nodeenrollment.WithWrapper(tt.loadWrapper))
-			switch r.Id {
+			switch nodeenrollment.KnownId(r.Id) {
 			case nodeenrollment.CurrentId:
 				require.Error(err)
 				assert.Contains(err.Error(), nodeenrollment.ErrNotFound.Error())

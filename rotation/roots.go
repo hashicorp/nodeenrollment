@@ -36,6 +36,10 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
+	if nodeenrollment.IsNil(storage) {
+		return nil, fmt.Errorf("(%s) nil storage", op)
+	}
+
 	// Check our existing state. We don't use LoadRootCertificates because that
 	// errors on one certificate not found and we want to check that scenario.
 	var currentRoot, nextRoot *types.RootCertificate
@@ -48,7 +52,7 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 		return nil, fmt.Errorf("(%s) error checking for existing next root: %w", op, err)
 	}
 
-	var toMake []string
+	var toMake []nodeenrollment.KnownId
 	var nextCurrent, nextNext *types.RootCertificate
 	toMake, nextCurrent = decideWhatToMake(&types.RootCertificates{Current: currentRoot, Next: nextRoot})
 	switch {
@@ -95,14 +99,14 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 				DNSNames:              []string{nodeenrollment.CommonDnsName},
 				KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement | x509.KeyUsageCertSign,
 				SerialNumber:          big.NewInt(mathrand.Int63()),
-				NotBefore:             time.Now().Add(-5 * time.Minute),
+				NotBefore:             time.Now().Add(nodeenrollment.NotBeforeDuration),
 				NotAfter:              time.Now().Add(opts.WithCertificateLifetime),
 				BasicConstraintsValid: true,
 				IsCA:                  true,
 			}
 
 			if kind == nodeenrollment.NextId {
-				newRoot.Id = nodeenrollment.NextId
+				newRoot.Id = string(nodeenrollment.NextId)
 				nextNext = newRoot
 				// We want to shift next, but we can't do it blindly, in case
 				// they didn't call this often enough. So we have to look at the
@@ -117,7 +121,7 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 				template.NotBefore = template.NotBefore.Add(shift)
 				template.NotAfter = template.NotAfter.Add(shift)
 			} else {
-				newRoot.Id = nodeenrollment.CurrentId
+				newRoot.Id = string(nodeenrollment.CurrentId)
 				nextCurrent = newRoot
 			}
 
@@ -148,8 +152,8 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 
 // decideWhatToMake examines the current certs and figures out what to create,
 // and if only Next which cert (exisitng or next) should be the next current
-func decideWhatToMake(in *types.RootCertificates) ([]string, *types.RootCertificate) {
-	var toMake []string
+func decideWhatToMake(in *types.RootCertificates) ([]nodeenrollment.KnownId, *types.RootCertificate) {
+	var toMake []nodeenrollment.KnownId
 	var nextCurrent *types.RootCertificate
 	now := time.Now()
 	switch {
