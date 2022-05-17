@@ -20,8 +20,11 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 	const op = "nodeenrollment.types.(NodeInformation).Store"
 
 	switch {
-	case storage == nil:
+	case nodeenrollment.IsNil(storage):
 		return fmt.Errorf("(%s) storage is nil", op)
+
+	case nodeenrollment.IsNil(n):
+		return fmt.Errorf("(%s) node information is nil", op)
 
 	case len(n.ServerEncryptionPrivateKeyBytes) == 0:
 		// This isn't really a validation function, but we want to avoid
@@ -95,7 +98,7 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 	const op = "nodeenrollment.types.LoadNodeInformation"
 
 	switch {
-	case storage == nil:
+	case nodeenrollment.IsNil(storage):
 		return nil, fmt.Errorf("(%s) storage is nil", op)
 	case id == "":
 		return nil, fmt.Errorf("(%s) missing id", op)
