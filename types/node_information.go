@@ -6,7 +6,6 @@ import (
 
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
 	"github.com/hashicorp/nodeenrollment"
-	"golang.org/x/crypto/curve25519"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -161,22 +160,13 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 func (n *NodeInformation) X25519EncryptionKey() ([]byte, error) {
 	const op = "nodeenrollment.types.(NodeInformation).X25519EncryptionKey"
 
-	switch {
-	case nodeenrollment.IsNil(n):
+	if nodeenrollment.IsNil(n) {
 		return nil, fmt.Errorf("(%s) node information is empty", op)
-	case len(n.ServerEncryptionPrivateKeyBytes) == 0:
-		return nil, fmt.Errorf("(%s) encryption private key bytes is empty", op)
-	case n.ServerEncryptionPrivateKeyType != KEYTYPE_KEYTYPE_X25519:
-		return nil, fmt.Errorf("(%s) encryption private key type is not known", op)
-	case len(n.EncryptionPublicKeyBytes) == 0:
-		return nil, fmt.Errorf("(%s) encryption public key bytes is empty", op)
-	case n.EncryptionPublicKeyType != KEYTYPE_KEYTYPE_X25519:
-		return nil, fmt.Errorf("(%s) encryption public key type is not known", op)
 	}
 
-	out, err := curve25519.X25519(n.ServerEncryptionPrivateKeyBytes, n.EncryptionPublicKeyBytes)
+	out, err := X25519EncryptionKey(n.ServerEncryptionPrivateKeyBytes, n.ServerEncryptionPrivateKeyType, n.EncryptionPublicKeyBytes, n.EncryptionPublicKeyType)
 	if err != nil {
-		return nil, fmt.Errorf("(%s) error performing x25519 operation: %w", op, err)
+		return nil, fmt.Errorf("(%s) error deriving encryption key: %w", op, err)
 	}
 	return out, nil
 }
