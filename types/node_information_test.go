@@ -121,12 +121,11 @@ func TestNodeInformation_StoreLoad(t *testing.T) {
 			loadWrapper:  validWrapper,
 		},
 		{
-			name:                "invalid-no-store-wrapping",
-			loadWrapper:         validWrapper,
-			loadWantErrContains: "no wrapping key id",
+			name:        "valid-no-store-wrapping",
+			loadWrapper: validWrapper,
 		},
 		{
-			name:                "no-load-wrapping",
+			name:                "invalid-no-load-wrapping",
 			storeWrapper:        validWrapper,
 			loadWantErrContains: "wrapper not provided",
 		},
