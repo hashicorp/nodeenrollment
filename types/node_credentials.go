@@ -116,7 +116,7 @@ func (n *NodeCredentials) Store(ctx context.Context, storage nodeenrollment.Stor
 	return nil
 }
 
-// LoadNoadCredentials loads the node credentials from storage, unwrapping
+// LoadNodeCredentials loads the node credentials from storage, unwrapping
 // encrypted values if needed
 //
 // Supported options: WithWrapper
@@ -211,22 +211,13 @@ func LoadNodeCredentials(ctx context.Context, storage nodeenrollment.Storage, id
 // encryption key via X25519
 func (n *NodeCredentials) X25519EncryptionKey() ([]byte, error) {
 	const op = "nodeenrollment.types.(NodeCredentials).X25519EncryptionKey"
-	switch {
-	case nodeenrollment.IsNil(n):
+	if nodeenrollment.IsNil(n) {
 		return nil, fmt.Errorf("(%s) node credentials is empty", op)
-	case len(n.EncryptionPrivateKeyBytes) == 0:
-		return nil, fmt.Errorf("(%s) encryption private key bytes is empty", op)
-	case n.EncryptionPrivateKeyType != KEYTYPE_KEYTYPE_X25519:
-		return nil, fmt.Errorf("(%s) encryption private key type is not known", op)
-	case len(n.ServerEncryptionPublicKeyBytes) == 0:
-		return nil, fmt.Errorf("(%s) encryption public key bytes is empty", op)
-	case n.ServerEncryptionPublicKeyType != KEYTYPE_KEYTYPE_X25519:
-		return nil, fmt.Errorf("(%s) encryption public key type is not known", op)
 	}
 
-	out, err := curve25519.X25519(n.EncryptionPrivateKeyBytes, n.ServerEncryptionPublicKeyBytes)
+	out, err := X25519EncryptionKey(n.EncryptionPrivateKeyBytes, n.EncryptionPrivateKeyType, n.ServerEncryptionPublicKeyBytes, n.ServerEncryptionPublicKeyType)
 	if err != nil {
-		return nil, fmt.Errorf("(%s) error performing x25519 operation: %w", op, err)
+		return nil, fmt.Errorf("(%s) error deriving encryption key: %w", op, err)
 	}
 	return out, nil
 }

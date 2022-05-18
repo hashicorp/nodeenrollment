@@ -477,11 +477,7 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create node keys
-	nodePrivKey := make([]byte, curve25519.ScalarSize)
-	n, err = rand.Read(nodePrivKey)
-	require.NoError(t, err)
-	require.Equal(t, n, curve25519.ScalarSize)
-	nodePubKey, err := curve25519.X25519(nodePrivKey, curve25519.Basepoint)
+	nodePubKey, err := curve25519.X25519(nodeCreds.EncryptionPrivateKeyBytes, curve25519.Basepoint)
 	require.NoError(t, err)
 
 	// Create and sign encrypted creds
@@ -568,6 +564,10 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 				in.EncryptedNodeCredentials[30] = 'y'
 				return in, "message authentication failed"
 			},
+			storage: fileStorage,
+		},
+		{
+			name:    "valid",
 			storage: fileStorage,
 		},
 	}

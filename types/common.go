@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/nodeenrollment"
+	"golang.org/x/crypto/curve25519"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -30,4 +31,30 @@ func ValidateMessage(msg proto.Message) error {
 		return fmt.Errorf("(%s) unknown message type %T", op, t)
 	}
 	return nil
+}
+
+// X25519EncryptionKey takes in public and private keys and performs the X25519
+// operation on them.
+//
+// NOTE: This function is tested by tests on the individual implementations in
+// NodeCredentials and NodeInformation, which also perform nil checks, and which
+// are a thin wrapper around this.
+func X25519EncryptionKey(privKey []byte, privKeyType KEYTYPE, pubKey []byte, pubKeyType KEYTYPE) ([]byte, error) {
+	const op = "nodeenrollment.X25519EncryptionKey"
+	switch {
+	case len(privKey) == 0:
+		return nil, fmt.Errorf("(%s) private key bytes is empty", op)
+	case privKeyType != KEYTYPE_KEYTYPE_X25519:
+		return nil, fmt.Errorf("(%s) private key type is not known", op)
+	case len(pubKey) == 0:
+		return nil, fmt.Errorf("(%s) public key bytes is empty", op)
+	case pubKeyType != KEYTYPE_KEYTYPE_X25519:
+		return nil, fmt.Errorf("(%s) public key type is not known", op)
+	}
+
+	out, err := curve25519.X25519(privKey, pubKey)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error performing x25519 operation: %w", op, err)
+	}
+	return out, nil
 }
