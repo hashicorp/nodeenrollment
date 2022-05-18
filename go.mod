@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/google/go-cmp v0.5.7
 	github.com/hashicorp/go-kms-wrapping/v2 v2.0.5
+	github.com/hashicorp/go-multierror v1.1.1
 	github.com/sethvargo/go-diceware v0.3.0
 	github.com/stretchr/testify v1.7.1
 	golang.org/x/crypto v0.0.0-20220331220935-ae2d96664a29
@@ -15,6 +16,7 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
+	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/hashicorp/go-uuid v1.0.2 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
