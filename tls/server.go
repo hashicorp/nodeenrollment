@@ -13,6 +13,7 @@ import (
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/types"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // GenerateServerCertificates issues contemporaneous certificates for TLS
@@ -29,10 +30,10 @@ func GenerateServerCertificates(
 	const op = "nodeenrollment.tls.GenerateServerCertificates"
 
 	switch {
-	case storage == nil:
-		return nil, fmt.Errorf("(%s) nil storage passed in", op)
+	case nodeenrollment.IsNil(storage):
+		return nil, fmt.Errorf("(%s) nil storage", op)
 	case req == nil:
-		return nil, fmt.Errorf("(%s) nil request passed in", op)
+		return nil, fmt.Errorf("(%s) nil request", op)
 	}
 
 	opts, err := nodeenrollment.GetOpts(opt...)
@@ -43,9 +44,9 @@ func GenerateServerCertificates(
 	if !req.SkipVerification {
 		switch {
 		case len(req.Nonce) == 0:
-			return nil, fmt.Errorf("(%s) empty nonce passed in", op)
+			return nil, fmt.Errorf("(%s) empty nonce", op)
 		case len(req.NonceSignature) == 0:
-			return nil, fmt.Errorf("(%s) empty nonce signature passed in", op)
+			return nil, fmt.Errorf("(%s) empty nonce signature", op)
 		}
 		// Ensure node is authorized
 		keyId, err := nodeenrollment.KeyIdFromPkix(req.CertificatePublicKeyPkix)
@@ -65,7 +66,7 @@ func GenerateServerCertificates(
 			return nil, fmt.Errorf("(%s) node public key cannot be parsed: %w", op, err)
 		}
 		if !ed25519.Verify(nodePubKey.(ed25519.PublicKey), req.Nonce, req.NonceSignature) {
-			return nil, fmt.Errorf("(%s) request bytes signature verification failed", op)
+			return nil, fmt.Errorf("(%s) nonce signature verification failed", op)
 		}
 	}
 
@@ -123,22 +124,41 @@ func GenerateServerCertificates(
 		}
 
 		resp.CertificateBundles = append(resp.CertificateBundles, &types.CertificateBundle{
-			CertificateDer:   leafCert,
-			CaCertificateDer: serverCert.Raw,
+			CertificateDer:       leafCert,
+			CaCertificateDer:     serverCert.Raw,
+			CertificateNotBefore: timestamppb.New(serverCert.NotBefore),
+			CertificateNotAfter:  timestamppb.New(serverCert.NotAfter),
 		})
 	}
 
 	return resp, nil
 }
 
+// ServerConfig takes in a generate response and turns it into a server-side TLS
+// configuration
+//
+// Supported options: none, although options passed in here will be passed
+// through to the standard TLS configuration function (useful for tests,
+// mainly)
 func ServerConfig(
 	ctx context.Context,
-	resp *types.GenerateServerCertificatesResponse,
+	in *types.GenerateServerCertificatesResponse,
 	opt ...nodeenrollment.Option,
 ) (*tls.Config, error) {
 	const op = "nodeenrollment.tls.ServerConfig"
 
-	privKey, err := x509.ParsePKCS8PrivateKey(resp.CertificatePrivateKeyPkcs8)
+	switch {
+	case in == nil:
+		return nil, fmt.Errorf("(%s) nil input", op)
+	case len(in.CertificatePrivateKeyPkcs8) == 0:
+		return nil, fmt.Errorf("(%s) nil private key in input", op)
+	case in.CertificatePrivateKeyType != types.KEYTYPE_KEYTYPE_ED25519:
+		return nil, fmt.Errorf("(%s) unsupported private key type in input", op)
+	case len(in.CertificateBundles) != 2:
+		return nil, fmt.Errorf("(%s) invalid input certificate bundles, wanted 2 bundles, got %d", op, len(in.CertificateBundles))
+	}
+
+	privKey, err := x509.ParsePKCS8PrivateKey(in.CertificatePrivateKeyPkcs8)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error parsing private key: %w", op, err)
 	}
@@ -146,7 +166,7 @@ func ServerConfig(
 	var tlsCerts []tls.Certificate
 	rootPool := x509.NewCertPool()
 
-	for _, certBundle := range resp.CertificateBundles {
+	for _, certBundle := range in.CertificateBundles {
 		leafCert, err := x509.ParseCertificate(certBundle.CertificateDer)
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error parsing leaf certificate: %w", op, err)

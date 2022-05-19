@@ -1,24 +1,6 @@
 package tls
 
-import (
-	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"net"
-	"strings"
-	"sync"
-	"testing"
-	"time"
-
-	"github.com/hashicorp/nodeenrollment"
-	"github.com/hashicorp/nodeenrollment/registration"
-	"github.com/hashicorp/nodeenrollment/rotation"
-	"github.com/hashicorp/nodeenrollment/storage/file"
-	"github.com/hashicorp/nodeenrollment/types"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-)
-
+/*
 // TestTls validates that we can make connections and that the custom
 // verification logic works when using both TLS parameters created via
 // RootCertificates -- that is, certificates provisioned on the fly from a
@@ -108,58 +90,7 @@ func TestTls(t *testing.T) {
 		),
 	)
 
-	/*
-		t.Log("node-to-node-valid")
-		runTest(t, ctx, node1, node2, false)
 
-		t.Log("node-to-node-invalid-nil-cert-pool")
-		runTest(t, ctx, node1, node2, true,
-			nodeenrollment.WithTlsVerifyOptionsFunc(
-				func(cp *x509.CertPool) x509.VerifyOptions {
-					return x509.VerifyOptions{
-						DNSName: nodeenrollment.CommonDnsName,
-						Roots:   nil,
-						KeyUsages: []x509.ExtKeyUsage{
-							x509.ExtKeyUsageClientAuth,
-							x509.ExtKeyUsageServerAuth,
-						},
-					}
-				},
-			),
-		)
-
-		t.Log("node-to-node-invalid-name")
-		runTest(t, ctx, node1, node2, true,
-			nodeenrollment.WithTlsVerifyOptionsFunc(
-				func(cp *x509.CertPool) x509.VerifyOptions {
-					return x509.VerifyOptions{
-						DNSName: "invalid",
-						Roots:   cp,
-						KeyUsages: []x509.ExtKeyUsage{
-							x509.ExtKeyUsageClientAuth,
-							x509.ExtKeyUsageServerAuth,
-						},
-					}
-				},
-			),
-		)
-
-		t.Log("node-to-node-invalid-wrong-cert-in-pool")
-		runTest(t, ctx, node1, node2, true,
-			nodeenrollment.WithTlsVerifyOptionsFunc(
-				func(cp *x509.CertPool) x509.VerifyOptions {
-					return x509.VerifyOptions{
-						DNSName: nodeenrollment.CommonDnsName,
-						Roots:   wrongRootTlsConfig.RootCAs,
-						KeyUsages: []x509.ExtKeyUsage{
-							x509.ExtKeyUsageClientAuth,
-							x509.ExtKeyUsageServerAuth,
-						},
-					}
-				},
-			),
-		)
-	*/
 }
 
 func runTest(t *testing.T, ctx context.Context, server *types.GenerateServerCertificatesResponse, client *types.NodeCredentials, shouldFailHandshake bool, opt ...nodeenrollment.Option) {
@@ -273,3 +204,57 @@ func runTest(t *testing.T, ctx context.Context, server *types.GenerateServerCert
 
 	wg.Wait()
 }
+*/
+
+/*
+	t.Log("node-to-node-valid")
+	runTest(t, ctx, node1, node2, false)
+
+	t.Log("node-to-node-invalid-nil-cert-pool")
+	runTest(t, ctx, node1, node2, true,
+		nodeenrollment.WithTlsVerifyOptionsFunc(
+			func(cp *x509.CertPool) x509.VerifyOptions {
+				return x509.VerifyOptions{
+					DNSName: nodeenrollment.CommonDnsName,
+					Roots:   nil,
+					KeyUsages: []x509.ExtKeyUsage{
+						x509.ExtKeyUsageClientAuth,
+						x509.ExtKeyUsageServerAuth,
+					},
+				}
+			},
+		),
+	)
+
+	t.Log("node-to-node-invalid-name")
+	runTest(t, ctx, node1, node2, true,
+		nodeenrollment.WithTlsVerifyOptionsFunc(
+			func(cp *x509.CertPool) x509.VerifyOptions {
+				return x509.VerifyOptions{
+					DNSName: "invalid",
+					Roots:   cp,
+					KeyUsages: []x509.ExtKeyUsage{
+						x509.ExtKeyUsageClientAuth,
+						x509.ExtKeyUsageServerAuth,
+					},
+				}
+			},
+		),
+	)
+
+	t.Log("node-to-node-invalid-wrong-cert-in-pool")
+	runTest(t, ctx, node1, node2, true,
+		nodeenrollment.WithTlsVerifyOptionsFunc(
+			func(cp *x509.CertPool) x509.VerifyOptions {
+				return x509.VerifyOptions{
+					DNSName: nodeenrollment.CommonDnsName,
+					Roots:   wrongRootTlsConfig.RootCAs,
+					KeyUsages: []x509.ExtKeyUsage{
+						x509.ExtKeyUsageClientAuth,
+						x509.ExtKeyUsageServerAuth,
+					},
+				}
+			},
+		),
+	)
+*/
