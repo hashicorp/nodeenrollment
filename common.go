@@ -7,9 +7,25 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
+	"github.com/patrickmn/go-cache"
 	"github.com/sethvargo/go-diceware/diceware"
 	"golang.org/x/crypto/hkdf"
+)
+
+func init() {
+	DefaultRegistrationCache = cache.New(DefaultRegistrationCacheLifetime, DefaultRegistrationCacheCleanupInterval)
+}
+
+const (
+	DefaultRegistrationCacheLifetime        = time.Minute
+	DefaultRegistrationCacheCleanupInterval = 30 * time.Second
+)
+
+var (
+	DefaultRegistrationCache *cache.Cache
+	MaxCacheItems            = 50
 )
 
 func IsNil(in any) bool {

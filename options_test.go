@@ -84,4 +84,13 @@ func Test_GetOpts(t *testing.T) {
 		require.NoError(err)
 		assert.Equal([]byte("foobar"), opts.WithExpectedPublicKey)
 	})
+	t.Run("with-registration-cache", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.Equal(opts.WithRegistrationCache, DefaultRegistrationCache)
+		opts, err = GetOpts(WithRegistrationCache(nil))
+		require.NoError(err)
+		assert.Nil(opts.WithRegistrationCache)
+	})
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/types"
@@ -21,6 +22,7 @@ const (
 )
 
 type FileStorage struct {
+	sync.RWMutex
 	baseDir     string
 	skipCleanup bool
 }
@@ -169,6 +171,9 @@ func (ts *FileStorage) storeValue(ctx context.Context, id, subPath string, msg p
 		return errors.New("nil msg when storing value")
 	}
 
+	ts.Lock()
+	defer ts.Unlock()
+
 	dirPath := filepath.Join(ts.baseDir, subPath)
 	if err := os.MkdirAll(dirPath, 0o755); err != nil {
 		return fmt.Errorf("error creating necessary directory path at %s: %w", dirPath, err)
@@ -197,6 +202,9 @@ func (ts *FileStorage) loadValue(ctx context.Context, id, subPath string, result
 	case result == nil:
 		return errors.New("nil result value when loading value")
 	}
+
+	ts.RLock()
+	defer ts.RUnlock()
 
 	// This list is because the error for a file not found may not be portable,
 	// so it ensures that if a value isn't there that we properly error as such
@@ -239,6 +247,9 @@ func (ts *FileStorage) removeValue(ctx context.Context, id, subPath string) erro
 		return errors.New("no subPath given when removing value")
 	}
 
+	ts.Lock()
+	defer ts.Unlock()
+
 	path := filepath.Join(ts.baseDir, subPath, id)
 
 	if err := os.Remove(path); err != nil {
@@ -253,6 +264,9 @@ func (ts *FileStorage) listValues(ctx context.Context, subPath string) ([]string
 	if subPath == "" {
 		return nil, errors.New("no subPath given when removing value")
 	}
+
+	ts.RLock()
+	defer ts.RUnlock()
 
 	validPaths, err := getValidPaths(ctx, filepath.Join(ts.baseDir, subPath))
 	if err != nil {

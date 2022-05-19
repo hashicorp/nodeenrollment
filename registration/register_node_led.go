@@ -28,7 +28,8 @@ import (
 // being unable to list pending requests and their key IDs.
 //
 // Supported options: WithRandomReader, WithWrapper (passed through to
-// LoadNoadInformation, NodeInformation.Store, and LoadRootCeritificates)
+// LoadNoadInformation, NodeInformation.Store, and LoadRootCeritificates),
+// WithRegistrationCache
 func FetchNodeCredentials(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -86,21 +87,39 @@ func FetchNodeCredentials(
 		return nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
 	}
 
-	var register bool
-	nodeInfo, err := types.LoadNodeInformation(ctx, storage, keyId, opt...)
-	if err != nil {
-		if errors.Is(err, nodeenrollment.ErrNotFound) {
-			register = true
-		} else {
-			return nil, fmt.Errorf("(%s) error fetching node registration request: %w", op, err)
+	nodeInfoRaw, found := opts.WithRegistrationCache.Get(keyId)
+	var nodeInfo *types.NodeInformation
+	if found {
+		if nodeenrollment.IsNil(nodeInfoRaw) {
+			return nil, fmt.Errorf("(%s) registration request already exists but is nil", op)
+		}
+		var ok bool
+		nodeInfo, ok = nodeInfoRaw.(*types.NodeInformation)
+		if !ok {
+			return nil, fmt.Errorf("(%s) registration request already exists but is the wrong type %T", op, nodeInfoRaw)
+		}
+	} else {
+		// If it was authorized async while not in the cache, we may have it in storage already
+		nodeInfo, err = types.LoadNodeInformation(ctx, storage, keyId, opt...)
+		switch err {
+		case nil:
+			found = true
+		default:
+			if !errors.Is(err, nodeenrollment.ErrNotFound) {
+				return nil, fmt.Errorf("(%s) error looking up node information from storage: %w", op, err)
+			}
 		}
 	}
 
 	// If it's not found, it's the first request we've seen with this key ID, so
 	// store it
 	switch {
-	case register:
-		nodeInfo = &types.NodeInformation{
+	case !found:
+		if opts.WithRegistrationCache.ItemCount() >= nodeenrollment.MaxCacheItems {
+			return nil, fmt.Errorf("(%s) too many concurrent registration requests, try again later", op)
+		}
+
+		nodeInfo := &types.NodeInformation{
 			Id:                       keyId,
 			CertificatePublicKeyPkix: reqInfo.CertificatePublicKeyPkix,
 			CertificatePublicKeyType: reqInfo.CertificatePublicKeyType,
@@ -109,22 +128,22 @@ func FetchNodeCredentials(
 			RegistrationNonce:        reqInfo.Nonce,
 			FirstSeen:                timestamppb.Now(),
 		}
-		if err := nodeInfo.Store(ctx, storage, opt...); err != nil {
-			return nil, fmt.Errorf("(%s) error storing node registration request: %w", op, err)
-		}
+
+		opts.WithRegistrationCache.SetDefault(keyId, nodeInfo)
+
 		return &types.FetchNodeCredentialsResponse{
 			Authorized: false,
 		}, nil
 
-		// If we're here, we found the request already. See if it's authorized; if
-		// not return. Otherwise skip this and return the node credentials below.
+	// We've seen it but it's not authorized; bump the expiration and return
 	case !nodeInfo.Authorized:
+		opts.WithRegistrationCache.SetDefault(keyId, nodeInfoRaw)
+
 		return &types.FetchNodeCredentialsResponse{
 			Authorized: false,
 		}, nil
 
 	default:
-		// Verify the nonce matches, if so, move on and return the credentials
 		if subtle.ConstantTimeCompare(nodeInfo.RegistrationNonce, reqInfo.Nonce) != 1 {
 			return nil, fmt.Errorf("(%s) mismatched nonces between authorization and incoming fetch request", op)
 		}
@@ -179,8 +198,16 @@ func FetchNodeCredentials(
 
 // AuthorizeNode authorizes a node that has sent a registration request
 //
+// Note: There is a mutex here because unlike in the Fetch function, this
+// function generates new keys and persists them. Having the lock prevents some
+// potential overwriting behavior if this is called twice on the same node
+// before it's persisted/cache updated. The function doesn't take long and
+// shouldn't really be a deadlock risk; it's also safe to not lock in fetch
+// since it is either using a thread-safe cache lookup or a thread-safe and/or
+// transactional storage implementation.
+//
 // Supported options: WithWrapper (passed through to LoadNodeInformation,
-// LoadRootCertificates, and NodeInformation.Store)
+// LoadRootCertificates, and NodeInformation.Store), WithRegistrationCache
 func AuthorizeNode(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -200,9 +227,21 @@ func AuthorizeNode(
 		return fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
-	nodeInfo, err := types.LoadNodeInformation(ctx, storage, keyId, opt...)
-	if err != nil {
-		return fmt.Errorf("(%s) error loading node registration request: %w", op, err)
+	authorizeLock.Lock()
+	defer authorizeLock.Unlock()
+
+	nodeInfoRaw, found := opts.WithRegistrationCache.Get(keyId)
+	var nodeInfo *types.NodeInformation
+	if !found {
+		return fmt.Errorf("(%s) registration request with given key id not found", op)
+	}
+	if nodeenrollment.IsNil(nodeInfoRaw) {
+		return fmt.Errorf("(%s) registration request exists but is nil", op)
+	}
+	var ok bool
+	nodeInfo, ok = nodeInfoRaw.(*types.NodeInformation)
+	if !ok {
+		return fmt.Errorf("(%s) registration request exists but is the wrong type %T", op, nodeInfoRaw)
 	}
 
 	if nodeInfo.Authorized {
@@ -274,11 +313,16 @@ func AuthorizeNode(
 		nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE_KEYTYPE_X25519
 	}
 
-	// Now save the authorized status back to the registration request
+	// Now save the authorized status back to the registration request. Setting
+	// authorized here will also set it in the cache object.
 	nodeInfo.Authorized = true
 	if err := nodeInfo.Store(ctx, storage, opt...); err != nil {
 		return fmt.Errorf("(%s) error updating registration information: %w", op, err)
 	}
+	// Also put it back in the cache for easy lookup in fetch without having to
+	// hit storage, at least until the timeout expires -- but this will get the
+	// normal case
+	opts.WithRegistrationCache.SetDefault(nodeInfo.Id, nodeInfo)
 
 	return nil
 }

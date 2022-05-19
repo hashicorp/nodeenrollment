@@ -7,6 +7,7 @@ import (
 	"time"
 
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
+	"github.com/patrickmn/go-cache"
 )
 
 // GetOpts iterates the inbound Options and returns a struct and any errors
@@ -34,6 +35,7 @@ type Options struct {
 	WithWrapper              wrapping.Wrapper
 	WithSkipStorage          bool
 	WithExpectedPublicKey    []byte
+	WithRegistrationCache    *cache.Cache
 }
 
 // Option is a function that takes in an options struct and sets values or
@@ -44,6 +46,7 @@ func getDefaultOptions() *Options {
 	return &Options{
 		WithCertificateLifetime: DefaultCertificateLifetime,
 		WithRandomReader:        rand.Reader,
+		WithRegistrationCache:   DefaultRegistrationCache,
 	}
 }
 
@@ -108,6 +111,15 @@ func WithSkipStorage(with bool) Option {
 func WithExpectedPublicKey(with []byte) Option {
 	return func(o *Options) error {
 		o.WithExpectedPublicKey = with
+		return nil
+	}
+}
+
+// WithRegistrationCache allows specifying a registration cache to use,
+// especially useful in parallel tests
+func WithRegistrationCache(with *cache.Cache) Option {
+	return func(o *Options) error {
+		o.WithRegistrationCache = with
 		return nil
 	}
 }
