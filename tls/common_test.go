@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/nodeenrollment"
-	"github.com/hashicorp/nodeenrollment/noderegistration"
+	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/rotation"
 	"github.com/hashicorp/nodeenrollment/storage/file"
 	"github.com/hashicorp/nodeenrollment/types"
@@ -44,7 +44,7 @@ func TestTls(t *testing.T) {
 	roots, err := rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
-	node1, err := noderegistration.RegisterViaOperatorLedFlow(ctx, storage, &types.OperatorLedRegistrationRequest{})
+	node1, err := registration.RegisterViaOperatorLedFlow(ctx, storage, &types.OperatorLedRegistrationRequest{})
 	require.NoError(t, err)
 
 	// node2, err := noderegistration.RegisterViaOperatorLedFlow(ctx, storage, &types.OperatorLedRegistrationRequest{})
