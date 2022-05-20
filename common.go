@@ -11,6 +11,7 @@ import (
 
 	"github.com/patrickmn/go-cache"
 	"github.com/sethvargo/go-diceware/diceware"
+	"go.uber.org/atomic"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -25,7 +26,7 @@ const (
 
 var (
 	DefaultRegistrationCache *cache.Cache
-	MaxCacheItems            = 50
+	MaxCacheItems            = atomic.NewInt64(50)
 )
 
 func IsNil(in any) bool {

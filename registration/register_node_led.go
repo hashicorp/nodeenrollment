@@ -115,7 +115,7 @@ func FetchNodeCredentials(
 	// store it
 	switch {
 	case !found:
-		if opts.WithRegistrationCache.ItemCount() >= nodeenrollment.MaxCacheItems {
+		if opts.WithRegistrationCache.ItemCount() >= int(nodeenrollment.MaxCacheItems.Load()) {
 			return nil, fmt.Errorf("(%s) too many concurrent registration requests, try again later", op)
 		}
 
