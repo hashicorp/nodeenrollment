@@ -26,7 +26,7 @@ func GenerateServerCertificates(
 	storage nodeenrollment.Storage,
 	req *types.GenerateServerCertificatesRequest,
 	opt ...nodeenrollment.Option,
-) (ret *types.GenerateServerCertificatesResponse, retErr error) {
+) (*types.GenerateServerCertificatesResponse, error) {
 	const op = "nodeenrollment.tls.GenerateServerCertificates"
 
 	switch {

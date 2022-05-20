@@ -1,6 +1,26 @@
 package tls
 
-/*
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
+	"net"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/hashicorp/nodeenrollment"
+	"github.com/hashicorp/nodeenrollment/registration"
+	"github.com/hashicorp/nodeenrollment/rotation"
+	"github.com/hashicorp/nodeenrollment/storage/file"
+	"github.com/hashicorp/nodeenrollment/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
+)
+
 // TestTls validates that we can make connections and that the custom
 // verification logic works when using both TLS parameters created via
 // RootCertificates -- that is, certificates provisioned on the fly from a
@@ -10,12 +30,11 @@ package tls
 //
 // The structure of the test is a bit odd because running FailNow in a subtest
 // goroutine creates problems, and generally because of the client/server aspect
-// of things. So it's a function that tests client/server functionality to which
-// we pass in root/node or node/node, along with (possibly) a custom verify
-// function to ensure that things don't work outside of the expected case, and
-// whether or not we expect the handshake to succeed based on that verify
-// function.
-func TestTls(t *testing.T) {
+// of things. So it's a function that tests client/server functionality along
+// with (possibly) a custom verify function to ensure that things don't work
+// outside of the expected case, and whether or not we expect the handshake to
+// succeed based on that verify function.
+func TestStandardTls(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
@@ -23,7 +42,7 @@ func TestTls(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(storage.Cleanup)
 
-	roots, err := rotation.RotateRootCertificates(ctx, storage)
+	_, err = rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
 	node1, err := registration.RegisterViaOperatorLedFlow(ctx, storage, &types.OperatorLedRegistrationRequest{})
@@ -32,14 +51,14 @@ func TestTls(t *testing.T) {
 	// node2, err := noderegistration.RegisterViaOperatorLedFlow(ctx, storage, &types.OperatorLedRegistrationRequest{})
 	require.NoError(t, err)
 
-	t.Log("root-to-node-valid")
-	runTest(t, ctx, roots, node1, false)
+	t.Log("server-to-node-valid")
+	runTest(t, ctx, storage, node1, false)
 
-	t.Log("root-to-node-invalid-nonce")
-	runTest(t, ctx, roots, node1, true, nodeenrollment.WithNonce("foobar"))
+	t.Log("server-to-node-invalid-nonce")
+	runTest(t, ctx, storage, node1, true, nodeenrollment.WithNonce("foobar"))
 
-	t.Log("root-to-node-invalid-nil-cert-pool")
-	runTest(t, ctx, roots, node1, true,
+	t.Log("server-to-node-invalid-nil-cert-pool")
+	runTest(t, ctx, storage, node1, true,
 		nodeenrollment.WithTlsVerifyOptionsFunc(
 			func(cp *x509.CertPool) x509.VerifyOptions {
 				return x509.VerifyOptions{
@@ -54,8 +73,8 @@ func TestTls(t *testing.T) {
 		),
 	)
 
-	t.Log("root-to-node-invalid-name")
-	runTest(t, ctx, roots, node1, true,
+	t.Log("server-to-node-invalid-name")
+	runTest(t, ctx, storage, node1, true,
 		nodeenrollment.WithTlsVerifyOptionsFunc(
 			func(cp *x509.CertPool) x509.VerifyOptions {
 				return x509.VerifyOptions{
@@ -70,52 +89,60 @@ func TestTls(t *testing.T) {
 		),
 	)
 
-	wrongRoots, err := rotation.RotateRootCertificates(ctx, storage, nodeenrollment.WithSkipStorage(true))
-	require.NoError(t, err)
-	wrongRootTlsConfig, err := wrongRoots.TlsServerConfig(ctx)
-	require.NoError(t, err)
-	t.Log("root-to-node-invalid-wrong-cert-in-pool")
-	runTest(t, ctx, roots, node1, true,
-		nodeenrollment.WithTlsVerifyOptionsFunc(
-			func(cp *x509.CertPool) x509.VerifyOptions {
-				return x509.VerifyOptions{
-					DNSName: nodeenrollment.CommonDnsName,
-					Roots:   wrongRootTlsConfig.RootCAs,
-					KeyUsages: []x509.ExtKeyUsage{
-						x509.ExtKeyUsageClientAuth,
-						x509.ExtKeyUsageServerAuth,
-					},
-				}
-			},
-		),
-	)
-
-
+	/*
+		wrongRoots, err := rotation.RotateRootCertificates(ctx, storage, nodeenrollment.WithSkipStorage(true))
+		require.NoError(t, err)
+		wrongRootTlsConfig, err := wrongRoots.TlsServerConfig(ctx)
+		require.NoError(t, err)
+		t.Log("root-to-node-invalid-wrong-cert-in-pool")
+		runTest(t, ctx, roots, node1, true,
+			nodeenrollment.WithTlsVerifyOptionsFunc(
+				func(cp *x509.CertPool) x509.VerifyOptions {
+					return x509.VerifyOptions{
+						DNSName: nodeenrollment.CommonDnsName,
+						Roots:   wrongRootTlsConfig.RootCAs,
+						KeyUsages: []x509.ExtKeyUsage{
+							x509.ExtKeyUsageClientAuth,
+							x509.ExtKeyUsageServerAuth,
+						},
+					}
+				},
+			),
+		)
+	*/
 }
 
-func runTest(t *testing.T, ctx context.Context, server *types.GenerateServerCertificatesResponse, client *types.NodeCredentials, shouldFailHandshake bool, opt ...nodeenrollment.Option) {
+func runTest(t *testing.T, ctx context.Context, storage nodeenrollment.Storage, nodeCreds *types.NodeCredentials, shouldFailHandshake bool, opt ...nodeenrollment.Option) {
 	require, assert := require.New(t), assert.New(t)
 
 	opts, err := nodeenrollment.GetOpts(opt...)
 	require.NoError(err)
 
-	clientTlsConfig, err := ClientConfig(ctx, client, opt...)
+	// Get our client config
+	clientTlsConfig, err := ClientConfig(ctx, nodeCreds, opt...)
 	require.NoError(err)
 	require.NotNil(clientTlsConfig)
 
-	nonce := opts.WithNonce
-	if nonce == "" {
-		for _, name := range clientTlsConfig.NextProtos {
-			if strings.HasPrefix(name, nodeenrollment.AuthenticateNodeNextProtoV1Prefix) {
-				nonce = strings.TrimPrefix(name, nodeenrollment.AuthenticateNodeNextProtoV1Prefix)
-			}
-		}
+	// Pull out the client request and generated nonce and create the generate
+	// certs response from it
+	clientReqStr := CombineFromNextProtos(nodeenrollment.AuthenticateNodeNextProtoV1Prefix, clientTlsConfig.NextProtos)
+	clientReqBytes, err := base64.RawStdEncoding.DecodeString(clientReqStr)
+	require.NoError(err)
+	var clientReq types.GenerateServerCertificatesRequest
+	require.NoError(proto.Unmarshal(clientReqBytes, &clientReq))
+	if opts.WithNonce != "" {
+		// Turn off signature verification and set nonce to the passed-in value
+		clientReq.SkipVerification = true
+		clientReq.Nonce = []byte(opts.WithNonce)
 	}
+	generateRequest, err := GenerateServerCertificates(ctx, storage, &clientReq)
+	require.NoError(err)
 
-	serverTlsConfig, err := ServerConfig(ctx, server, append(opt, nodeenrollment.WithNonce(nonce))...)
-	serverTlsConfig.NextProtos = append(serverTlsConfig.NextProtos, nodeenrollment.AuthenticateNodeNextProtoV1Prefix+nonce)
+	// Get our server config
+	serverTlsConfig, err := ServerConfig(ctx, generateRequest)
 	require.NoError(err)
 	require.NotNil(serverTlsConfig)
+	serverTlsConfig.NextProtos = clientTlsConfig.NextProtos
 
 	// Make the TLS listener
 	wg := new(sync.WaitGroup)
@@ -135,7 +162,8 @@ func runTest(t *testing.T, ctx context.Context, server *types.GenerateServerCert
 	}
 	t.Cleanup(cancel)
 
-	// One goroutine accepts connections and sends them down the connection channel
+	// One goroutine accepts connections and sends them down the connection
+	// channel
 	go func() {
 		defer wg.Done()
 		for {
@@ -156,6 +184,8 @@ func runTest(t *testing.T, ctx context.Context, server *types.GenerateServerCert
 		}
 	}()
 
+	// The other pulls connections off the connection channel and attempts
+	// handshaking, logging an error on the server side
 	go func() {
 		defer wg.Done()
 		for {
@@ -177,6 +207,7 @@ func runTest(t *testing.T, ctx context.Context, server *types.GenerateServerCert
 		}
 	}()
 
+	// Now we dial on the client side and also check for errors (expected or not)
 	tlsConn, err := tls.Dial("tcp4", dialAddr, clientTlsConfig)
 	if shouldFailHandshake {
 		assert.Error(err)
@@ -185,6 +216,7 @@ func runTest(t *testing.T, ctx context.Context, server *types.GenerateServerCert
 	}
 	require.NoError(err)
 	require.NotNil(tlsConn)
+	// Loop and wait for handshake complete
 	for {
 		var done bool
 		select {
@@ -204,7 +236,6 @@ func runTest(t *testing.T, ctx context.Context, server *types.GenerateServerCert
 
 	wg.Wait()
 }
-*/
 
 /*
 	t.Log("node-to-node-valid")
