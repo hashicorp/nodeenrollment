@@ -131,7 +131,12 @@ func WithRegistrationCache(with RegistrationCache) Option {
 // negative means unlimited
 func WithRegistrationCacheMaxItems(with int) Option {
 	return func(o *Options) error {
-		o.WithRegistrationCacheMaxItems = with
+		switch with {
+		case 0:
+			o.WithRegistrationCacheMaxItems = DefaultMaxCacheItems
+		default:
+			o.WithRegistrationCacheMaxItems = with
+		}
 		return nil
 	}
 }

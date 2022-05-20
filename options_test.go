@@ -101,5 +101,8 @@ func Test_GetOpts(t *testing.T) {
 		opts, err = GetOpts(WithRegistrationCacheMaxItems(40))
 		require.NoError(err)
 		assert.Equal(opts.WithRegistrationCacheMaxItems, 40)
+		opts, err = GetOpts(WithRegistrationCacheMaxItems(40), WithRegistrationCacheMaxItems(0))
+		require.NoError(err)
+		assert.Equal(opts.WithRegistrationCacheMaxItems, DefaultMaxCacheItems)
 	})
 }
