@@ -74,11 +74,15 @@ func FetchNodeCredentials(
 		return nil, fmt.Errorf("(%s) invalid registration nonce", op)
 	}
 
-	pubKey, err := x509.ParsePKIXPublicKey(reqInfo.CertificatePublicKeyPkix)
+	pubKeyRaw, err := x509.ParsePKIXPublicKey(reqInfo.CertificatePublicKeyPkix)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error parsing public key: %w", op, err)
 	}
-	if !ed25519.Verify(pubKey.(ed25519.PublicKey), req.Bundle, req.BundleSignature) {
+	pubKey, ok := pubKeyRaw.(ed25519.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("(%s) error considering public key as ed25519: %w", op, err)
+	}
+	if !ed25519.Verify(pubKey, req.Bundle, req.BundleSignature) {
 		return nil, fmt.Errorf("(%s) request bytes signature verification failed", op)
 	}
 
@@ -233,7 +237,6 @@ func AuthorizeNode(
 	defer authorizeLock.Unlock()
 
 	nodeInfoRaw, found := opts.WithRegistrationCache.Get(keyId)
-	var nodeInfo *types.NodeInformation
 	if !found {
 		return fmt.Errorf("(%s) registration request with given key id not found", op)
 	}
@@ -241,7 +244,7 @@ func AuthorizeNode(
 		return fmt.Errorf("(%s) registration request exists but is nil", op)
 	}
 	var ok bool
-	nodeInfo, ok = nodeInfoRaw.(*types.NodeInformation)
+	nodeInfo, ok := nodeInfoRaw.(*types.NodeInformation)
 	if !ok {
 		return fmt.Errorf("(%s) registration request exists but is the wrong type %T", op, nodeInfoRaw)
 	}
