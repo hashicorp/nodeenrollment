@@ -6,6 +6,7 @@ require (
 	github.com/google/go-cmp v0.5.7
 	github.com/hashicorp/go-kms-wrapping/v2 v2.0.5
 	github.com/hashicorp/go-multierror v1.1.1
+	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/sethvargo/go-diceware v0.3.0
 	github.com/stretchr/testify v1.7.1
 	golang.org/x/crypto v0.0.0-20220331220935-ae2d96664a29

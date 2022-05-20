@@ -24,6 +24,8 @@ func TestNodeLedRegistration_AuthorizeNode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
+	registrationCache := new(nodeenrollment.TestCache)
+
 	fileStorage, err := file.NewFileStorage(ctx)
 	require.NoError(t, err)
 	t.Cleanup(fileStorage.Cleanup)
@@ -58,6 +60,8 @@ func TestNodeLedRegistration_AuthorizeNode(t *testing.T) {
 		storageNil bool
 		// Flag to set key ID to empty
 		keyIdEmpty bool
+		// Flag to not populate cache
+		cacheEmpty bool
 	}{
 		{
 			name:       "invalid-no-storage",
@@ -66,6 +70,10 @@ func TestNodeLedRegistration_AuthorizeNode(t *testing.T) {
 		{
 			name:       "invalid-no-key-id",
 			keyIdEmpty: true,
+		},
+		{
+			name:       "invalid-not-found-in-cache",
+			cacheEmpty: true,
 		},
 		{
 			name: "invalid-already-authorized",
@@ -84,6 +92,7 @@ func TestNodeLedRegistration_AuthorizeNode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require, assert := require.New(t), assert.New(t)
+			registrationCache.Flush()
 			ni := nodeInfo
 
 			storage := fileStorage
@@ -91,7 +100,11 @@ func TestNodeLedRegistration_AuthorizeNode(t *testing.T) {
 			if tt.setupFn != nil {
 				ni, wantErrContains = tt.setupFn(proto.Clone(ni).(*types.NodeInformation))
 			}
-			require.NoError(ni.Store(ctx, storage))
+			if !tt.cacheEmpty {
+				registrationCache.Set(ni.Id, ni)
+			} else {
+				wantErrContains = "given key id not found"
+			}
 
 			keyId := ni.Id
 			if tt.keyIdEmpty {
@@ -103,7 +116,7 @@ func TestNodeLedRegistration_AuthorizeNode(t *testing.T) {
 				wantErrContains = "nil storage" // this doesn't overlap in test cases
 			}
 
-			err = AuthorizeNode(ctx, storage, keyId)
+			err = AuthorizeNode(ctx, storage, keyId, nodeenrollment.WithRegistrationCache(registrationCache))
 			switch wantErrContains {
 			case "":
 				require.NoError(err)
@@ -144,6 +157,8 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
+	registrationCache := new(nodeenrollment.TestCache)
+
 	fileStorage, err := file.NewFileStorage(ctx)
 	require.NoError(t, err)
 	t.Cleanup(fileStorage.Cleanup)
@@ -167,6 +182,7 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 		require.NoError(t, proto.Unmarshal(in.Bundle, &info))
 		return &info
 	}
+	_ = unMarshal
 	reMarshalAndSign := func(t *testing.T, info *types.FetchNodeCredentialsInfo) ([]byte, []byte) {
 		bundle, err := proto.Marshal(info)
 		require.NoError(t, err)
@@ -178,6 +194,7 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 
 		return bundle, sigBytes
 	}
+	_ = reMarshalAndSign
 
 	// If testing already authorized path, add this to storage
 	baseNodeInfo := &types.NodeInformation{
@@ -200,6 +217,8 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 		storageNil bool
 		// Flag to trigger an AuthorizeNode call
 		runAuthorization bool
+		// Flag to override cache size
+		cacheMaxItemsOverride int
 	}{
 		{
 			name:       "invalid-no-storage",
@@ -326,17 +345,32 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 			},
 			runAuthorization: true,
 		},
+		{
+			name: "invalid-max-cache-size-too-small",
+			nodeInfoSetupFn: func(in *types.NodeInformation) *types.NodeInformation {
+				return in
+			},
+			cacheMaxItemsOverride: 1,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require, assert := require.New(t), assert.New(t)
+
+			registrationCache.Flush()
 
 			storage := fileStorage
 
 			var ni *types.NodeInformation
 			if tt.nodeInfoSetupFn != nil {
 				ni = tt.nodeInfoSetupFn(proto.Clone(baseNodeInfo).(*types.NodeInformation))
-				require.NoError(ni.Store(ctx, storage))
+				if tt.cacheMaxItemsOverride == 0 { // We don't want it found when we are overriding
+					registrationCache.Set(ni.Id, ni)
+				} else {
+					// Set something else to trigger the error case and make sure it's not found in storage
+					_ = storage.Remove(ctx, baseNodeInfo)
+					registrationCache.Set("foo", ni)
+				}
 			} else {
 				_ = storage.Remove(ctx, baseNodeInfo)
 			}
@@ -344,8 +378,8 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 			// Verify that if we don't have information stored we don't actually
 			// see it in storage
 			if ni == nil {
-				_, err := types.LoadNodeInformation(ctx, storage, baseNodeInfo.Id)
-				require.Contains(err.Error(), nodeenrollment.ErrNotFound.Error())
+				_, found := registrationCache.Get(baseNodeInfo.Id)
+				require.False(found)
 			}
 
 			var wantErrContains string
@@ -359,12 +393,16 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 				wantErrContains = "nil storage" // this doesn't overlap in test cases
 			}
 
-			if tt.runAuthorization {
-				// We have to _actually_ authorize the node here to populate things we need
-				require.NoError(AuthorizeNode(ctx, storage, baseNodeInfo.Id))
+			if tt.cacheMaxItemsOverride > 0 {
+				wantErrContains = "too many concurrent"
 			}
 
-			resp, err := FetchNodeCredentials(ctx, storage, fetch)
+			if tt.runAuthorization {
+				// We have to _actually_ authorize the node here to populate things we need
+				require.NoError(AuthorizeNode(ctx, storage, baseNodeInfo.Id, nodeenrollment.WithRegistrationCache(registrationCache)))
+			}
+
+			resp, err := FetchNodeCredentials(ctx, storage, fetch, nodeenrollment.WithRegistrationCache(registrationCache), nodeenrollment.WithRegistrationCacheMaxItems(tt.cacheMaxItemsOverride))
 			switch wantErrContains {
 			case "":
 				require.NoError(err)
@@ -380,8 +418,10 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 			switch {
 			case ni == nil:
 				// Register case -- we had no node info, should now see info but unauthorized
-				require.NoError(storage.Load(ctx, checkNodeInfo))
-				require.NotNil(checkNodeInfo)
+				checkNodeInfoRaw, found := registrationCache.Get(baseNodeInfo.Id)
+				require.True(found)
+				require.NotNil(checkNodeInfoRaw)
+				checkNodeInfo = checkNodeInfoRaw.(*types.NodeInformation)
 				assert.Equal(baseNodeInfo.Id, checkNodeInfo.Id)
 				assert.NotEmpty(checkNodeInfo.CertificatePublicKeyPkix)
 				assert.Equal(types.KEYTYPE_KEYTYPE_ED25519, checkNodeInfo.CertificatePublicKeyType)
@@ -409,6 +449,8 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 				require.True(ed25519.Verify(caKey.(ed25519.PublicKey), resp.EncryptedNodeCredentials, resp.EncryptedNodeCredentialsSignature))
 
 				// Now decrypt
+				require.NoError(storage.Load(ctx, checkNodeInfo))
+				require.NotNil(checkNodeInfo)
 				var receivedNodeCreds types.NodeCredentials
 				require.NoError(nodeenrollment.DecryptMessage(ctx, checkNodeInfo.Id, resp.EncryptedNodeCredentials, checkNodeInfo, &receivedNodeCreds))
 				assert.NotEmpty(receivedNodeCreds.ServerEncryptionPublicKeyBytes)

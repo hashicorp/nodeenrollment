@@ -7,10 +7,19 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/sethvargo/go-diceware/diceware"
 	"golang.org/x/crypto/hkdf"
 )
+
+const (
+	DefaultRegistrationCacheLifetime        = time.Minute
+	DefaultRegistrationCacheCleanupInterval = 30 * time.Second
+	DefaultMaxCacheItems                    = 50
+)
+
+var DefaultRegistrationCache = &wrappingCache{}
 
 func IsNil(in any) bool {
 	if in == nil {
