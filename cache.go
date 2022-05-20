@@ -10,8 +10,11 @@ type RegistrationCache interface {
 	Get(string) (any, bool)
 	Set(string, any)
 	ItemCount() int
+	Items() map[string]any
 	Flush()
 }
+
+type CacheItem struct{}
 
 var _ RegistrationCache = (*wrappingCache)(nil)
 
@@ -41,6 +44,16 @@ func (w *wrappingCache) Set(k string, x any) {
 func (w *wrappingCache) ItemCount() int {
 	w.init.Do(w.initCache)
 	return w.cache.ItemCount()
+}
+
+func (w *wrappingCache) Items() map[string]any {
+	w.init.Do(w.initCache)
+	items := w.cache.Items()
+	ret := make(map[string]any, len(items))
+	for key, item := range items {
+		ret[key] = item.Object
+	}
+	return ret
 }
 
 func (w *wrappingCache) Flush() {
