@@ -19,15 +19,17 @@ import (
 //
 // Supported options: WithRandomReader
 func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenrollment.Option) (*tls.Config, error) {
-	const op = "nodeenrollment.tls.TlsClientConfig"
+	const op = "nodeenrollment.tls.ClientConfig"
 
 	switch {
+	case n == nil:
+		return nil, fmt.Errorf("(%s) nil input", op)
 	case len(n.CertificatePrivateKeyPkcs8) == 0:
-		return nil, fmt.Errorf("(%s) no node certificate private key found in credentials", op)
-	case n.CertificatePrivateKeyType == types.KEYTYPE_KEYTYPE_UNSPECIFIED:
-		return nil, fmt.Errorf("(%s) node certificate private key type information not found in credentials", op)
-	case len(n.CertificateBundles) == 0:
-		return nil, fmt.Errorf("(%s) no certificate bundles found in credentials", op)
+		return nil, fmt.Errorf("(%s) no certificate private key", op)
+	case n.CertificatePrivateKeyType != types.KEYTYPE_KEYTYPE_ED25519:
+		return nil, fmt.Errorf("(%s) unsupported certificate private key type %s", op, n.CertificatePrivateKeyType.String())
+	case len(n.CertificateBundles) != 2:
+		return nil, fmt.Errorf("(%s) invalid certificate bundles found in credentials, wanted 2, got %d", op, len(n.CertificateBundles))
 	}
 
 	opts, err := nodeenrollment.GetOpts(opt...)
@@ -35,7 +37,7 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
-	var privKey crypto.PrivateKey
+	var signer crypto.Signer
 	// Parse certificate private key
 	{
 		key, err := x509.ParsePKCS8PrivateKey(n.CertificatePrivateKeyPkcs8)
@@ -46,12 +48,12 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 			return nil, fmt.Errorf("(%s) nil key after parsing certificate private key bytes", op)
 		case n.CertificatePrivateKeyType == types.KEYTYPE_KEYTYPE_ED25519:
 			var ok bool
-			if privKey, ok = key.(ed25519.PrivateKey); !ok {
-				return nil, fmt.Errorf("(%s) ed25519 certificate private key not able to be understood as such", op)
+			if signer, ok = key.(ed25519.PrivateKey); !ok {
+				return nil, fmt.Errorf("(%s) certificate key cannot be understood as ed25519 private key", op)
 			}
 		}
 
-		if privKey == nil {
+		if signer == nil {
 			return nil, fmt.Errorf("(%s) after parsing certificate private key information no signer found", op)
 		}
 	}
@@ -64,7 +66,7 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 	if w != nodeenrollment.NonceSize {
 		return nil, fmt.Errorf("(%s) invalid number of nonce bytes read, expected %d, got %d", op, nodeenrollment.NonceSize, w)
 	}
-	sigBytes, err := privKey.(crypto.Signer).Sign(opts.WithRandomReader, nonceBytes, crypto.Hash(0))
+	sigBytes, err := signer.Sign(opts.WithRandomReader, nonceBytes, crypto.Hash(0))
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error signing certs request data: %w", op, err)
 	}
@@ -118,7 +120,7 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 				certBundle.CertificateDer,
 				certBundle.CaCertificateDer,
 			},
-			PrivateKey: privKey,
+			PrivateKey: signer,
 			Leaf:       leafX509,
 		})
 	}

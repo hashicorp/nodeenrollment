@@ -274,7 +274,8 @@ func TestServerConfig(t *testing.T) {
 				assert.NotEmpty(tlsCert.Certificate[1])
 
 				verifyOpts := x509.VerifyOptions{
-					Roots: resp.RootCAs,
+					Roots:     resp.RootCAs,
+					KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 				}
 
 				if tlsCert.Leaf.NotBefore.Before(time.Now()) && tlsCert.Leaf.NotAfter.After(time.Now()) {
