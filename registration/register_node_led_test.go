@@ -11,7 +11,6 @@ import (
 	"github.com/hashicorp/nodeenrollment/rotation"
 	"github.com/hashicorp/nodeenrollment/storage/file"
 	"github.com/hashicorp/nodeenrollment/types"
-	"github.com/patrickmn/go-cache"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/curve25519"
@@ -25,7 +24,7 @@ func TestNodeLedRegistration_AuthorizeNode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	registrationCache := cache.New(nodeenrollment.DefaultRegistrationCacheLifetime, nodeenrollment.DefaultRegistrationCacheCleanupInterval)
+	registrationCache := new(nodeenrollment.TestCache)
 
 	fileStorage, err := file.NewFileStorage(ctx)
 	require.NoError(t, err)
@@ -95,7 +94,7 @@ func TestNodeLedRegistration_AuthorizeNode(t *testing.T) {
 			if tt.setupFn != nil {
 				ni, wantErrContains = tt.setupFn(proto.Clone(ni).(*types.NodeInformation))
 			}
-			registrationCache.SetDefault(ni.Id, ni)
+			registrationCache.Set(ni.Id, ni)
 
 			keyId := ni.Id
 			if tt.keyIdEmpty {
@@ -148,7 +147,7 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	registrationCache := cache.New(nodeenrollment.DefaultRegistrationCacheLifetime, nodeenrollment.DefaultRegistrationCacheCleanupInterval)
+	registrationCache := new(nodeenrollment.TestCache)
 
 	fileStorage, err := file.NewFileStorage(ctx)
 	require.NoError(t, err)
@@ -343,7 +342,7 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 			var ni *types.NodeInformation
 			if tt.nodeInfoSetupFn != nil {
 				ni = tt.nodeInfoSetupFn(proto.Clone(baseNodeInfo).(*types.NodeInformation))
-				registrationCache.SetDefault(ni.Id, ni)
+				registrationCache.Set(ni.Id, ni)
 			} else {
 				_ = storage.Remove(ctx, baseNodeInfo)
 			}

@@ -115,7 +115,9 @@ func FetchNodeCredentials(
 	// store it
 	switch {
 	case !found:
-		if opts.WithRegistrationCache.ItemCount() >= int(nodeenrollment.MaxCacheItems.Load()) {
+		switch {
+		case opts.WithRegistrationCacheMaxItems < 0:
+		case opts.WithRegistrationCache.ItemCount() >= int(opts.WithRegistrationCacheMaxItems):
 			return nil, fmt.Errorf("(%s) too many concurrent registration requests, try again later", op)
 		}
 
@@ -129,7 +131,7 @@ func FetchNodeCredentials(
 			FirstSeen:                timestamppb.Now(),
 		}
 
-		opts.WithRegistrationCache.SetDefault(keyId, nodeInfo)
+		opts.WithRegistrationCache.Set(keyId, nodeInfo)
 
 		return &types.FetchNodeCredentialsResponse{
 			Authorized: false,
@@ -137,7 +139,7 @@ func FetchNodeCredentials(
 
 	// We've seen it but it's not authorized; bump the expiration and return
 	case !nodeInfo.Authorized:
-		opts.WithRegistrationCache.SetDefault(keyId, nodeInfoRaw)
+		opts.WithRegistrationCache.Set(keyId, nodeInfoRaw)
 
 		return &types.FetchNodeCredentialsResponse{
 			Authorized: false,
@@ -322,7 +324,7 @@ func AuthorizeNode(
 	// Also put it back in the cache for easy lookup in fetch without having to
 	// hit storage, at least until the timeout expires -- but this will get the
 	// normal case
-	opts.WithRegistrationCache.SetDefault(nodeInfo.Id, nodeInfo)
+	opts.WithRegistrationCache.Set(nodeInfo.Id, nodeInfo)
 
 	return nil
 }

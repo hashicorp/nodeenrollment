@@ -9,25 +9,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/patrickmn/go-cache"
 	"github.com/sethvargo/go-diceware/diceware"
-	"go.uber.org/atomic"
 	"golang.org/x/crypto/hkdf"
 )
-
-func init() {
-	DefaultRegistrationCache = cache.New(DefaultRegistrationCacheLifetime, DefaultRegistrationCacheCleanupInterval)
-}
 
 const (
 	DefaultRegistrationCacheLifetime        = time.Minute
 	DefaultRegistrationCacheCleanupInterval = 30 * time.Second
+	DefaultMaxCacheItems                    = 50
 )
 
-var (
-	DefaultRegistrationCache *cache.Cache
-	MaxCacheItems            = atomic.NewInt64(50)
-)
+var DefaultRegistrationCache = &wrappingCache{}
 
 func IsNil(in any) bool {
 	if in == nil {

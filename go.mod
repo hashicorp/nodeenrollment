@@ -8,7 +8,6 @@ require (
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/sethvargo/go-diceware v0.3.0
 	github.com/stretchr/testify v1.7.1
-	go.uber.org/atomic v1.9.0
 	golang.org/x/crypto v0.0.0-20220331220935-ae2d96664a29
 	google.golang.org/grpc v1.46.2
 	google.golang.org/protobuf v1.27.1
