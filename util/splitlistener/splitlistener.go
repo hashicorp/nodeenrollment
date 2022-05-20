@@ -3,6 +3,7 @@ package splitlistener
 import (
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net"
 
 	"github.com/hashicorp/nodeenrollment"
@@ -55,13 +56,10 @@ func NewSplitListener(baseLn net.Listener) *SplitListener {
 }
 
 // Stop stops the listener. If this is the first time it's called it will close
-// the baby listeners' incoming channel (causing them to terminate) and will
-// close the underlying base listener, returning that error. On any future call
-// it is a noop.
+// the underlying listener (causing the Start function to exit) and return that
+// error. On any future call it is a noop.
 func (l *SplitListener) Stop() error {
 	if l.stopped.CAS(false, true) {
-		close(l.nodeeBabyListener.incoming)
-		close(l.otherBabyListener.incoming)
 		return l.baseLn.Close()
 	}
 	return nil
@@ -70,14 +68,26 @@ func (l *SplitListener) Stop() error {
 // Start starts the listener running. It will run until Stop is called, causing
 // the base listener to Close and the Accept to return a non-temporary error.
 //
-// Any temporary errors encountered will
+// Any temporary errors encountered will just cause that connection to be closed.
 func (l *SplitListener) Start() error {
+	defer func() {
+		close(l.nodeeBabyListener.incoming)
+		close(l.otherBabyListener.incoming)
+	}()
 	for {
+		if l.stopped.Load() {
+			return net.ErrClosed
+		}
 		conn, err := l.baseLn.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return err
+			}
 			if tempErr, ok := err.(interface {
 				Temporary() bool
 			}); ok && tempErr.Temporary() {
+				closeErr := conn.Close()
+				_ = closeErr // ignore error
 				continue
 			}
 			return err
@@ -86,14 +96,18 @@ func (l *SplitListener) Start() error {
 		if !ok {
 			// This is an error; put it out the other listener but as a temp
 			// error so we accept more
+			_ = tlsConn.Close()
 			l.otherBabyListener.incoming <- splitConn{err: temperror.New(errors.New("expected tls connection but it is not"))}
 			continue
 		}
 		if !tlsConn.ConnectionState().HandshakeComplete {
-			// By the time we get this the handshake should be complete; if not
-			// we don't know what protocol was negotiated and can't proceed.
-			l.otherBabyListener.incoming <- splitConn{err: temperror.New(errors.New("tls handshake is not complete"))}
-			continue
+			if err := tlsConn.Handshake(); err != nil {
+				// Without a successful handshake we can't know which proto;
+				// send down the other listener
+				_ = tlsConn.Close()
+				l.otherBabyListener.incoming <- splitConn{err: temperror.New(fmt.Errorf("tls handshake resulted in error: %w", err))}
+				continue
+			}
 		}
 
 		switch nodeenrollment.ContainsKnownAlpnProto(tlsConn.ConnectionState().NegotiatedProtocol) {
