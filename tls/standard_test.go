@@ -2,10 +2,11 @@ package tls
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -45,20 +46,22 @@ func TestStandardTls(t *testing.T) {
 	_, err = rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
-	node1, err := registration.RegisterViaOperatorLedFlow(ctx, storage, &types.OperatorLedRegistrationRequest{})
+	node, err := registration.RegisterViaOperatorLedFlow(ctx, storage, &types.OperatorLedRegistrationRequest{})
 	require.NoError(t, err)
 
-	// node2, err := noderegistration.RegisterViaOperatorLedFlow(ctx, storage, &types.OperatorLedRegistrationRequest{})
+	t.Log("valid")
+	runTest(t, ctx, storage, node, false)
+
+	t.Log("invalid-nonce")
+	runTest(t, ctx, storage, node, true, nodeenrollment.WithNonce("foobar"))
+
+	t.Log("invalid-expected-public-key")
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
+	runTest(t, ctx, storage, node, true, nodeenrollment.WithExpectedPublicKey(pub))
 
-	t.Log("server-to-node-valid")
-	runTest(t, ctx, storage, node1, false)
-
-	t.Log("server-to-node-invalid-nonce")
-	runTest(t, ctx, storage, node1, true, nodeenrollment.WithNonce("foobar"))
-
-	t.Log("server-to-node-invalid-nil-cert-pool")
-	runTest(t, ctx, storage, node1, true,
+	t.Log("invalid-nil-cert-pool")
+	runTest(t, ctx, storage, node, true,
 		nodeenrollment.WithTlsVerifyOptionsFunc(
 			func(cp *x509.CertPool) x509.VerifyOptions {
 				return x509.VerifyOptions{
@@ -73,8 +76,8 @@ func TestStandardTls(t *testing.T) {
 		),
 	)
 
-	t.Log("server-to-node-invalid-name")
-	runTest(t, ctx, storage, node1, true,
+	t.Log("invalid-name")
+	runTest(t, ctx, storage, node, true,
 		nodeenrollment.WithTlsVerifyOptionsFunc(
 			func(cp *x509.CertPool) x509.VerifyOptions {
 				return x509.VerifyOptions{
@@ -89,27 +92,37 @@ func TestStandardTls(t *testing.T) {
 		),
 	)
 
-	/*
-		wrongRoots, err := rotation.RotateRootCertificates(ctx, storage, nodeenrollment.WithSkipStorage(true))
-		require.NoError(t, err)
-		wrongRootTlsConfig, err := wrongRoots.TlsServerConfig(ctx)
-		require.NoError(t, err)
-		t.Log("root-to-node-invalid-wrong-cert-in-pool")
-		runTest(t, ctx, roots, node1, true,
-			nodeenrollment.WithTlsVerifyOptionsFunc(
-				func(cp *x509.CertPool) x509.VerifyOptions {
-					return x509.VerifyOptions{
-						DNSName: nodeenrollment.CommonDnsName,
-						Roots:   wrongRootTlsConfig.RootCAs,
-						KeyUsages: []x509.ExtKeyUsage{
-							x509.ExtKeyUsageClientAuth,
-							x509.ExtKeyUsageServerAuth,
-						},
-					}
-				},
-			),
-		)
-	*/
+	t.Log("invalid-wrong-cert-in-pool")
+	// Create a new root set (on new storage since rotating won't do anything
+	// right now due to validity windows)
+	wrongStorage, err := file.NewFileStorage(ctx)
+	require.NoError(t, err)
+	t.Cleanup(wrongStorage.Cleanup)
+	wrongRoots, err := rotation.RotateRootCertificates(ctx, wrongStorage, nodeenrollment.WithSkipStorage(true))
+	require.NoError(t, err)
+	wrongRootPool := x509.NewCertPool()
+	wrongRootCurrentCert, err := x509.ParseCertificate(wrongRoots.Current.CertificateDer)
+	require.NoError(t, err)
+	wrongRootPool.AddCert(wrongRootCurrentCert)
+	require.NoError(t, err)
+	wrongRootNextCert, err := x509.ParseCertificate(wrongRoots.Next.CertificateDer)
+	require.NoError(t, err)
+	wrongRootPool.AddCert(wrongRootNextCert)
+	require.NoError(t, err)
+	runTest(t, ctx, storage, node, true,
+		nodeenrollment.WithTlsVerifyOptionsFunc(
+			func(cp *x509.CertPool) x509.VerifyOptions {
+				return x509.VerifyOptions{
+					DNSName: nodeenrollment.CommonDnsName,
+					Roots:   wrongRootPool,
+					KeyUsages: []x509.ExtKeyUsage{
+						x509.ExtKeyUsageClientAuth,
+						x509.ExtKeyUsageServerAuth,
+					},
+				}
+			},
+		),
+	)
 }
 
 func runTest(t *testing.T, ctx context.Context, storage nodeenrollment.Storage, nodeCreds *types.NodeCredentials, shouldFailHandshake bool, opt ...nodeenrollment.Option) {
@@ -135,19 +148,18 @@ func runTest(t *testing.T, ctx context.Context, storage nodeenrollment.Storage, 
 		clientReq.SkipVerification = true
 		clientReq.Nonce = []byte(opts.WithNonce)
 	}
-	generateRequest, err := GenerateServerCertificates(ctx, storage, &clientReq)
+	generateRequest, err := GenerateServerCertificates(ctx, storage, &clientReq, opt...)
 	require.NoError(err)
 
 	// Get our server config
-	serverTlsConfig, err := ServerConfig(ctx, generateRequest)
+	serverTlsConfig, err := ServerConfig(ctx, generateRequest, opt...)
 	require.NoError(err)
 	require.NotNil(serverTlsConfig)
 	serverTlsConfig.NextProtos = clientTlsConfig.NextProtos
 
 	// Make the TLS listener
 	wg := new(sync.WaitGroup)
-	wg.Add(2)
-	connCh := make(chan net.Conn)
+	wg.Add(1)
 	listener, err := tls.Listen("tcp4", "127.0.0.1:0", serverTlsConfig)
 	require.NoError(err)
 	dialAddr := listener.Addr().String()
@@ -162,8 +174,7 @@ func runTest(t *testing.T, ctx context.Context, storage nodeenrollment.Storage, 
 	}
 	t.Cleanup(cancel)
 
-	// One goroutine accepts connections and sends them down the connection
-	// channel
+	// Accept a connection and test handshake on the server side
 	go func() {
 		defer wg.Done()
 		for {
@@ -177,22 +188,10 @@ func runTest(t *testing.T, ctx context.Context, storage nodeenrollment.Storage, 
 			}
 			select {
 			case <-cancelCtx.Done():
+				// If we hit this we didn't get through handshaking, ensure we fail
+				assert.True(false)
 				return
 			default:
-				connCh <- conn
-			}
-		}
-	}()
-
-	// The other pulls connections off the connection channel and attempts
-	// handshaking, logging an error on the server side
-	go func() {
-		defer wg.Done()
-		for {
-			select {
-			case <-cancelCtx.Done():
-				return
-			case conn := <-connCh:
 				tlsConn := conn.(*tls.Conn)
 				assert.False(tlsConn.ConnectionState().HandshakeComplete)
 				err := tlsConn.HandshakeContext(cancelCtx)
@@ -203,11 +202,12 @@ func runTest(t *testing.T, ctx context.Context, storage nodeenrollment.Storage, 
 				}
 				assert.NoError(err)
 				assert.True(tlsConn.ConnectionState().HandshakeComplete)
+				return
 			}
 		}
 	}()
 
-	// Now we dial on the client side and also check for errors (expected or not)
+	// Dial on the client side and also check for errors (expected or not)
 	tlsConn, err := tls.Dial("tcp4", dialAddr, clientTlsConfig)
 	if shouldFailHandshake {
 		assert.Error(err)
@@ -236,56 +236,3 @@ func runTest(t *testing.T, ctx context.Context, storage nodeenrollment.Storage, 
 
 	wg.Wait()
 }
-
-/*
-	t.Log("node-to-node-valid")
-	runTest(t, ctx, node1, node2, false)
-
-	t.Log("node-to-node-invalid-nil-cert-pool")
-	runTest(t, ctx, node1, node2, true,
-		nodeenrollment.WithTlsVerifyOptionsFunc(
-			func(cp *x509.CertPool) x509.VerifyOptions {
-				return x509.VerifyOptions{
-					DNSName: nodeenrollment.CommonDnsName,
-					Roots:   nil,
-					KeyUsages: []x509.ExtKeyUsage{
-						x509.ExtKeyUsageClientAuth,
-						x509.ExtKeyUsageServerAuth,
-					},
-				}
-			},
-		),
-	)
-
-	t.Log("node-to-node-invalid-name")
-	runTest(t, ctx, node1, node2, true,
-		nodeenrollment.WithTlsVerifyOptionsFunc(
-			func(cp *x509.CertPool) x509.VerifyOptions {
-				return x509.VerifyOptions{
-					DNSName: "invalid",
-					Roots:   cp,
-					KeyUsages: []x509.ExtKeyUsage{
-						x509.ExtKeyUsageClientAuth,
-						x509.ExtKeyUsageServerAuth,
-					},
-				}
-			},
-		),
-	)
-
-	t.Log("node-to-node-invalid-wrong-cert-in-pool")
-	runTest(t, ctx, node1, node2, true,
-		nodeenrollment.WithTlsVerifyOptionsFunc(
-			func(cp *x509.CertPool) x509.VerifyOptions {
-				return x509.VerifyOptions{
-					DNSName: nodeenrollment.CommonDnsName,
-					Roots:   wrongRootTlsConfig.RootCAs,
-					KeyUsages: []x509.ExtKeyUsage{
-						x509.ExtKeyUsageClientAuth,
-						x509.ExtKeyUsageServerAuth,
-					},
-				}
-			},
-		),
-	)
-*/
