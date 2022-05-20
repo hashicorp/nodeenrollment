@@ -27,13 +27,15 @@ func GetOpts(opt ...Option) (*Options, error) {
 // Options contains various options. The values are exported since the options
 // are parsed in various other packages.
 type Options struct {
-	WithCertificateLifetime  time.Duration
-	WithRandomReader         io.Reader
-	WithNonce                string
-	WithTlsVerifyOptionsFunc func(*x509.CertPool) x509.VerifyOptions
-	WithWrapper              wrapping.Wrapper
-	WithSkipStorage          bool
-	WithExpectedPublicKey    []byte
+	WithCertificateLifetime       time.Duration
+	WithRandomReader              io.Reader
+	WithNonce                     string
+	WithTlsVerifyOptionsFunc      func(*x509.CertPool) x509.VerifyOptions
+	WithWrapper                   wrapping.Wrapper
+	WithSkipStorage               bool
+	WithExpectedPublicKey         []byte
+	WithRegistrationCache         RegistrationCache
+	WithRegistrationCacheMaxItems int
 }
 
 // Option is a function that takes in an options struct and sets values or
@@ -42,8 +44,10 @@ type Option func(*Options) error
 
 func getDefaultOptions() *Options {
 	return &Options{
-		WithCertificateLifetime: DefaultCertificateLifetime,
-		WithRandomReader:        rand.Reader,
+		WithCertificateLifetime:       DefaultCertificateLifetime,
+		WithRandomReader:              rand.Reader,
+		WithRegistrationCache:         DefaultRegistrationCache,
+		WithRegistrationCacheMaxItems: DefaultMaxCacheItems,
 	}
 }
 
@@ -108,6 +112,31 @@ func WithSkipStorage(with bool) Option {
 func WithExpectedPublicKey(with []byte) Option {
 	return func(o *Options) error {
 		o.WithExpectedPublicKey = with
+		return nil
+	}
+}
+
+// WithRegistrationCache allows specifying a registration cache to use,
+// especially useful in parallel tests. maxItems specifies a maximum number of
+// items allowed;
+func WithRegistrationCache(with RegistrationCache) Option {
+	return func(o *Options) error {
+		o.WithRegistrationCache = with
+		return nil
+	}
+}
+
+// WithRegistrationCacheMaxItems allows specifying an override for the number of
+// max allowed cache items for the call; zero means use the default and anything
+// negative means unlimited
+func WithRegistrationCacheMaxItems(with int) Option {
+	return func(o *Options) error {
+		switch with {
+		case 0:
+			o.WithRegistrationCacheMaxItems = DefaultMaxCacheItems
+		default:
+			o.WithRegistrationCacheMaxItems = with
+		}
 		return nil
 	}
 }

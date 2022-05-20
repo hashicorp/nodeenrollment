@@ -113,8 +113,6 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 	}
 
 	switch {
-	case opts.WithWrapper != nil && nodeInfo.WrappingKeyId == "":
-		return nil, fmt.Errorf("(%s) wrapper provided but node information has no wrapping key id", op)
 	case opts.WithWrapper == nil && nodeInfo.WrappingKeyId != "":
 		return nil, fmt.Errorf("(%s) node information has encrypted parts with wrapper key id %q but wrapper not provided", op, nodeInfo.WrappingKeyId)
 	case nodeInfo.WrappingKeyId != "":

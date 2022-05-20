@@ -148,8 +148,6 @@ func LoadNodeCredentials(ctx context.Context, storage nodeenrollment.Storage, id
 	}
 
 	switch {
-	case opts.WithWrapper != nil && nodeCreds.WrappingKeyId == "":
-		return nil, fmt.Errorf("(%s) wrapper provided but node credentials has no wrapping key id", op)
 	case opts.WithWrapper == nil && nodeCreds.WrappingKeyId != "":
 		return nil, fmt.Errorf("(%s) node credentials has encrypted parts with wrapper key id %q but wrapper not provided", op, nodeCreds.WrappingKeyId)
 	case nodeCreds.WrappingKeyId != "":

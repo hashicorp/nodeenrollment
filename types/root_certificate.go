@@ -107,8 +107,6 @@ func LoadRootCertificate(ctx context.Context, storage nodeenrollment.Storage, id
 	}
 
 	switch {
-	case opts.WithWrapper != nil && root.WrappingKeyId == "":
-		return nil, fmt.Errorf("(%s) wrapper provided but root has no wrapping key id", op)
 	case opts.WithWrapper == nil && root.WrappingKeyId != "":
 		return nil, fmt.Errorf("(%s) root has encrypted parts with wrapper key id %q but wrapper not provided", op, root.WrappingKeyId)
 	case root.WrappingKeyId != "":
