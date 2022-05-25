@@ -17,14 +17,14 @@ type splitConn struct {
 }
 
 // SplitListener takes in a base listener and sends incoming connections to one
-// of two listeners: one that is used if the TLS connection negoatiated to one
+// of two listeners: one that is used if the TLS connection negotiated to one
 // of this package's standard ALPN proto values and one if not.
 //
 // It is required that the base listener return *tls.Conn values on Accept.
 //
 // This package can be useful for integration with systems that expect to do
 // their own handling of connections off of a net.Listener. One such example is
-// gRPC which expects to be handed a listener and has deprecated any abiliy to
+// gRPC which expects to be handed a listener and has deprecated any ability to
 // simply hand it a connection. The NodeEnrollmentListener can be given to the
 // gRPC server and the OtherListener can be used for other purposes.
 //
@@ -86,8 +86,7 @@ func (l *SplitListener) Start() error {
 			if tempErr, ok := err.(interface {
 				Temporary() bool
 			}); ok && tempErr.Temporary() {
-				closeErr := conn.Close()
-				_ = closeErr // ignore error
+				_ = conn.Close // ignore error
 				continue
 			}
 			return err
@@ -119,7 +118,7 @@ func (l *SplitListener) Start() error {
 	}
 }
 
-// NodeEnrollmentListner returns the listener receiving connections related to
+// NodeEnrollmentListener returns the listener receiving connections related to
 // this library
 func (l *SplitListener) NodeEnrollmentListener() net.Listener {
 	return l.nodeeBabyListener
@@ -150,7 +149,7 @@ func (l *babySplitListener) Close() error {
 // Accept satisfies the net.Listener interface and returns any connections that
 // have been sent to this listener. Accept will return when the channel is shut
 // down, which happens when Stop is called on the SplitListener, which also
-// closes the underlying listner, hence once the range ends we return
+// closes the underlying listener, hence once the range ends we return
 // net.ErrClosed.
 func (l *babySplitListener) Accept() (net.Conn, error) {
 	for in := range l.incoming {
