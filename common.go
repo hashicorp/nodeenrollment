@@ -31,6 +31,19 @@ func IsNil(in any) bool {
 	return reflect.ValueOf(in).IsNil()
 }
 
+// ContainsKnownAlpnProto performs a simple check to see if one our defined
+// ALPN protos is contained in the given set
+func ContainsKnownAlpnProto(protos ...string) bool {
+	for _, p := range protos {
+		switch {
+		case strings.HasPrefix(p, FetchNodeCredsNextProtoV1Prefix),
+			strings.HasPrefix(p, AuthenticateNodeNextProtoV1Prefix):
+			return true
+		}
+	}
+	return false
+}
+
 // SubjectKeyInfoAndKeyIdFromPubKey returns the PKIX-encoded public key and the
 // library-specific key ID derived from it
 func SubjectKeyInfoAndKeyIdFromPubKey(pubKey crypto.PublicKey) ([]byte, string, error) {
