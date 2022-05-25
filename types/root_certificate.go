@@ -166,7 +166,7 @@ func (r *RootCertificate) SigningParams(ctx context.Context) (*x509.Certificate,
 		return nil, nil, fmt.Errorf("(%s) root certificate is nil", op)
 	case len(r.PrivateKeyPkcs8) == 0:
 		return nil, nil, fmt.Errorf("(%s) no private key found in root", op)
-	case r.PrivateKeyType == KEYTYPE_KEYTYPE_UNSPECIFIED:
+	case r.PrivateKeyType == KEYTYPE_UNSPECIFIED:
 		return nil, nil, fmt.Errorf("(%s) private key type information not found in root", op)
 	case len(r.CertificateDer) == 0:
 		return nil, nil, fmt.Errorf("(%s) no certificate found in root", op)
@@ -180,7 +180,7 @@ func (r *RootCertificate) SigningParams(ctx context.Context) (*x509.Certificate,
 	// Parse private key
 	{
 		switch r.PrivateKeyType {
-		case KEYTYPE_KEYTYPE_ED25519:
+		case KEYTYPE_ED25519:
 			raw, err := x509.ParsePKCS8PrivateKey(r.PrivateKeyPkcs8)
 			if err != nil {
 				return nil, nil, fmt.Errorf("(%s) error unmarshaling private key: %w", op, err)

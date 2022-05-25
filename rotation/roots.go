@@ -83,7 +83,7 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 			if err != nil {
 				return nil, fmt.Errorf("(%s) error marshaling certificate private key: %w", op, err)
 			}
-			newRoot.PrivateKeyType = types.KEYTYPE_KEYTYPE_ED25519
+			newRoot.PrivateKeyType = types.KEYTYPE_ED25519
 
 			newRoot.PublicKeyPkix, _, err = nodeenrollment.SubjectKeyInfoAndKeyIdFromPubKey(pubKey)
 			if err != nil {

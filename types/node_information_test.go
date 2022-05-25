@@ -221,9 +221,9 @@ func TestNodeInformation_X25519(t *testing.T) {
 
 	nodeInfo := &types.NodeInformation{
 		ServerEncryptionPrivateKeyBytes: privKey,
-		ServerEncryptionPrivateKeyType:  types.KEYTYPE_KEYTYPE_X25519,
+		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
 		EncryptionPublicKeyBytes:        pubKey,
-		EncryptionPublicKeyType:         types.KEYTYPE_KEYTYPE_X25519,
+		EncryptionPublicKeyType:         types.KEYTYPE_X25519,
 	}
 
 	tests := []struct {
@@ -247,7 +247,7 @@ func TestNodeInformation_X25519(t *testing.T) {
 		{
 			name: "invalid-bad-privkey-type",
 			setupFn: func(nodeInfo *types.NodeInformation) (*types.NodeInformation, string) {
-				nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE_KEYTYPE_ED25519
+				nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE_ED25519
 				return nodeInfo, "private key type is not known"
 			},
 		},
@@ -261,7 +261,7 @@ func TestNodeInformation_X25519(t *testing.T) {
 		{
 			name: "invalid-bad-pubkey-type",
 			setupFn: func(nodeInfo *types.NodeInformation) (*types.NodeInformation, string) {
-				nodeInfo.EncryptionPublicKeyType = types.KEYTYPE_KEYTYPE_ED25519
+				nodeInfo.EncryptionPublicKeyType = types.KEYTYPE_ED25519
 				return nodeInfo, "public key type is not known"
 			},
 		},

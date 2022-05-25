@@ -131,7 +131,7 @@ func TestNodeLedRegistration_AuthorizeNode(t *testing.T) {
 			require.NotNil(checkNodeInfo)
 			assert.Equal(nodeInfo.Id, checkNodeInfo.Id)
 			assert.NotEmpty(checkNodeInfo.CertificatePublicKeyPkix)
-			assert.Equal(types.KEYTYPE_KEYTYPE_ED25519, checkNodeInfo.CertificatePublicKeyType)
+			assert.Equal(types.KEYTYPE_ED25519, checkNodeInfo.CertificatePublicKeyType)
 			assert.Len(checkNodeInfo.CertificateBundles, 2)
 			for _, bundle := range checkNodeInfo.CertificateBundles {
 				assert.NotEmpty(bundle.CertificateDer)
@@ -142,9 +142,9 @@ func TestNodeLedRegistration_AuthorizeNode(t *testing.T) {
 				assert.False(bundle.CertificateNotAfter.AsTime().IsZero())
 			}
 			assert.NotEmpty(checkNodeInfo.EncryptionPublicKeyBytes)
-			assert.Equal(types.KEYTYPE_KEYTYPE_X25519, checkNodeInfo.EncryptionPublicKeyType)
+			assert.Equal(types.KEYTYPE_X25519, checkNodeInfo.EncryptionPublicKeyType)
 			assert.NotEmpty(checkNodeInfo.ServerEncryptionPrivateKeyBytes)
-			assert.Equal(types.KEYTYPE_KEYTYPE_X25519, checkNodeInfo.ServerEncryptionPrivateKeyType)
+			assert.Equal(types.KEYTYPE_X25519, checkNodeInfo.ServerEncryptionPrivateKeyType)
 			assert.Len(checkNodeInfo.RegistrationNonce, nodeenrollment.NonceSize)
 			assert.True(checkNodeInfo.FirstSeen.IsValid())
 			assert.False(checkNodeInfo.FirstSeen.AsTime().IsZero())
@@ -257,7 +257,7 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 			name: "invalid-bad-cert-pubkey-type",
 			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
 				info := unMarshal(t, req)
-				info.CertificatePublicKeyType = types.KEYTYPE_KEYTYPE_X25519
+				info.CertificatePublicKeyType = types.KEYTYPE_X25519
 				req.Bundle, req.BundleSignature = reMarshalAndSign(t, info)
 				return req, "unsupported node certificate public key type"
 			},
@@ -304,7 +304,7 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 			name: "invalid-register-bad-keytype",
 			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
 				info := unMarshal(t, req)
-				info.EncryptionPublicKeyType = types.KEYTYPE_KEYTYPE_ED25519
+				info.EncryptionPublicKeyType = types.KEYTYPE_ED25519
 				req.Bundle, req.BundleSignature = reMarshalAndSign(t, info)
 				return req, "unsupported node encryption public key type"
 			},
@@ -424,9 +424,9 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 				checkNodeInfo = checkNodeInfoRaw.(*types.NodeInformation)
 				assert.Equal(baseNodeInfo.Id, checkNodeInfo.Id)
 				assert.NotEmpty(checkNodeInfo.CertificatePublicKeyPkix)
-				assert.Equal(types.KEYTYPE_KEYTYPE_ED25519, checkNodeInfo.CertificatePublicKeyType)
+				assert.Equal(types.KEYTYPE_ED25519, checkNodeInfo.CertificatePublicKeyType)
 				assert.NotEmpty(checkNodeInfo.EncryptionPublicKeyBytes)
-				assert.Equal(types.KEYTYPE_KEYTYPE_X25519, checkNodeInfo.EncryptionPublicKeyType)
+				assert.Equal(types.KEYTYPE_X25519, checkNodeInfo.EncryptionPublicKeyType)
 				assert.NotEmpty(checkNodeInfo.RegistrationNonce)
 				assert.True(checkNodeInfo.FirstSeen.IsValid())
 				assert.False(checkNodeInfo.FirstSeen.AsTime().IsZero())
@@ -440,7 +440,7 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 				require.NotNil(resp.EncryptedNodeCredentials)
 				require.NotNil(resp.EncryptedNodeCredentialsSignature)
 				require.NotNil(resp.ServerEncryptionPublicKeyBytes)
-				require.Equal(types.KEYTYPE_KEYTYPE_X25519, resp.ServerEncryptionPublicKeyType)
+				require.Equal(types.KEYTYPE_X25519, resp.ServerEncryptionPublicKeyType)
 				require.True(resp.Authorized)
 
 				// Now check the signature
@@ -454,7 +454,7 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 				var receivedNodeCreds types.NodeCredentials
 				require.NoError(nodeenrollment.DecryptMessage(ctx, checkNodeInfo.Id, resp.EncryptedNodeCredentials, checkNodeInfo, &receivedNodeCreds))
 				assert.NotEmpty(receivedNodeCreds.ServerEncryptionPublicKeyBytes)
-				assert.Equal(types.KEYTYPE_KEYTYPE_X25519, receivedNodeCreds.ServerEncryptionPublicKeyType)
+				assert.Equal(types.KEYTYPE_X25519, receivedNodeCreds.ServerEncryptionPublicKeyType)
 				assert.Equal(ni.RegistrationNonce, receivedNodeCreds.RegistrationNonce)
 				assert.Len(receivedNodeCreds.CertificateBundles, 2) // Won't go through them here, have one that in other tests
 			}

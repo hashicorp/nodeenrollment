@@ -8,9 +8,9 @@ import "google/protobuf/timestamp.proto";
 
 // KEYTYPE is an enum holding known key types
 enum KEYTYPE {
-  KEYTYPE_UNSPECIFIED = 0;
-  KEYTYPE_ED25519 = 1;
-  KEYTYPE_X25519 = 2;
+  UNSPECIFIED = 0;
+  ED25519 = 1;
+  X25519 = 2;
 }
 
 // CertificateBundle contains information about a certificate the its issuing

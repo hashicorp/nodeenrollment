@@ -42,7 +42,7 @@ func TestOperatorLedRegistration(t *testing.T) {
 	assert.Empty(nodeCreds.Id)
 	assert.NotEmpty(nodeCreds.CertificatePublicKeyPkix)
 	assert.NotEmpty(nodeCreds.CertificatePrivateKeyPkcs8)
-	assert.Equal(types.KEYTYPE_KEYTYPE_ED25519, nodeCreds.CertificatePrivateKeyType)
+	assert.Equal(types.KEYTYPE_ED25519, nodeCreds.CertificatePrivateKeyType)
 	assert.Len(nodeCreds.CertificateBundles, 2)
 	for _, bundle := range nodeCreds.CertificateBundles {
 		assert.NotEmpty(bundle.CertificateDer)
@@ -53,9 +53,9 @@ func TestOperatorLedRegistration(t *testing.T) {
 		assert.False(bundle.CertificateNotAfter.AsTime().IsZero())
 	}
 	assert.NotEmpty(nodeCreds.EncryptionPrivateKeyBytes)
-	assert.Equal(types.KEYTYPE_KEYTYPE_X25519, nodeCreds.EncryptionPrivateKeyType)
+	assert.Equal(types.KEYTYPE_X25519, nodeCreds.EncryptionPrivateKeyType)
 	assert.NotEmpty(nodeCreds.ServerEncryptionPublicKeyBytes)
-	assert.Equal(types.KEYTYPE_KEYTYPE_X25519, nodeCreds.ServerEncryptionPublicKeyType)
+	assert.Equal(types.KEYTYPE_X25519, nodeCreds.ServerEncryptionPublicKeyType)
 	assert.Empty(nodeCreds.RegistrationNonce)
 	assert.Empty(nodeCreds.WrappingKeyId)
 
@@ -67,7 +67,7 @@ func TestOperatorLedRegistration(t *testing.T) {
 	require.NotNil(nodeInfo)
 	assert.NotEmpty(nodeInfo.Id)
 	assert.NotEmpty(nodeInfo.CertificatePublicKeyPkix)
-	assert.Equal(types.KEYTYPE_KEYTYPE_ED25519, nodeInfo.CertificatePublicKeyType)
+	assert.Equal(types.KEYTYPE_ED25519, nodeInfo.CertificatePublicKeyType)
 	assert.Len(nodeInfo.CertificateBundles, 2)
 	for _, bundle := range nodeInfo.CertificateBundles {
 		assert.NotEmpty(bundle.CertificateDer)
@@ -78,9 +78,9 @@ func TestOperatorLedRegistration(t *testing.T) {
 		assert.False(bundle.CertificateNotAfter.AsTime().IsZero())
 	}
 	assert.NotEmpty(nodeInfo.EncryptionPublicKeyBytes)
-	assert.Equal(types.KEYTYPE_KEYTYPE_X25519, nodeInfo.EncryptionPublicKeyType)
+	assert.Equal(types.KEYTYPE_X25519, nodeInfo.EncryptionPublicKeyType)
 	assert.NotEmpty(nodeInfo.ServerEncryptionPrivateKeyBytes)
-	assert.Equal(types.KEYTYPE_KEYTYPE_X25519, nodeInfo.ServerEncryptionPrivateKeyType)
+	assert.Equal(types.KEYTYPE_X25519, nodeInfo.ServerEncryptionPrivateKeyType)
 	assert.Empty(nodeInfo.RegistrationNonce)
 	assert.NotEmpty(nodeInfo.FirstSeen)
 	assert.True(nodeInfo.Authorized)

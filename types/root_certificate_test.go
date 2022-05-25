@@ -254,14 +254,14 @@ func TestRootCertificate_SigningParams(t *testing.T) {
 		{
 			name: "invalid-bad-key-type",
 			setupFn: func(root *types.RootCertificate) (*types.RootCertificate, string) {
-				root.PrivateKeyType = types.KEYTYPE_KEYTYPE_X25519
+				root.PrivateKeyType = types.KEYTYPE_X25519
 				return root, "unsupported private key type"
 			},
 		},
 		{
 			name: "invalid-unspecified-key-type",
 			setupFn: func(root *types.RootCertificate) (*types.RootCertificate, string) {
-				root.PrivateKeyType = types.KEYTYPE_KEYTYPE_UNSPECIFIED
+				root.PrivateKeyType = types.KEYTYPE_UNSPECIFIED
 				return root, "information not found"
 			},
 		},
