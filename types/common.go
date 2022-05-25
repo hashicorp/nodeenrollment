@@ -44,11 +44,11 @@ func X25519EncryptionKey(privKey []byte, privKeyType KEYTYPE, pubKey []byte, pub
 	switch {
 	case len(privKey) == 0:
 		return nil, fmt.Errorf("(%s) private key bytes is empty", op)
-	case privKeyType != KEYTYPE_KEYTYPE_X25519:
+	case privKeyType != KEYTYPE_X25519:
 		return nil, fmt.Errorf("(%s) private key type is not known", op)
 	case len(pubKey) == 0:
 		return nil, fmt.Errorf("(%s) public key bytes is empty", op)
-	case pubKeyType != KEYTYPE_KEYTYPE_X25519:
+	case pubKeyType != KEYTYPE_X25519:
 		return nil, fmt.Errorf("(%s) public key type is not known", op)
 	}
 

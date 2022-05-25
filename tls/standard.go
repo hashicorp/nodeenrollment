@@ -22,6 +22,14 @@ import (
 // WithExpectedPublicKey
 func standardTlsConfig(ctx context.Context, tlsCerts []tls.Certificate, pool *x509.CertPool, opt ...nodeenrollment.Option) (*tls.Config, error) {
 	const op = "nodeenrollment.tls.standardTlsConfig"
+
+	switch {
+	case len(tlsCerts) == 0:
+		return nil, fmt.Errorf("(%s) no tls certificates provided", op)
+	case pool == nil:
+		return nil, fmt.Errorf("(%s) nil ca pool provided", op)
+	}
+
 	opts, err := nodeenrollment.GetOpts(opt...)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)

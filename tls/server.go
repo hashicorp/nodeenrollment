@@ -81,14 +81,14 @@ func GenerateServerCertificates(
 	}
 
 	resp := &types.GenerateServerCertificatesResponse{
-		CertificatePrivateKeyType: types.KEYTYPE_KEYTYPE_ED25519,
+		CertificatePrivateKeyType: types.KEYTYPE_ED25519,
 		CertificateBundles:        make([]*types.CertificateBundle, 0, 2),
 	}
 	resp.CertificatePrivateKeyPkcs8, err = x509.MarshalPKCS8PrivateKey(privKey)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error marshaling just-in-time cert key: %w", op, err)
 	}
-	resp.CertificatePrivateKeyType = types.KEYTYPE_KEYTYPE_ED25519
+	resp.CertificatePrivateKeyType = types.KEYTYPE_ED25519
 
 	for _, rootCert := range []*types.RootCertificate{roots.Current, roots.Next} {
 		serverCert, signer, err := rootCert.SigningParams(ctx)
@@ -152,7 +152,7 @@ func ServerConfig(
 		return nil, fmt.Errorf("(%s) nil input", op)
 	case len(in.CertificatePrivateKeyPkcs8) == 0:
 		return nil, fmt.Errorf("(%s) nil private key in input", op)
-	case in.CertificatePrivateKeyType != types.KEYTYPE_KEYTYPE_ED25519:
+	case in.CertificatePrivateKeyType != types.KEYTYPE_ED25519:
 		return nil, fmt.Errorf("(%s) unsupported private key type in input", op)
 	case len(in.CertificateBundles) != 2:
 		return nil, fmt.Errorf("(%s) invalid input certificate bundles, wanted 2 bundles, got %d", op, len(in.CertificateBundles))

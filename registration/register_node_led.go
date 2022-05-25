@@ -62,13 +62,13 @@ func FetchNodeCredentials(
 	switch {
 	case len(reqInfo.CertificatePublicKeyPkix) == 0:
 		return nil, fmt.Errorf("(%s) empty node certificate public key", op)
-	case reqInfo.CertificatePublicKeyType != types.KEYTYPE_KEYTYPE_ED25519:
+	case reqInfo.CertificatePublicKeyType != types.KEYTYPE_ED25519:
 		return nil, fmt.Errorf("(%s) unsupported node certificate public key type %v", op, reqInfo.CertificatePublicKeyType.String())
 	case len(reqInfo.Nonce) == 0:
 		return nil, fmt.Errorf("(%s) empty nonce", op)
 	case len(reqInfo.EncryptionPublicKeyBytes) == 0:
 		return nil, fmt.Errorf("(%s) empty node encryption public key", op)
-	case reqInfo.EncryptionPublicKeyType != types.KEYTYPE_KEYTYPE_X25519:
+	case reqInfo.EncryptionPublicKeyType != types.KEYTYPE_X25519:
 		return nil, fmt.Errorf("(%s) unsupported node encryption public key type %v", op, reqInfo.EncryptionPublicKeyType.String())
 	case len(reqInfo.Nonce) != nodeenrollment.NonceSize:
 		return nil, fmt.Errorf("(%s) invalid registration nonce", op)
@@ -315,7 +315,7 @@ func AuthorizeNode(
 		case n != curve25519.ScalarSize:
 			return fmt.Errorf("(%s) wrong number of random bytes read when generating server encryption key, expected %d but got %d", op, curve25519.ScalarSize, n)
 		}
-		nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE_KEYTYPE_X25519
+		nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE_X25519
 	}
 
 	// Now save the authorized status back to the registration request. Setting

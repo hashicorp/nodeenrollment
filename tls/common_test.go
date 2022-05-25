@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNextProtos(t *testing.T) {
@@ -37,9 +38,10 @@ func TestNextProtos(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert := assert.New(t)
+			require, assert := require.New(t), assert.New(t)
 
-			chunks := BreakIntoNextProtos(prefix, tt.value)
+			chunks, err := BreakIntoNextProtos(prefix, tt.value)
+			require.NoError(err)
 			assert.Len(chunks, tt.expectedChunks)
 			for _, chunk := range chunks {
 				assert.True(strings.HasPrefix(chunk, prefix))
@@ -50,7 +52,8 @@ func TestNextProtos(t *testing.T) {
 				combinePrefix = tt.prefixOverride
 			}
 
-			recon := CombineFromNextProtos(combinePrefix, chunks)
+			recon, err := CombineFromNextProtos(combinePrefix, chunks)
+			require.NoError(err)
 			if tt.prefixOverride == "" {
 				assert.False(strings.HasPrefix(recon, prefix))
 				assert.Equal(tt.value, recon)

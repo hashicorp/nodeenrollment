@@ -26,7 +26,7 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 		return nil, fmt.Errorf("(%s) nil input", op)
 	case len(n.CertificatePrivateKeyPkcs8) == 0:
 		return nil, fmt.Errorf("(%s) no certificate private key", op)
-	case n.CertificatePrivateKeyType != types.KEYTYPE_KEYTYPE_ED25519:
+	case n.CertificatePrivateKeyType != types.KEYTYPE_ED25519:
 		return nil, fmt.Errorf("(%s) unsupported certificate private key type %s", op, n.CertificatePrivateKeyType.String())
 	case len(n.CertificateBundles) != 2:
 		return nil, fmt.Errorf("(%s) invalid certificate bundles found in credentials, wanted 2, got %d", op, len(n.CertificateBundles))
@@ -46,14 +46,12 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 			return nil, fmt.Errorf("(%s) error parsing certificate private key bytes: %w", op, err)
 		case key == nil:
 			return nil, fmt.Errorf("(%s) nil key after parsing certificate private key bytes", op)
-		case n.CertificatePrivateKeyType == types.KEYTYPE_KEYTYPE_ED25519:
+		case n.CertificatePrivateKeyType == types.KEYTYPE_ED25519:
 			var ok bool
 			if signer, ok = key.(ed25519.PrivateKey); !ok {
 				return nil, fmt.Errorf("(%s) certificate key cannot be understood as ed25519 private key", op)
 			}
-		}
-
-		if signer == nil {
+		default:
 			return nil, fmt.Errorf("(%s) after parsing certificate private key information no signer found", op)
 		}
 	}
@@ -133,6 +131,9 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 		return nil, fmt.Errorf("(%s) error fetching standard tls config: %w", op, err)
 	}
 
-	tlsConfig.NextProtos = BreakIntoNextProtos(nodeenrollment.AuthenticateNodeNextProtoV1Prefix, reqStr)
+	tlsConfig.NextProtos, err = BreakIntoNextProtos(nodeenrollment.AuthenticateNodeNextProtoV1Prefix, reqStr)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error breaking request into next protos: %w", op, err)
+	}
 	return tlsConfig, nil
 }

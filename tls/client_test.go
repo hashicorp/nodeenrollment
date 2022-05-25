@@ -54,7 +54,7 @@ func TestClientConfig(t *testing.T) {
 		{
 			name: "invalid-unsupported-private-key",
 			setupFn: func(in *types.NodeCredentials) (*types.NodeCredentials, string) {
-				in.CertificatePrivateKeyType = types.KEYTYPE_KEYTYPE_X25519
+				in.CertificatePrivateKeyType = types.KEYTYPE_X25519
 				return in, "unsupported certificate private key"
 			},
 		},
@@ -121,7 +121,8 @@ func TestClientConfig(t *testing.T) {
 			}
 
 			// Break up NextProtos and check the request
-			reqStr := CombineFromNextProtos(nodeenrollment.AuthenticateNodeNextProtoV1Prefix, resp.NextProtos)
+			reqStr, err := CombineFromNextProtos(nodeenrollment.AuthenticateNodeNextProtoV1Prefix, resp.NextProtos)
+			require.NoError(err)
 			reqBytes, err := base64.RawStdEncoding.DecodeString(reqStr)
 			require.NoError(err)
 			var req types.GenerateServerCertificatesRequest

@@ -237,9 +237,9 @@ func TestNodeCredentials_X25519(t *testing.T) {
 
 	nodeCreds := &types.NodeCredentials{
 		EncryptionPrivateKeyBytes:      privKey,
-		EncryptionPrivateKeyType:       types.KEYTYPE_KEYTYPE_X25519,
+		EncryptionPrivateKeyType:       types.KEYTYPE_X25519,
 		ServerEncryptionPublicKeyBytes: pubKey,
-		ServerEncryptionPublicKeyType:  types.KEYTYPE_KEYTYPE_X25519,
+		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
 	}
 
 	tests := []struct {
@@ -263,7 +263,7 @@ func TestNodeCredentials_X25519(t *testing.T) {
 		{
 			name: "invalid-bad-privkey-type",
 			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
-				nodeCreds.EncryptionPrivateKeyType = types.KEYTYPE_KEYTYPE_ED25519
+				nodeCreds.EncryptionPrivateKeyType = types.KEYTYPE_ED25519
 				return nodeCreds, "private key type is not known"
 			},
 		},
@@ -277,7 +277,7 @@ func TestNodeCredentials_X25519(t *testing.T) {
 		{
 			name: "invalid-bad-pubkey-type",
 			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
-				nodeCreds.ServerEncryptionPublicKeyType = types.KEYTYPE_KEYTYPE_ED25519
+				nodeCreds.ServerEncryptionPublicKeyType = types.KEYTYPE_ED25519
 				return nodeCreds, "public key type is not known"
 			},
 		},
@@ -342,10 +342,10 @@ func TestNodeCredentials_New(t *testing.T) {
 			}
 			require.NoError(err)
 			assert.NotEmpty(n.CertificatePrivateKeyPkcs8)
-			assert.Equal(types.KEYTYPE_KEYTYPE_ED25519, n.CertificatePrivateKeyType)
+			assert.Equal(types.KEYTYPE_ED25519, n.CertificatePrivateKeyType)
 			assert.NotEmpty(n.CertificatePublicKeyPkix)
 			assert.NotEmpty(n.EncryptionPrivateKeyBytes)
-			assert.Equal(types.KEYTYPE_KEYTYPE_X25519, n.EncryptionPrivateKeyType)
+			assert.Equal(types.KEYTYPE_X25519, n.EncryptionPrivateKeyType)
 			assert.NotEmpty(n.RegistrationNonce)
 
 			testNodeCreds := &types.NodeCredentials{Id: n.Id}
@@ -440,10 +440,10 @@ func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
 			require.NoError(proto.Unmarshal(out.Bundle, &fetchInfo))
 
 			require.NotEmpty(fetchInfo.CertificatePublicKeyPkix)
-			assert.Equal(types.KEYTYPE_KEYTYPE_ED25519, fetchInfo.CertificatePublicKeyType)
+			assert.Equal(types.KEYTYPE_ED25519, fetchInfo.CertificatePublicKeyType)
 			assert.Equal(nodeCreds.RegistrationNonce, fetchInfo.Nonce)
 			assert.NotEmpty(fetchInfo.EncryptionPublicKeyBytes)
-			assert.Equal(types.KEYTYPE_KEYTYPE_X25519, fetchInfo.EncryptionPublicKeyType)
+			assert.Equal(types.KEYTYPE_X25519, fetchInfo.EncryptionPublicKeyType)
 
 			pubKey, err := x509.ParsePKIXPublicKey(fetchInfo.CertificatePublicKeyPkix)
 			require.NoError(err)
@@ -482,7 +482,7 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 	// Create and sign encrypted creds
 	serverNodeCreds := &types.NodeCredentials{
 		ServerEncryptionPublicKeyBytes: serverPubKey,
-		ServerEncryptionPublicKeyType:  types.KEYTYPE_KEYTYPE_X25519,
+		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
 		RegistrationNonce:              nodeCreds.RegistrationNonce,
 		CertificateBundles: []*types.CertificateBundle{
 			{
@@ -493,16 +493,16 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 	}
 	nodeInfo := &types.NodeInformation{
 		ServerEncryptionPrivateKeyBytes: serverPrivKey,
-		ServerEncryptionPrivateKeyType:  types.KEYTYPE_KEYTYPE_X25519,
+		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
 		EncryptionPublicKeyBytes:        nodePubKey,
-		EncryptionPublicKeyType:         types.KEYTYPE_KEYTYPE_X25519,
+		EncryptionPublicKeyType:         types.KEYTYPE_X25519,
 	}
 	encryptedCreds, err := nodeenrollment.EncryptMessage(ctx, keyId, serverNodeCreds, nodeInfo)
 	require.NoError(t, err)
 
 	fetchNodeCredsResp := &types.FetchNodeCredentialsResponse{
 		ServerEncryptionPublicKeyBytes: serverPubKey,
-		ServerEncryptionPublicKeyType:  types.KEYTYPE_KEYTYPE_X25519,
+		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
 		EncryptedNodeCredentials:       encryptedCreds,
 	}
 
@@ -546,7 +546,7 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 		{
 			name: "invalid-resp-nil-server-pubkey-type",
 			respSetupFn: func(in *types.FetchNodeCredentialsResponse) (*types.FetchNodeCredentialsResponse, string) {
-				in.ServerEncryptionPublicKeyType = types.KEYTYPE_KEYTYPE_ED25519
+				in.ServerEncryptionPublicKeyType = types.KEYTYPE_ED25519
 				return in, "encryption public key type"
 			},
 			storage: fileStorage,

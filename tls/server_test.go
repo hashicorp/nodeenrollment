@@ -135,7 +135,7 @@ func TestGenerateServerCertificates(t *testing.T) {
 			}
 
 			assert.NotEmpty(resp.CertificatePrivateKeyPkcs8)
-			assert.Equal(types.KEYTYPE_KEYTYPE_ED25519, resp.CertificatePrivateKeyType)
+			assert.Equal(types.KEYTYPE_ED25519, resp.CertificatePrivateKeyType)
 			assert.Len(resp.CertificateBundles, 2)
 			for _, bundle := range resp.CertificateBundles {
 				require.NotEmpty(bundle.CertificateDer)
@@ -219,7 +219,7 @@ func TestServerConfig(t *testing.T) {
 		{
 			name: "invalid-unsupported-private-key",
 			setupFn: func(in *types.GenerateServerCertificatesResponse) (*types.GenerateServerCertificatesResponse, string) {
-				in.CertificatePrivateKeyType = types.KEYTYPE_KEYTYPE_X25519
+				in.CertificatePrivateKeyType = types.KEYTYPE_X25519
 				return in, "unsupported private key"
 			},
 		},

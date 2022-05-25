@@ -272,7 +272,7 @@ func NewNodeCredentials(
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error marshaling certificate private key: %w", op, err)
 		}
-		n.CertificatePrivateKeyType = KEYTYPE_KEYTYPE_ED25519
+		n.CertificatePrivateKeyType = KEYTYPE_ED25519
 
 		n.CertificatePublicKeyPkix, _, err = nodeenrollment.SubjectKeyInfoAndKeyIdFromPubKey(certPubKey)
 		if err != nil {
@@ -290,7 +290,7 @@ func NewNodeCredentials(
 		case num != curve25519.ScalarSize:
 			return nil, fmt.Errorf("(%s) wrong number of random bytes read when generating node encryption key, expected %d but got %d", op, curve25519.ScalarSize, num)
 		}
-		n.EncryptionPrivateKeyType = KEYTYPE_KEYTYPE_X25519
+		n.EncryptionPrivateKeyType = KEYTYPE_X25519
 	}
 
 	n.Id = string(nodeenrollment.CurrentId)
@@ -338,7 +338,7 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		CertificatePublicKeyPkix: n.CertificatePublicKeyPkix,
 		CertificatePublicKeyType: n.CertificatePrivateKeyType,
 		Nonce:                    n.RegistrationNonce,
-		EncryptionPublicKeyType:  KEYTYPE_KEYTYPE_X25519,
+		EncryptionPublicKeyType:  KEYTYPE_X25519,
 	}
 	reqInfo.EncryptionPublicKeyBytes, err = curve25519.X25519(n.EncryptionPrivateKeyBytes, curve25519.Basepoint)
 	if err != nil {
@@ -381,7 +381,7 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 		return fmt.Errorf("(%s) input encrypted node credentials is nil", op)
 	case len(input.ServerEncryptionPublicKeyBytes) == 0:
 		return fmt.Errorf("(%s) server encryption public key bytes is nil", op)
-	case input.ServerEncryptionPublicKeyType != KEYTYPE_KEYTYPE_X25519:
+	case input.ServerEncryptionPublicKeyType != KEYTYPE_X25519:
 		return fmt.Errorf("(%s) server encryption public key type is unknown", op)
 	case nodeenrollment.IsNil(storage):
 		return fmt.Errorf("(%s) nil storage", op)

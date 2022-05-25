@@ -64,13 +64,13 @@ func RegisterViaOperatorLedFlow(
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error generating certificate keypair: %w", op, err)
 		}
-		nodeInfo.CertificatePublicKeyType = types.KEYTYPE_KEYTYPE_ED25519
+		nodeInfo.CertificatePublicKeyType = types.KEYTYPE_ED25519
 
 		resp.CertificatePrivateKeyPkcs8, err = x509.MarshalPKCS8PrivateKey(certPrivKey)
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error marshaling certificate private key: %w", op, err)
 		}
-		resp.CertificatePrivateKeyType = types.KEYTYPE_KEYTYPE_ED25519
+		resp.CertificatePrivateKeyType = types.KEYTYPE_ED25519
 
 		certPubKeyPkix, nodeInfo.Id, err = nodeenrollment.SubjectKeyInfoAndKeyIdFromPubKey(certPubKey)
 		if err != nil {
@@ -128,13 +128,13 @@ func RegisterViaOperatorLedFlow(
 		case n != curve25519.ScalarSize:
 			return nil, fmt.Errorf("(%s) wrong number of random bytes read when generating node encryption key, expected %d but got %d", op, curve25519.ScalarSize, n)
 		}
-		resp.EncryptionPrivateKeyType = types.KEYTYPE_KEYTYPE_X25519
+		resp.EncryptionPrivateKeyType = types.KEYTYPE_X25519
 
 		nodeInfo.EncryptionPublicKeyBytes, err = curve25519.X25519(resp.EncryptionPrivateKeyBytes, curve25519.Basepoint)
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error performing x25519 operation on generated private key: %w", op, err)
 		}
-		nodeInfo.EncryptionPublicKeyType = types.KEYTYPE_KEYTYPE_X25519
+		nodeInfo.EncryptionPublicKeyType = types.KEYTYPE_X25519
 	}
 
 	// Create server encryption keys
@@ -147,13 +147,13 @@ func RegisterViaOperatorLedFlow(
 		case n != curve25519.ScalarSize:
 			return nil, fmt.Errorf("(%s) wrong number of random bytes read when generating server encryption key, expected %d but got %d", op, curve25519.ScalarSize, n)
 		}
-		nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE_KEYTYPE_X25519
+		nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE_X25519
 
 		resp.ServerEncryptionPublicKeyBytes, err = curve25519.X25519(nodeInfo.ServerEncryptionPrivateKeyBytes, curve25519.Basepoint)
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error performing x25519 operation on generated private key: %w", op, err)
 		}
-		resp.ServerEncryptionPublicKeyType = types.KEYTYPE_KEYTYPE_X25519
+		resp.ServerEncryptionPublicKeyType = types.KEYTYPE_X25519
 	}
 
 	if !opts.WithSkipStorage {

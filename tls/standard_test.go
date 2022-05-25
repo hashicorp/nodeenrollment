@@ -138,7 +138,8 @@ func runTest(t *testing.T, ctx context.Context, storage nodeenrollment.Storage, 
 
 	// Pull out the client request and generated nonce and create the generate
 	// certs response from it
-	clientReqStr := CombineFromNextProtos(nodeenrollment.AuthenticateNodeNextProtoV1Prefix, clientTlsConfig.NextProtos)
+	clientReqStr, err := CombineFromNextProtos(nodeenrollment.AuthenticateNodeNextProtoV1Prefix, clientTlsConfig.NextProtos)
+	require.NoError(err)
 	clientReqBytes, err := base64.RawStdEncoding.DecodeString(clientReqStr)
 	require.NoError(err)
 	var clientReq types.GenerateServerCertificatesRequest
