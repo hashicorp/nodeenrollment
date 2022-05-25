@@ -26,12 +26,12 @@ func TestNextProtos(t *testing.T) {
 		},
 		{
 			name:           "long",
-			value:          strings.Repeat("foo", 300),
+			value:          strings.Repeat("dry", 300),
 			expectedChunks: 5,
 		},
 		{
 			name:           "long-prefix-override",
-			value:          strings.Repeat("foo", 300),
+			value:          strings.Repeat("dry", 300),
 			expectedChunks: 5,
 			prefixOverride: "nextprotos-prefixoveride",
 		},

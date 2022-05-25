@@ -61,11 +61,15 @@ func GenerateServerCertificates(
 			return nil, fmt.Errorf("(%s) node is not authorized", op)
 		}
 		// Validate the nonce
-		nodePubKey, err := x509.ParsePKIXPublicKey(nodeInfo.CertificatePublicKeyPkix)
+		nodePubKeyRaw, err := x509.ParsePKIXPublicKey(nodeInfo.CertificatePublicKeyPkix)
 		if err != nil {
 			return nil, fmt.Errorf("(%s) node public key cannot be parsed: %w", op, err)
 		}
-		if !ed25519.Verify(nodePubKey.(ed25519.PublicKey), req.Nonce, req.NonceSignature) {
+		nodePubKey, ok := nodePubKeyRaw.(ed25519.PublicKey)
+		if !ok {
+			return nil, fmt.Errorf("(%s) node public key cannot be interpreted as ed25519 public key: %w", op, err)
+		}
+		if !ed25519.Verify(nodePubKey, req.Nonce, req.NonceSignature) {
 			return nil, fmt.Errorf("(%s) nonce signature verification failed", op)
 		}
 	}
