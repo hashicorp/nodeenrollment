@@ -23,41 +23,43 @@ import (
 
 func TestSplitListener(t *testing.T) {
 	t.Parallel()
+	require, assert := require.New(t), assert.New(t)
 	ctx := context.Background()
 
 	fileStorage, err := file.NewFileStorage(ctx)
-	require.NoError(t, err)
+	require.NoError(err)
 	t.Cleanup(fileStorage.Cleanup)
 
 	// Get a TLS stack. Hey, we can use other parts of the lib!
 	_, err = rotation.RotateRootCertificates(ctx, fileStorage)
-	require.NoError(t, err)
+	require.NoError(err)
 	nodeCreds, err := registration.RegisterViaOperatorLedFlow(ctx, fileStorage, &types.OperatorLedRegistrationRequest{})
-	require.NoError(t, err)
+	require.NoError(err)
 
 	clientTlsConfig, err := nodetls.ClientConfig(ctx, nodeCreds)
-	require.NoError(t, err)
-	require.NotNil(t, clientTlsConfig)
+	require.NoError(err)
+	require.NotNil(clientTlsConfig)
 
 	// Pull out the client request and generated nonce and create the generate
 	// certs response from it
-	clientReqStr := nodetls.CombineFromNextProtos(nodeenrollment.AuthenticateNodeNextProtoV1Prefix, clientTlsConfig.NextProtos)
+	clientReqStr, err := nodetls.CombineFromNextProtos(nodeenrollment.AuthenticateNodeNextProtoV1Prefix, clientTlsConfig.NextProtos)
+	require.NoError(err)
 	clientReqBytes, err := base64.RawStdEncoding.DecodeString(clientReqStr)
-	require.NoError(t, err)
+	require.NoError(err)
 	var clientReq types.GenerateServerCertificatesRequest
-	require.NoError(t, proto.Unmarshal(clientReqBytes, &clientReq))
+	require.NoError(proto.Unmarshal(clientReqBytes, &clientReq))
 	generateRequest, err := nodetls.GenerateServerCertificates(ctx, fileStorage, &clientReq)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	// Get our server config
 	serverTlsConfig, err := nodetls.ServerConfig(ctx, generateRequest)
-	require.NoError(t, err)
-	require.NotNil(t, serverTlsConfig)
+	require.NoError(err)
+	require.NotNil(serverTlsConfig)
 	serverTlsConfig.NextProtos = append(clientTlsConfig.NextProtos, "foobar")
 
 	// Create the base listener
 	tlsListener, err := tls.Listen("tcp4", "127.0.0.1:0", serverTlsConfig)
-	require.NoError(t, err)
+	require.NoError(err)
 
 	nodeeConns := new(atomic.Int32)
 	nodeeListenerReturnedDone := new(atomic.Bool)
@@ -121,18 +123,18 @@ func TestSplitListener(t *testing.T) {
 			currTls.NextProtos = nil
 		}
 		conn, err := tls.Dial("tcp4", tlsListener.Addr().String(), currTls)
-		require.NoError(t, err)
-		require.NoError(t, conn.Close())
+		require.NoError(err)
+		require.NoError(conn.Close())
 	}
 
-	require.NoError(t, splitListener.Stop())
+	require.NoError(splitListener.Stop())
 	wg.Wait()
 
-	assert.Equal(t, net.ErrClosed.Error(), startErr.Load())
-	assert.True(t, nodeeListenerReturnedDone.Load())
-	assert.True(t, otherListenerReturnedDone.Load())
-	assert.Empty(t, nodeeListenerReturnedErr.Load())
-	assert.Empty(t, otherListenerReturnedErr.Load())
-	assert.EqualValues(t, 5, nodeeConns.Load())
-	assert.EqualValues(t, 5, otherConns.Load())
+	assert.Equal(net.ErrClosed.Error(), startErr.Load())
+	assert.True(nodeeListenerReturnedDone.Load())
+	assert.True(otherListenerReturnedDone.Load())
+	assert.Empty(nodeeListenerReturnedErr.Load())
+	assert.Empty(otherListenerReturnedErr.Load())
+	assert.EqualValues(5, nodeeConns.Load())
+	assert.EqualValues(5, otherConns.Load())
 }
