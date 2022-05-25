@@ -10,8 +10,7 @@ import (
 const maxNextProtoSizeWithBuffer = 240
 
 // BreakIntoNextProtos takes in a prefix and a value and breaks it into a
-// chunks. It is the caller's responsibility to ensure that prefix and value are
-// something real.
+// chunks
 func BreakIntoNextProtos(prefix, value string) ([]string, error) {
 	const op = "nodeenrollment.tls.BreakIntoNextProtos"
 	switch {
@@ -35,8 +34,7 @@ func BreakIntoNextProtos(prefix, value string) ([]string, error) {
 }
 
 // CombineFromNextProtos takes in a prefix and chunks and combines it from
-// chunks. It is the caller's responsibility to ensure that the contained chunks
-// are in sequence and relevant and sanity check the result.
+// chunks
 func CombineFromNextProtos(prefix string, chunks []string) (string, error) {
 	const op = "nodeenrollment.tls.CombineFromNextProtos"
 	switch {
