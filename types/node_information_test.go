@@ -18,6 +18,7 @@ import (
 	"golang.org/x/crypto/curve25519"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestNodeInformation_StoreLoad(t *testing.T) {
@@ -33,8 +34,12 @@ func TestNodeInformation_StoreLoad(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, n, curve25519.ScalarSize)
 
+	state, err := structpb.NewStruct(map[string]any{"foo": "bar"})
+	require.NoError(t, err)
+
 	nodeInfo := &types.NodeInformation{
 		ServerEncryptionPrivateKeyBytes: privKey,
+		State:                           state,
 	}
 
 	// We don't care about this key, just need something valid for the marshal function
@@ -167,6 +172,9 @@ func TestNodeInformation_StoreLoad(t *testing.T) {
 				if tt.storeWrapper != nil {
 					assert.NotEqualValues(pubKey, testNodeInfo.RegistrationNonce)
 					assert.NotEqualValues(nodeInfo.ServerEncryptionPrivateKeyBytes, testNodeInfo.ServerEncryptionPrivateKeyBytes)
+					// This should be set in storage but not modified in the original struct
+					assert.NotEmpty(testNodeInfo.WrappingKeyId)
+					assert.Empty(n.WrappingKeyId)
 				} else {
 					assert.EqualValues(pubKey, testNodeInfo.RegistrationNonce)
 					assert.EqualValues(nodeInfo.ServerEncryptionPrivateKeyBytes, testNodeInfo.ServerEncryptionPrivateKeyBytes)

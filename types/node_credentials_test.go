@@ -18,6 +18,7 @@ import (
 	"golang.org/x/crypto/curve25519"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestNodeCredentials_StoreLoad(t *testing.T) {
@@ -33,9 +34,13 @@ func TestNodeCredentials_StoreLoad(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, n, curve25519.ScalarSize)
 
+	state, err := structpb.NewStruct(map[string]any{"foo": "bar"})
+	require.NoError(t, err)
+
 	nodeCreds := &types.NodeCredentials{
 		Id:                        string(nodeenrollment.CurrentId),
 		EncryptionPrivateKeyBytes: privKey,
+		State:                     state,
 	}
 
 	// We don't care about this key, just need something valid for the marshal function
@@ -176,16 +181,19 @@ func TestNodeCredentials_StoreLoad(t *testing.T) {
 
 			// Do a check on the registration nonce to ensure it's different
 			if !tt.skipStorage {
-				testnodeCreds := &types.NodeCredentials{Id: nodeCreds.Id}
-				require.NoError(storage.Load(ctx, testnodeCreds))
+				testNodeCreds := &types.NodeCredentials{Id: nodeCreds.Id}
+				require.NoError(storage.Load(ctx, testNodeCreds))
 				if tt.storeWrapper != nil {
-					assert.NotEqualValues(pubKey, testnodeCreds.RegistrationNonce)
-					assert.NotEqualValues(nodeCreds.EncryptionPrivateKeyBytes, testnodeCreds.EncryptionPrivateKeyBytes)
-					assert.NotEqualValues(nodeCreds.CertificatePrivateKeyPkcs8, testnodeCreds.CertificatePrivateKeyPkcs8)
+					assert.NotEqualValues(pubKey, testNodeCreds.RegistrationNonce)
+					assert.NotEqualValues(nodeCreds.EncryptionPrivateKeyBytes, testNodeCreds.EncryptionPrivateKeyBytes)
+					assert.NotEqualValues(nodeCreds.CertificatePrivateKeyPkcs8, testNodeCreds.CertificatePrivateKeyPkcs8)
+					// This should be set in storage but not modified in the original struct
+					assert.NotEmpty(testNodeCreds.WrappingKeyId)
+					assert.Empty(n.WrappingKeyId)
 				} else {
-					assert.EqualValues(pubKey, testnodeCreds.RegistrationNonce)
-					assert.EqualValues(nodeCreds.EncryptionPrivateKeyBytes, testnodeCreds.EncryptionPrivateKeyBytes)
-					assert.EqualValues(nodeCreds.CertificatePrivateKeyPkcs8, testnodeCreds.CertificatePrivateKeyPkcs8)
+					assert.EqualValues(pubKey, testNodeCreds.RegistrationNonce)
+					assert.EqualValues(nodeCreds.EncryptionPrivateKeyBytes, testNodeCreds.EncryptionPrivateKeyBytes)
+					assert.EqualValues(nodeCreds.CertificatePrivateKeyPkcs8, testNodeCreds.CertificatePrivateKeyPkcs8)
 				}
 			}
 

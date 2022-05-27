@@ -61,7 +61,7 @@ func (r *RootCertificates) Store(ctx context.Context, storage nodeenrollment.Sto
 	// Now do the actual saving
 	rootsToStore := r
 	if opts.WithWrapper != nil {
-		rootsToStore = &RootCertificates{Id: r.Id}
+		rootsToStore = proto.Clone(r).(*RootCertificates)
 
 		keyId, err := opts.WithWrapper.KeyId(ctx)
 		if err != nil {
@@ -69,23 +69,16 @@ func (r *RootCertificates) Store(ctx context.Context, storage nodeenrollment.Sto
 		}
 		rootsToStore.WrappingKeyId = keyId
 
-		for _, root := range []*RootCertificate{r.Current, r.Next} {
-			certToStore := proto.Clone(root).(*RootCertificate)
-			if root == r.Current {
-				rootsToStore.Current = certToStore
-			} else {
-				rootsToStore.Next = certToStore
-			}
-
+		for _, root := range []*RootCertificate{rootsToStore.Current, rootsToStore.Next} {
 			blobInfo, err := opts.WithWrapper.Encrypt(
 				ctx,
-				certToStore.PrivateKeyPkcs8,
-				wrapping.WithAad(certToStore.PublicKeyPkix),
+				root.PrivateKeyPkcs8,
+				wrapping.WithAad(root.PublicKeyPkix),
 			)
 			if err != nil {
 				return fmt.Errorf("(%s) error wrapping private key: %w", op, err)
 			}
-			certToStore.PrivateKeyPkcs8, err = proto.Marshal(blobInfo)
+			root.PrivateKeyPkcs8, err = proto.Marshal(blobInfo)
 			if err != nil {
 				return fmt.Errorf("(%s) error marshaling wrapped private key: %w", op, err)
 			}

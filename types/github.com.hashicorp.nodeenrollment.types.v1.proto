@@ -5,6 +5,7 @@ option go_package = "github.com/hashicorp/nodeenrollment/types";
 package github.com.hashicorp.nodeenrollment.types.v1;
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
 
 // KEYTYPE is an enum holding known key types
 enum KEYTYPE {
@@ -43,6 +44,11 @@ message RootCertificates {
 
   // If set, the key ID of the wrapping key used to encrypt the private key
   string wrapping_key_id = 30 [json_name="wrapping_key_id"];
+
+  // State is data that the implementor of a Store can use to round-trip data
+  // through this library; as an example, a verison number on the resource for
+  // implementing transactions.
+  google.protobuf.Struct state = 50;
 }
 
 // NodeInformation contains server-side information about a node: its
@@ -78,6 +84,11 @@ message NodeInformation {
   // If set, the key ID of the wrapping key used to encrypt the private key and
   // the nonce
   string wrapping_key_id = 30 [json_name="wrapping_key_id"];
+
+  // State is data that the implementor of a Store can use to round-trip data
+  // through this library; as an example, a verison number on the resource for
+  // implementing transactions.
+  google.protobuf.Struct state = 50;
 }
 
 // NodeCredentials is the corresponding struct for NodeInformation on the node
@@ -100,6 +111,11 @@ message NodeCredentials {
 
   // If set, the key ID of the wrapping key used to encrypt the private keys
   string wrapping_key_id = 30 [json_name="wrapping_key_id"];
+
+  // State is data that the implementor of a Store can use to round-trip data
+  // through this library; as an example, a verison number on the resource for
+  // implementing transactions.
+  google.protobuf.Struct state = 50;
 }
 
 // FetchNodeCredentialsInfo contains the values bundled and signed into a

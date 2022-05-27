@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestRootCertificates_StoreLoad(t *testing.T) {
@@ -31,6 +32,10 @@ func TestRootCertificates_StoreLoad(t *testing.T) {
 	require.NoError(t, err)
 	privPkcs8, err := x509.MarshalPKCS8PrivateKey(privKey)
 	require.NoError(t, err)
+
+	state, err := structpb.NewStruct(map[string]any{"foo": "bar"})
+	require.NoError(t, err)
+
 	roots := &types.RootCertificates{
 		Id: nodeenrollment.RootsMessageId,
 		Current: &types.RootCertificate{
@@ -41,6 +46,7 @@ func TestRootCertificates_StoreLoad(t *testing.T) {
 			Id:              string(nodeenrollment.NextId),
 			PrivateKeyPkcs8: privPkcs8,
 		},
+		State: state,
 	}
 
 	validWrapper := aead.TestWrapper(t)
@@ -162,6 +168,9 @@ func TestRootCertificates_StoreLoad(t *testing.T) {
 				require.NoError(storage.Load(ctx, testRoots))
 				if tt.storeWrapper != nil {
 					assert.NotEqualValues(roots.Current.PrivateKeyPkcs8, testRoots.Current.PrivateKeyPkcs8)
+					// This should be set in storage but not modified in the original struct
+					assert.NotEmpty(testRoots.WrappingKeyId)
+					assert.Empty(roots.WrappingKeyId)
 				} else {
 					assert.EqualValues(roots.Current.PrivateKeyPkcs8, testRoots.Current.PrivateKeyPkcs8)
 				}
