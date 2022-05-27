@@ -32,16 +32,17 @@ message RootCertificate {
   bytes certificate_der = 6 [json_name="certificate_der"];
   google.protobuf.Timestamp not_before = 7 [json_name="not_before"];
   google.protobuf.Timestamp not_after = 8 [json_name="not_after"];
-
-  // If set, the key ID of the wrapping key used to encrypt the private key
-  string wrapping_key_id = 30 [json_name="wrapping_key_id"];
 }
 
 // RootCertificates is a message that holds two root certificates for easy
-// usage/identification.
+// usage/identification. The ID will always be "roots".
 message RootCertificates {
-  RootCertificate current = 1;
-  RootCertificate next = 2;
+  string id = 1;
+  RootCertificate current = 2;
+  RootCertificate next = 3;
+
+  // If set, the key ID of the wrapping key used to encrypt the private key
+  string wrapping_key_id = 30 [json_name="wrapping_key_id"];
 }
 
 // NodeInformation contains server-side information about a node: its

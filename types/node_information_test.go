@@ -153,13 +153,6 @@ func TestNodeInformation_StoreLoad(t *testing.T) {
 				switch wantErrContains {
 				case "":
 					require.NoError(err)
-					if tt.storeWrapper != nil {
-						require.NotEmpty(n.WrappingKeyId)
-						// Now that we've validated it was set, remove the wrapping
-						// ID set on store as it's informational only and messes up
-						// the compare later
-						n.WrappingKeyId = ""
-					}
 				default:
 					require.Error(err)
 					assert.Contains(err.Error(), wantErrContains)

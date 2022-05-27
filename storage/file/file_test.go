@@ -25,18 +25,20 @@ func Test_StorageLifecycle(t *testing.T) {
 
 	// Create three roots and store them. After we store each, expect that the
 	// number of found items in a list is equivalent.
-	roots := make(map[string]*types.RootCertificate)
+	roots := make(map[string]*types.RootCertificates)
 	var name string
 	for i := 0; i < numRoots; i++ {
 		name = fmt.Sprintf("%d", i)
-		newRoot := &types.RootCertificate{
-			PrivateKeyPkcs8: []byte(name),
+		newRoots := &types.RootCertificates{
+			Current: &types.RootCertificate{
+				PrivateKeyPkcs8: []byte(name),
+			},
 		}
-		require.Error(ts.Store(ctx, newRoot)) // Should fail because no id set
-		newRoot.Id = name
-		require.NoError(ts.Store(ctx, newRoot)) // Id is now set so should work
-		roots[name] = newRoot
-		rootIds, err := ts.List(ctx, (*types.RootCertificate)(nil))
+		require.Error(ts.Store(ctx, newRoots)) // Should fail because no id set
+		newRoots.Id = name
+		require.NoError(ts.Store(ctx, newRoots)) // Id is now set so should work
+		roots[name] = newRoots
+		rootIds, err := ts.List(ctx, (*types.RootCertificates)(nil))
 		require.NoError(err)
 		require.Len(rootIds, i+1) // this also ensrues since the names are changing that there isn't a duplication/overwriting scenario
 	}
@@ -44,32 +46,32 @@ func Test_StorageLifecycle(t *testing.T) {
 	// Now ensure that the listed items actually match! We know the length is
 	// correct, so if any aren't found then it's an issue. Load each and ensure
 	// the ID matches.
-	rootIds, err := ts.List(ctx, (*types.RootCertificate)(nil))
+	rootIds, err := ts.List(ctx, (*types.RootCertificates)(nil))
 	require.NoError(err)
 	assert.Len(rootIds, numRoots)
 	for _, rootId := range rootIds {
 		_, found := roots[rootId]
 		require.True(found) // matches something we created above
 
-		root := &types.RootCertificate{Id: rootId}
-		require.NoError(ts.Load(ctx, root))
+		roots := &types.RootCertificates{Id: rootId}
+		require.NoError(ts.Load(ctx, roots))
 		require.NoError(err)
-		assert.Equal(string(root.PrivateKeyPkcs8), rootId)
+		assert.Equal(string(roots.Current.PrivateKeyPkcs8), rootId)
 	}
 
 	// Remove one of the roots
-	midname := string(roots[fmt.Sprintf("%d", numRoots/2)].PrivateKeyPkcs8)
-	require.NoError(ts.Remove(ctx, &types.RootCertificate{Id: midname}))
+	midname := string(roots[fmt.Sprintf("%d", numRoots/2)].Current.PrivateKeyPkcs8)
+	require.NoError(ts.Remove(ctx, &types.RootCertificates{Id: midname}))
 	delete(roots, midname)
 
 	// Ensure we no longer see it
-	rootIds, err = ts.List(ctx, (*types.RootCertificate)(nil))
+	rootIds, err = ts.List(ctx, (*types.RootCertificates)(nil))
 	require.NoError(err)
 	assert.Len(rootIds, numRoots-1)
 	for _, rootId := range rootIds {
-		root := &types.RootCertificate{Id: rootId}
-		require.NoError(ts.Load(ctx, root))
-		assert.Equal(string(root.PrivateKeyPkcs8), rootId)
+		roots := &types.RootCertificates{Id: rootId}
+		require.NoError(ts.Load(ctx, roots))
+		assert.Equal(string(roots.Current.PrivateKeyPkcs8), rootId)
 	}
 }
 
@@ -99,7 +101,7 @@ func Test_StorageMessageType(t *testing.T) {
 		},
 		{
 			name: "valid-root-certificates",
-			msg:  &types.RootCertificate{Id: "foobar"},
+			msg:  &types.RootCertificates{Id: "foobar"},
 		},
 		{
 			name:            "nil-msg",
@@ -107,7 +109,7 @@ func Test_StorageMessageType(t *testing.T) {
 		},
 		{
 			name:            "no-id",
-			msg:             &types.RootCertificate{},
+			msg:             &types.RootCertificates{},
 			wantErrContains: "no id given",
 		},
 		{

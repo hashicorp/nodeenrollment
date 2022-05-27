@@ -17,8 +17,8 @@ import (
 
 // RotateRootCertificates generates roots: private keys and self-signed CA root
 // certificates. At the end of this function, there should always be two
-// certificates in existence. How we get there depends on the current state;
-// see the switch statement below.
+// certificates in existence. How we get there depends on the current state; see
+// the switch statement below.
 //
 // If things seem off in a way that this function should not allow to occur (for
 // instance, one root is missing, or timing is weird), err on the side of
@@ -28,7 +28,8 @@ import (
 // no issues are detected with next, nothing will change.
 //
 // Supported options: WithRandomReader, WithCertificateLifetime, WithWrapper
-// (passed through to RootCertificate.Store), WithSkipStorage
+// (passed through to LoadRootCertificates and RootCertificates.Store),
+// WithSkipStorage
 func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) (*types.RootCertificates, error) {
 	const op = "nodeenrollment.rotation.RotateRootCertificates"
 	opts, err := nodeenrollment.GetOpts(opt...)
@@ -40,27 +41,17 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 		return nil, fmt.Errorf("(%s) nil storage", op)
 	}
 
-	// Check our existing state. We don't use LoadRootCertificates because that
-	// errors on one certificate not found and we want to check that scenario.
-	var currentRoot, nextRoot *types.RootCertificate
-	currentRoot, err = types.LoadRootCertificate(ctx, storage, nodeenrollment.CurrentId)
+	currentRoots, err := types.LoadRootCertificates(ctx, storage, opt...)
 	if err != nil && !errors.Is(err, nodeenrollment.ErrNotFound) {
-		return nil, fmt.Errorf("(%s) error checking for existing current root: %w", op, err)
-	}
-	nextRoot, err = types.LoadRootCertificate(ctx, storage, nodeenrollment.NextId)
-	if err != nil && !errors.Is(err, nodeenrollment.ErrNotFound) {
-		return nil, fmt.Errorf("(%s) error checking for existing next root: %w", op, err)
+		return nil, fmt.Errorf("(%s) error checking for existing roots: %w", op, err)
 	}
 
 	var toMake []nodeenrollment.KnownId
 	var nextCurrent, nextNext *types.RootCertificate
-	toMake, nextCurrent = decideWhatToMake(&types.RootCertificates{Current: currentRoot, Next: nextRoot})
+	toMake, nextCurrent = decideWhatToMake(currentRoots)
 	switch {
 	case len(toMake) == 0:
-		return &types.RootCertificates{
-			Current: currentRoot,
-			Next:    nextRoot,
-		}, nil
+		return currentRoots, nil
 
 	case len(toMake) == 1 && nextCurrent == nil:
 		return nil, fmt.Errorf("(%s) only one certificate to make but next current certificate not determined", op)
@@ -117,7 +108,7 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 				// Note that nextCurrent should always be valid; it was either
 				// set in the decideWhatToMake function or we have created a new
 				// root already via toMake and set it.
-				shift := nextCurrent.NotAfter.AsTime().Sub(time.Now()) / 2
+				shift := time.Until(nextCurrent.NotAfter.AsTime()) / 2
 				template.NotBefore = template.NotBefore.Add(shift)
 				template.NotAfter = template.NotAfter.Add(shift)
 			} else {
@@ -135,19 +126,19 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 		}
 	}
 
+	ret := &types.RootCertificates{
+		Id:      nodeenrollment.RootsMessageId,
+		Current: nextCurrent,
+		Next:    nextNext,
+	}
+
 	if !opts.WithSkipStorage {
-		if err := nextCurrent.Store(ctx, storage, opt...); err != nil {
-			return nil, fmt.Errorf("(%s) error persisting current root certificate: %w", op, err)
-		}
-		if err := nextNext.Store(ctx, storage, opt...); err != nil {
-			return nil, fmt.Errorf("(%s) error persisting next root certificate: %w", op, err)
+		if err := ret.Store(ctx, storage, opt...); err != nil {
+			return nil, fmt.Errorf("(%s) error persisting current root certificates: %w", op, err)
 		}
 	}
 
-	return &types.RootCertificates{
-		Current: nextCurrent,
-		Next:    nextNext,
-	}, nil
+	return ret, nil
 }
 
 // decideWhatToMake examines the current certs and figures out what to create,
@@ -157,8 +148,13 @@ func decideWhatToMake(in *types.RootCertificates) ([]nodeenrollment.KnownId, *ty
 	var nextCurrent *types.RootCertificate
 	now := time.Now()
 	switch {
+	case in == nil:
+		// One fresh storage case, so we are bootstrapping
+		toMake = append(toMake, nodeenrollment.CurrentId, nodeenrollment.NextId)
+
 	case in.Current == nil && in.Next == nil:
-		// We don't have either, fresh storage, so we are bootstrapping
+		// A similar fresh storage case, if someone created an empty proto
+		// before passing in here, so we are bootstrapping
 		toMake = append(toMake, nodeenrollment.CurrentId, nodeenrollment.NextId)
 
 	case in.Current == nil || in.Next == nil:

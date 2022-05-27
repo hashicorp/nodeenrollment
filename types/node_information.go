@@ -41,12 +41,13 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 
 	infoToStore := n
 	if opts.WithWrapper != nil {
+		infoToStore = proto.Clone(n).(*NodeInformation)
+
 		keyId, err := opts.WithWrapper.KeyId(ctx)
 		if err != nil {
 			return fmt.Errorf("(%s) error reading wrapper key id: %w", op, err)
 		}
-		n.WrappingKeyId = keyId
-		infoToStore = proto.Clone(n).(*NodeInformation)
+		infoToStore.WrappingKeyId = keyId
 
 		if len(infoToStore.ServerEncryptionPrivateKeyBytes) > 0 {
 			blobInfo, err := opts.WithWrapper.Encrypt(

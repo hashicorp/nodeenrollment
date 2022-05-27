@@ -26,7 +26,7 @@ func TestValidateMessage(t *testing.T) {
 		},
 		{
 			name: "valid-root-certificates",
-			msg:  new(RootCertificate),
+			msg:  new(RootCertificates),
 		},
 		{
 			name:            "nil-msg",

@@ -60,12 +60,13 @@ func (n *NodeCredentials) Store(ctx context.Context, storage nodeenrollment.Stor
 
 	credsToStore := n
 	if opts.WithWrapper != nil {
+		credsToStore = proto.Clone(n).(*NodeCredentials)
+
 		keyId, err := opts.WithWrapper.KeyId(ctx)
 		if err != nil {
 			return fmt.Errorf("(%s) error reading wrapper key id: %w", op, err)
 		}
-		n.WrappingKeyId = keyId
-		credsToStore = proto.Clone(n).(*NodeCredentials)
+		credsToStore.WrappingKeyId = keyId
 
 		blobInfo, err := opts.WithWrapper.Encrypt(
 			ctx,

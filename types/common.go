@@ -21,7 +21,7 @@ func ValidateMessage(msg proto.Message) error {
 	switch t := msg.(type) {
 	case *NodeCredentials,
 		*NodeInformation,
-		*RootCertificate:
+		*RootCertificates:
 		// This should never be an issue as the compiler should catch it, but
 		// just an extra check...
 		if _, ok := t.(nodeenrollment.MessageWithId); !ok {

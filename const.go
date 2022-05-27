@@ -49,6 +49,9 @@ const (
 	// KeyIdNumWords is the number of words to generate from a hash of the
 	// public key to serve as the key ID
 	KeyIdNumWords = 8
+
+	// The ID that will always be used for storing root certificate messages
+	RootsMessageId = "roots"
 )
 
 // ErrNotFound is a common error to use when a value is not found in storage.
