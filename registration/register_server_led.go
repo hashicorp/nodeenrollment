@@ -15,7 +15,7 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// RegisterViaOperatorLedFlow registers a node, creating all keys and
+// RegisterViaServerLedFlow registers a node, creating all keys and
 // certificates and returning the full set.
 //
 // Note: there are currently no fields in the registration request but it is
@@ -23,13 +23,13 @@ import (
 //
 // Supported options: WithWrapper (passed through to LoadRootCertificates and
 // NodeInformation.Store), WithSkipStorage (useful for tests)
-func RegisterViaOperatorLedFlow(
+func RegisterViaServerLedFlow(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
-	req *types.OperatorLedRegistrationRequest,
+	req *types.ServerLedRegistrationRequest,
 	opt ...nodeenrollment.Option,
 ) (*types.NodeCredentials, error) {
-	const op = "nodeenrollment.registration.RegisterViaOperatorLedFlow"
+	const op = "nodeenrollment.registration.RegisterViaServerLedFlow"
 	switch {
 	case req == nil:
 		return nil, fmt.Errorf("(%s) nil request", op)

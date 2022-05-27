@@ -30,7 +30,7 @@ func TestClientConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create node credentials and have them authorized
-	nodeCreds, err := registration.RegisterViaOperatorLedFlow(ctx, fileStorage, &types.OperatorLedRegistrationRequest{})
+	nodeCreds, err := registration.RegisterViaServerLedFlow(ctx, fileStorage, &types.ServerLedRegistrationRequest{})
 	require.NoError(t, err)
 
 	tests := []struct {

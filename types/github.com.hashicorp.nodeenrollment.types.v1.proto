@@ -182,8 +182,8 @@ message GenerateServerCertificatesResponse {
   repeated CertificateBundle certificate_bundles = 6 [json_name="certificate_bundles"];
 }
 
-// OperatorLedRegistrationRequest is a request for the "operator-led"
+// ServerLedRegistrationRequest is a request for the "operator-led"
 // registration flow. Although currently empty it's required to ensure that we
 // can add parameters later without an API change.
-message OperatorLedRegistrationRequest {
+message ServerLedRegistrationRequest {
 }

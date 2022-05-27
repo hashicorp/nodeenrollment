@@ -33,7 +33,7 @@ func TestSplitListener(t *testing.T) {
 	// Get a TLS stack. Hey, we can use other parts of the lib!
 	_, err = rotation.RotateRootCertificates(ctx, fileStorage)
 	require.NoError(err)
-	nodeCreds, err := registration.RegisterViaOperatorLedFlow(ctx, fileStorage, &types.OperatorLedRegistrationRequest{})
+	nodeCreds, err := registration.RegisterViaServerLedFlow(ctx, fileStorage, &types.ServerLedRegistrationRequest{})
 	require.NoError(err)
 
 	clientTlsConfig, err := nodetls.ClientConfig(ctx, nodeCreds)

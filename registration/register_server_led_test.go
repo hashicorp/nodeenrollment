@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestOperatorLedRegistration(t *testing.T) {
+func TestServerLedRegistration(t *testing.T) {
 	t.Parallel()
 	require, assert := require.New(t), assert.New(t)
 	ctx := context.Background()
@@ -26,18 +26,18 @@ func TestOperatorLedRegistration(t *testing.T) {
 	require.NoError(err)
 
 	// Ensure nil request and/or storage are caught
-	nodeCreds, err := RegisterViaOperatorLedFlow(ctx, nil, &types.OperatorLedRegistrationRequest{})
+	nodeCreds, err := RegisterViaServerLedFlow(ctx, nil, &types.ServerLedRegistrationRequest{})
 	require.Error(err)
 	assert.Contains(err.Error(), "nil storage")
 	assert.Nil(nodeCreds)
-	nodeCreds, err = RegisterViaOperatorLedFlow(ctx, storage, nil)
+	nodeCreds, err = RegisterViaServerLedFlow(ctx, storage, nil)
 	require.Error(err)
 	assert.Contains(err.Error(), "nil request")
 	assert.Nil(nodeCreds)
 
 	wrapper := aead.TestWrapper(t)
 
-	nodeCreds, err = RegisterViaOperatorLedFlow(ctx, storage, &types.OperatorLedRegistrationRequest{}, nodeenrollment.WithWrapper(wrapper))
+	nodeCreds, err = RegisterViaServerLedFlow(ctx, storage, &types.ServerLedRegistrationRequest{}, nodeenrollment.WithWrapper(wrapper))
 	require.NoError(err)
 	assert.Empty(nodeCreds.Id)
 	assert.NotEmpty(nodeCreds.CertificatePublicKeyPkix)

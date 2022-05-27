@@ -46,7 +46,7 @@ func TestStandardTls(t *testing.T) {
 	_, err = rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
-	node, err := registration.RegisterViaOperatorLedFlow(ctx, storage, &types.OperatorLedRegistrationRequest{})
+	node, err := registration.RegisterViaServerLedFlow(ctx, storage, &types.ServerLedRegistrationRequest{})
 	require.NoError(t, err)
 
 	t.Log("valid")
