@@ -42,7 +42,7 @@ func TestRotateRootCertificates(t *testing.T) {
 		assert.NotEmpty(root.NotBefore)
 		assert.NotEmpty(root.PrivateKeyPkcs8)
 		assert.Equal(types.KEYTYPE_ED25519, root.PrivateKeyType)
-		assert.Empty(root.WrappingKeyId)
+		assert.Empty(roots.WrappingKeyId)
 		if nodeenrollment.KnownId(root.Id) == nodeenrollment.CurrentId {
 			current = root
 		} else {

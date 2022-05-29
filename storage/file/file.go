@@ -88,7 +88,7 @@ func subPathFromMsg(msg proto.Message) (string, error) {
 		return nodeCredsSubPath, nil
 	case *types.NodeInformation:
 		return nodeInfoSubPath, nil
-	case *types.RootCertificate:
+	case *types.RootCertificates:
 		return rootsSubPath, nil
 	default:
 		return "", fmt.Errorf("(%s) unknown message type %T", op, t)
@@ -147,7 +147,7 @@ func (ts *FileStorage) List(ctx context.Context, msg proto.Message) ([]string, e
 	switch t := msg.(type) {
 	case *types.NodeCredentials,
 		*types.NodeInformation,
-		*types.RootCertificate:
+		*types.RootCertificates:
 	default:
 		return nil, fmt.Errorf("(%s) unknown message type %T", op, t)
 	}

@@ -5,6 +5,7 @@ option go_package = "github.com/hashicorp/nodeenrollment/types";
 package github.com.hashicorp.nodeenrollment.types.v1;
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
 
 // KEYTYPE is an enum holding known key types
 enum KEYTYPE {
@@ -32,16 +33,22 @@ message RootCertificate {
   bytes certificate_der = 6 [json_name="certificate_der"];
   google.protobuf.Timestamp not_before = 7 [json_name="not_before"];
   google.protobuf.Timestamp not_after = 8 [json_name="not_after"];
-
-  // If set, the key ID of the wrapping key used to encrypt the private key
-  string wrapping_key_id = 30 [json_name="wrapping_key_id"];
 }
 
 // RootCertificates is a message that holds two root certificates for easy
-// usage/identification.
+// usage/identification. The ID will always be "roots".
 message RootCertificates {
-  RootCertificate current = 1;
-  RootCertificate next = 2;
+  string id = 1;
+  RootCertificate current = 2;
+  RootCertificate next = 3;
+
+  // If set, the key ID of the wrapping key used to encrypt the private key
+  string wrapping_key_id = 30 [json_name="wrapping_key_id"];
+
+  // State is data that the implementor of a Store can use to round-trip data
+  // through this library; as an example, a verison number on the resource for
+  // implementing transactions.
+  google.protobuf.Struct state = 50;
 }
 
 // NodeInformation contains server-side information about a node: its
@@ -77,6 +84,11 @@ message NodeInformation {
   // If set, the key ID of the wrapping key used to encrypt the private key and
   // the nonce
   string wrapping_key_id = 30 [json_name="wrapping_key_id"];
+
+  // State is data that the implementor of a Store can use to round-trip data
+  // through this library; as an example, a verison number on the resource for
+  // implementing transactions.
+  google.protobuf.Struct state = 50;
 }
 
 // NodeCredentials is the corresponding struct for NodeInformation on the node
@@ -99,6 +111,11 @@ message NodeCredentials {
 
   // If set, the key ID of the wrapping key used to encrypt the private keys
   string wrapping_key_id = 30 [json_name="wrapping_key_id"];
+
+  // State is data that the implementor of a Store can use to round-trip data
+  // through this library; as an example, a verison number on the resource for
+  // implementing transactions.
+  google.protobuf.Struct state = 50;
 }
 
 // FetchNodeCredentialsInfo contains the values bundled and signed into a

@@ -17,9 +17,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestRootCertificate_StoreLoad(t *testing.T) {
+func TestRootCertificates_StoreLoad(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	storage, err := file.NewFileStorage(ctx)
@@ -31,9 +32,21 @@ func TestRootCertificate_StoreLoad(t *testing.T) {
 	require.NoError(t, err)
 	privPkcs8, err := x509.MarshalPKCS8PrivateKey(privKey)
 	require.NoError(t, err)
-	root := &types.RootCertificate{
-		Id:              string(nodeenrollment.CurrentId),
-		PrivateKeyPkcs8: privPkcs8,
+
+	state, err := structpb.NewStruct(map[string]any{"foo": "bar"})
+	require.NoError(t, err)
+
+	roots := &types.RootCertificates{
+		Id: nodeenrollment.RootsMessageId,
+		Current: &types.RootCertificate{
+			Id:              string(nodeenrollment.CurrentId),
+			PrivateKeyPkcs8: privPkcs8,
+		},
+		Next: &types.RootCertificate{
+			Id:              string(nodeenrollment.NextId),
+			PrivateKeyPkcs8: privPkcs8,
+		},
+		State: state,
 	}
 
 	validWrapper := aead.TestWrapper(t)
@@ -42,13 +55,11 @@ func TestRootCertificate_StoreLoad(t *testing.T) {
 	tests := []struct {
 		name string
 		// Return a modified root certificate and a "want err contains" string
-		storeSetupFn func(*types.RootCertificate) (*types.RootCertificate, string)
+		storeSetupFn func(*types.RootCertificates) (*types.RootCertificates, string)
 		// Flag to set storage to nil on store
 		storeStorageNil bool
 		// Skip storage to test load not finding root
 		skipStorage bool
-		// Overrides the default certificate to load of nodeenrollment.CurrentId
-		loadIdOverride []byte
 		// Flag to set storage to nil on load
 		loadStorageNil bool
 		// Error to find on load
@@ -67,44 +78,34 @@ func TestRootCertificate_StoreLoad(t *testing.T) {
 		},
 		{
 			name: "store-invalid-no-id",
-			storeSetupFn: func(root *types.RootCertificate) (*types.RootCertificate, string) {
-				root.Id = ""
-				return root, "missing id"
+			storeSetupFn: func(roots *types.RootCertificates) (*types.RootCertificates, string) {
+				roots.Current.Id = ""
+				return roots, "missing id"
 			},
 		},
 		{
 			name: "store-invalid-bad-id",
-			storeSetupFn: func(root *types.RootCertificate) (*types.RootCertificate, string) {
-				root.Id = "foo"
-				return root, "invalid root certificate id"
+			storeSetupFn: func(roots *types.RootCertificates) (*types.RootCertificates, string) {
+				roots.Current.Id = "foo"
+				return roots, "invalid root certificate id"
 			},
 		},
 		{
 			name: "store-invalid-nil-storage",
-			storeSetupFn: func(root *types.RootCertificate) (*types.RootCertificate, string) {
-				return root, "storage is nil"
+			storeSetupFn: func(roots *types.RootCertificates) (*types.RootCertificates, string) {
+				return roots, "storage is nil"
 			},
 			storeStorageNil: true,
 		},
 		{
 			name: "store-invalid-no-key",
-			storeSetupFn: func(root *types.RootCertificate) (*types.RootCertificate, string) {
-				root.PrivateKeyPkcs8 = nil
-				return root, "no private key"
+			storeSetupFn: func(roots *types.RootCertificates) (*types.RootCertificates, string) {
+				roots.Current.PrivateKeyPkcs8 = nil
+				return roots, "no private key"
 			},
 		},
 		{
 			name: "load-valid",
-		},
-		{
-			name:                "load-invalid-no-id",
-			loadIdOverride:      []byte(""),
-			loadWantErrContains: "missing id",
-		},
-		{
-			name:                "load-invalid-bad-id",
-			loadIdOverride:      []byte("foo"),
-			loadWantErrContains: "invalid id",
 		},
 		{
 			name:                "load-invalid-nil-storage",
@@ -136,19 +137,11 @@ func TestRootCertificate_StoreLoad(t *testing.T) {
 		{
 			name: "store-valid",
 		},
-		{
-			name: "store-valid-nextid",
-			storeSetupFn: func(root *types.RootCertificate) (*types.RootCertificate, string) {
-				root.Id = string(nodeenrollment.NextId)
-				return root, ""
-			},
-			loadIdOverride: []byte(nodeenrollment.NextId),
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require, assert := require.New(t), assert.New(t)
-			r := root
+			r := roots
 			if !tt.skipStorage {
 				var storeStorage nodeenrollment.Storage
 				if !tt.storeStorageNil {
@@ -156,19 +149,12 @@ func TestRootCertificate_StoreLoad(t *testing.T) {
 				}
 				var wantErrContains string
 				if tt.storeSetupFn != nil {
-					r, wantErrContains = tt.storeSetupFn(proto.Clone(r).(*types.RootCertificate))
+					r, wantErrContains = tt.storeSetupFn(proto.Clone(r).(*types.RootCertificates))
 				}
 				err := r.Store(ctx, storeStorage, nodeenrollment.WithWrapper(tt.storeWrapper))
 				switch wantErrContains {
 				case "":
 					require.NoError(err)
-					if tt.storeWrapper != nil {
-						require.NotEmpty(r.WrappingKeyId)
-						// Now that we've validated it was set, remove the wrapping
-						// ID set on store as it's informational only and messes up
-						// the compare later
-						r.WrappingKeyId = ""
-					}
 				default:
 					require.Error(err)
 					assert.Contains(err.Error(), wantErrContains)
@@ -176,26 +162,25 @@ func TestRootCertificate_StoreLoad(t *testing.T) {
 				}
 			}
 
-			// Do a check on the registration nonce to ensure it's different
+			// Do a check on the private key to ensure it's different
 			if !tt.skipStorage {
-				testCert := &types.RootCertificate{Id: root.Id}
-				require.NoError(storage.Load(ctx, testCert))
+				testRoots := &types.RootCertificates{Id: nodeenrollment.RootsMessageId}
+				require.NoError(storage.Load(ctx, testRoots))
 				if tt.storeWrapper != nil {
-					assert.NotEqualValues(root.PrivateKeyPkcs8, testCert.PrivateKeyPkcs8)
+					assert.NotEqualValues(roots.Current.PrivateKeyPkcs8, testRoots.Current.PrivateKeyPkcs8)
+					// This should be set in storage but not modified in the original struct
+					assert.NotEmpty(testRoots.WrappingKeyId)
+					assert.Empty(roots.WrappingKeyId)
 				} else {
-					assert.EqualValues(root.PrivateKeyPkcs8, testCert.PrivateKeyPkcs8)
+					assert.EqualValues(roots.Current.PrivateKeyPkcs8, testRoots.Current.PrivateKeyPkcs8)
 				}
 			}
 
-			loadId := nodeenrollment.CurrentId
-			if tt.loadIdOverride != nil {
-				loadId = nodeenrollment.KnownId(tt.loadIdOverride)
-			}
 			var loadStorage nodeenrollment.Storage
 			if !tt.loadStorageNil {
 				loadStorage = storage
 			}
-			loaded, err := types.LoadRootCertificate(ctx, loadStorage, loadId, nodeenrollment.WithWrapper(tt.loadWrapper))
+			loaded, err := types.LoadRootCertificates(ctx, loadStorage, nodeenrollment.WithWrapper(tt.loadWrapper))
 			switch tt.loadWantErrContains {
 			case "":
 				require.NoError(err)
