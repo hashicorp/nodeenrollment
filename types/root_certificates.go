@@ -46,12 +46,12 @@ func (r *RootCertificates) Store(ctx context.Context, storage nodeenrollment.Sto
 		if len(root.PrivateKeyPkcs8) == 0 {
 			// This isn't really a validation function, but we want to avoid
 			// wrapping a nil key so we do a check here
-			return fmt.Errorf("(%s) refusing to store root with no private key", op)
+			return fmt.Errorf("(%s) refusing to store root %s with no private key", op, root)
 		}
 
 		switch nodeenrollment.KnownId(root.Id) {
 		case nodeenrollment.MissingId:
-			return fmt.Errorf("(%s) root is missing id", op)
+			return fmt.Errorf("(%s) %s root is missing id", op, root)
 		case nodeenrollment.CurrentId, nodeenrollment.NextId:
 		default:
 			return fmt.Errorf("(%s) invalid root certificate id", op)
@@ -76,11 +76,11 @@ func (r *RootCertificates) Store(ctx context.Context, storage nodeenrollment.Sto
 				wrapping.WithAad(root.PublicKeyPkix),
 			)
 			if err != nil {
-				return fmt.Errorf("(%s) error wrapping private key: %w", op, err)
+				return fmt.Errorf("(%s) error wrapping private key for root %s: %w", op, root, err)
 			}
 			root.PrivateKeyPkcs8, err = proto.Marshal(blobInfo)
 			if err != nil {
-				return fmt.Errorf("(%s) error marshaling wrapped private key: %w", op, err)
+				return fmt.Errorf("(%s) error marshaling wrapped private key for root %s: %w", op, root, err)
 			}
 		}
 	}
@@ -112,7 +112,7 @@ func LoadRootCertificates(ctx context.Context, storage nodeenrollment.Storage, o
 		Id: string(nodeenrollment.RootsMessageId),
 	}
 	if err := storage.Load(ctx, roots); err != nil {
-		return nil, fmt.Errorf("(%s) error loading certificate from storage: %w", op, err)
+		return nil, fmt.Errorf("(%s) error loading certificates from storage: %w", op, err)
 	}
 
 	switch {
@@ -132,7 +132,7 @@ func LoadRootCertificates(ctx context.Context, storage nodeenrollment.Storage, o
 		for _, root := range []*RootCertificate{roots.Current, roots.Next} {
 			blobInfo := new(wrapping.BlobInfo)
 			if err := proto.Unmarshal(root.PrivateKeyPkcs8, blobInfo); err != nil {
-				return nil, fmt.Errorf("(%s) error unmarshaling private key blob info: %w", op, err)
+				return nil, fmt.Errorf("(%s) error unmarshaling private key blob info for %s root: %w", op, root, err)
 			}
 			pt, err := opts.WithWrapper.Decrypt(
 				ctx,
@@ -140,7 +140,7 @@ func LoadRootCertificates(ctx context.Context, storage nodeenrollment.Storage, o
 				wrapping.WithAad(root.PublicKeyPkix),
 			)
 			if err != nil {
-				return nil, fmt.Errorf("(%s) error decrypting private key: %w", op, err)
+				return nil, fmt.Errorf("(%s) error decrypting private key for %s root: %w", op, root, err)
 			}
 			root.PrivateKeyPkcs8 = pt
 		}
