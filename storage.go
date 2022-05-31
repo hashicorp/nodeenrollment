@@ -39,35 +39,3 @@ type Storage interface {
 	// disambiguate what to list, and can be a nil pointer to the type.
 	List(context.Context, proto.Message) ([]string, error)
 }
-
-// TransactionalStorage is storage that supports transactions. This is used by
-// some of the helper packages (especially those handling TLS) to ensure that
-// values read and written are consistent. If the underlying storage does not
-// support transactions, and this is acceptable, use NopTransactionStorage() to
-// wrap any nodeenrollment.Storage implementation.
-type TransactionalStorage interface {
-	Storage
-
-	// Flush is called when storage is done being performed. The boolean
-	// parameter indicates whether the operation was successful (true) or failed
-	// (false). Regardless, any error in committing or rolling back the
-	// transaction should return an error here, which will cause the library
-	// function to return an error as well.
-	Flush(bool) error
-}
-
-// NopTransactionStorage wraps a normal Storage to implement
-// TransactionalStorage. It does not actually support transactions!
-func NopTransactionStorage(storage Storage) *nonTransactionalStorage {
-	return &nonTransactionalStorage{Storage: storage}
-}
-
-type nonTransactionalStorage struct {
-	Storage
-}
-
-// Flush is a no-op in all cases since this is not actually transactional
-// storage
-func (n *nonTransactionalStorage) Flush(_ bool) error {
-	return nil
-}
