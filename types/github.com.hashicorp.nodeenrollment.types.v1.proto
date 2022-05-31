@@ -78,8 +78,6 @@ message NodeInformation {
   KEYTYPE server_encryption_private_key_type = 13 [json_name="server_encryption_private_key_type"];
 
   bytes registration_nonce = 20 [json_name="registration_nonce"];
-  google.protobuf.Timestamp first_seen = 22 [json_name="first_seen"];
-  bool authorized = 23;
 
   // If set, the key ID of the wrapping key used to encrypt the private key and
   // the nonce

@@ -9,6 +9,7 @@ import (
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func Test_GetOpts(t *testing.T) {
@@ -84,25 +85,16 @@ func Test_GetOpts(t *testing.T) {
 		require.NoError(err)
 		assert.Equal([]byte("foobar"), opts.WithExpectedPublicKey)
 	})
-	t.Run("with-registration-cache", func(t *testing.T) {
+	t.Run("with-state", func(t *testing.T) {
 		assert, require := assert.New(t), require.New(t)
 		opts, err := GetOpts()
 		require.NoError(err)
-		assert.Equal(opts.WithRegistrationCache, DefaultRegistrationCache)
-		opts, err = GetOpts(WithRegistrationCache(nil))
+		assert.Empty(opts.WithState)
+		structMap := map[string]interface{}{"foo": "bar"}
+		state, err := structpb.NewStruct(structMap)
 		require.NoError(err)
-		assert.Nil(opts.WithRegistrationCache)
-	})
-	t.Run("with-registration-cache-max-items", func(t *testing.T) {
-		assert, require := assert.New(t), require.New(t)
-		opts, err := GetOpts()
+		opts, err = GetOpts(WithState(state))
 		require.NoError(err)
-		assert.Equal(opts.WithRegistrationCacheMaxItems, DefaultMaxCacheItems)
-		opts, err = GetOpts(WithRegistrationCacheMaxItems(40))
-		require.NoError(err)
-		assert.Equal(opts.WithRegistrationCacheMaxItems, 40)
-		opts, err = GetOpts(WithRegistrationCacheMaxItems(40), WithRegistrationCacheMaxItems(0))
-		require.NoError(err)
-		assert.Equal(opts.WithRegistrationCacheMaxItems, DefaultMaxCacheItems)
+		assert.Equal(structMap, opts.WithState.AsMap())
 	})
 }

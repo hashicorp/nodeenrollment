@@ -43,11 +43,8 @@ func RegisterViaServerLedFlow(
 	}
 
 	var (
-		resp     = new(types.NodeCredentials)
-		nodeInfo = &types.NodeInformation{
-			FirstSeen:  timestamppb.Now(),
-			Authorized: true,
-		}
+		resp           = new(types.NodeCredentials)
+		nodeInfo       = new(types.NodeInformation)
 		certPubKey     ed25519.PublicKey
 		certPrivKey    ed25519.PrivateKey
 		certPubKeyPkix []byte
