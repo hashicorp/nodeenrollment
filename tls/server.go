@@ -57,9 +57,6 @@ func GenerateServerCertificates(
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error loading node information: %w", op, err)
 		}
-		if !nodeInfo.Authorized {
-			return nil, fmt.Errorf("(%s) node is not authorized", op)
-		}
 		// Validate the nonce
 		nodePubKeyRaw, err := x509.ParsePKIXPublicKey(nodeInfo.CertificatePublicKeyPkix)
 		if err != nil {

@@ -82,7 +82,5 @@ func TestServerLedRegistration(t *testing.T) {
 	assert.NotEmpty(nodeInfo.ServerEncryptionPrivateKeyBytes)
 	assert.Equal(types.KEYTYPE_X25519, nodeInfo.ServerEncryptionPrivateKeyType)
 	assert.Empty(nodeInfo.RegistrationNonce)
-	assert.NotEmpty(nodeInfo.FirstSeen)
-	assert.True(nodeInfo.Authorized)
 	assert.Empty(nodeInfo.WrappingKeyId)
 }
