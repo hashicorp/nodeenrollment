@@ -16,11 +16,10 @@ func IsNil(in any) bool {
 	if in == nil {
 		return true
 	}
-	switch reflect.TypeOf(in).Kind() {
-	case reflect.Ptr, reflect.Map, reflect.Array, reflect.Chan, reflect.Slice:
-		return reflect.ValueOf(in).IsNil()
+	if reflect.ValueOf(in).Kind() != reflect.Ptr {
+		return false
 	}
-	return false
+	return reflect.ValueOf(in).IsNil()
 }
 
 // ContainsKnownAlpnProto performs a simple check to see if one our defined
