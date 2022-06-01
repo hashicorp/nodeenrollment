@@ -86,7 +86,6 @@ func (l *SplitListener) Start() error {
 			if tempErr, ok := err.(interface {
 				Temporary() bool
 			}); ok && tempErr.Temporary() {
-				_ = conn.Close // ignore error
 				continue
 			}
 			return err

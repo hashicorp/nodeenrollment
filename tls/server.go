@@ -41,6 +41,10 @@ func GenerateServerCertificates(
 		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
+	// We don't have a stored key to use for validation if we haven't authorized
+	// the node yet, so in the fetch case we skip this step (we've still
+	// validated, earlier, that the bundle is internally consistent; that the
+	// signature matches the public key _on the request_ itself).
 	if !req.SkipVerification {
 		switch {
 		case len(req.Nonce) == 0:
@@ -71,6 +75,9 @@ func GenerateServerCertificates(
 		}
 	}
 
+	// Now we're going to load the roots, generate a new key, and create a set
+	// of certificates to use for whatever is acting as the server side to
+	// present to the node (client) side
 	roots, err := types.LoadRootCertificates(ctx, storage, opt...)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error loading root certificates: %w", op, err)
