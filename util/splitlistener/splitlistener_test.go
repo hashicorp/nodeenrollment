@@ -68,7 +68,7 @@ func TestSplitListener(t *testing.T) {
 	otherListenerReturnedDone := new(atomic.Bool)
 	otherListenerReturnedErr := new(atomic.String)
 
-	splitListener := NewSplitListener(tlsListener)
+	splitListener := New(tlsListener)
 
 	wg := new(sync.WaitGroup)
 	wg.Add(3)
