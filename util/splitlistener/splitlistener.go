@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/util/temperror"
@@ -108,9 +109,20 @@ func (l *SplitListener) Start() error {
 			}
 		}
 
-		switch nodeenrollment.ContainsKnownAlpnProto(tlsConn.ConnectionState().NegotiatedProtocol) {
+		negProto := tlsConn.ConnectionState().NegotiatedProtocol
+		switch nodeenrollment.ContainsKnownAlpnProto(negProto) {
 		case true:
-			l.nodeeBabyListener.incoming <- splitConn{conn: tlsConn}
+
+			if strings.HasPrefix(negProto, nodeenrollment.AuthenticateNodeNextProtoV1Prefix) {
+				// This is the only case when we actually send the connection
+				// over -- when it's been fully authenticated
+				l.nodeeBabyListener.incoming <- splitConn{conn: tlsConn}
+			} else {
+				// If it's the fetch proto, the TLS handshake should be all that is
+				// needed and the connection should be closed already. Close it for
+				// safety.
+				_ = conn.Close()
+			}
 		default:
 			l.otherBabyListener.incoming <- splitConn{conn: tlsConn}
 		}
