@@ -131,7 +131,7 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 		Current: nextCurrent,
 		Next:    nextNext,
 	}
-	if currentRoots.GetState() != nil {
+	if currentRoots != nil {
 		ret.State = currentRoots.State
 	}
 
