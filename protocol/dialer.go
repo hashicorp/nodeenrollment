@@ -23,7 +23,7 @@ import (
 // Dial returns a function suitable for dialing a connection to an
 // InterceptingListener. It takes in storage, an address, and options.
 //
-// Supported options: WithRandomReader, WithWrapper (passed thorugh to
+// Supported options: WithRandomReader, WithWrapper (passed through to
 // LoadNodeCredentials and NodeCredentials.Store)
 func Dial(
 	ctx context.Context,
