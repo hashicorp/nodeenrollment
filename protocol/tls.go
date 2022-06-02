@@ -66,6 +66,10 @@ func (l *InterceptingListener) getTlsConfigForClient(hello *tls.ClientHelloInfo)
 			if err != nil {
 				return nil, fmt.Errorf("(%s) error handling fetch creds: %w", op, err)
 			}
+			if fetchResp == nil {
+				return nil, fmt.Errorf("(%s) nil response when fetching creds", op)
+			}
+
 			fetchRespBytes, err := proto.Marshal(fetchResp)
 			if err != nil {
 				return nil, fmt.Errorf("(%s) error marshaling fetch response: %w", op, err)
@@ -118,6 +122,9 @@ func (l *InterceptingListener) getTlsConfigForClient(hello *tls.ClientHelloInfo)
 	certResp, err := l.generateServerCertificatesFn(l.ctx, l.storage, serverCertsReq, l.options...)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error generating server-side certificate: %w", op, err)
+	}
+	if certResp == nil {
+		return nil, fmt.Errorf("(%s) nil response when generating server-side certificate", op)
 	}
 
 	// Ensure that the key we just verified from the signature is the one

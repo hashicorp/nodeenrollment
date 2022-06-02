@@ -61,7 +61,7 @@ func Dial(
 		return nil, fmt.Errorf("(%s) unable to load node credentials: %w", op, err)
 	}
 	if creds == nil {
-		return nil, fmt.Errorf("(%s) loaded node credentils are nil", op)
+		return nil, fmt.Errorf("(%s) loaded node credentials are nil", op)
 	}
 
 	if len(creds.CertificateBundles) == 0 {
@@ -111,6 +111,15 @@ func Dial(
 func attemptFetch(ctx context.Context, nonTlsConn net.Conn, creds *types.NodeCredentials, opt ...nodeenrollment.Option) (*types.FetchNodeCredentialsResponse, error) {
 	const op = "nodeenrollment.protocol.attemptFetch"
 
+	switch {
+	case creds == nil:
+		return nil, fmt.Errorf("(%s) nil creds", op)
+	case creds.CertificatePrivateKeyPkcs8 == nil:
+		return nil, fmt.Errorf("(%s) nil certificate private key", op)
+	case creds.CertificatePublicKeyPkix == nil:
+		return nil, fmt.Errorf("(%s) nil certificate public key", op)
+	}
+
 	opts, err := nodeenrollment.GetOpts(opt...)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
@@ -152,8 +161,8 @@ func attemptFetch(ctx context.Context, nonTlsConn net.Conn, creds *types.NodeCre
 		DNSNames:              []string{nodeenrollment.CommonDnsName},
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement | x509.KeyUsageCertSign,
 		SerialNumber:          big.NewInt(mathrand.Int63()),
-		NotBefore:             time.Now().Add(-5 * time.Minute),
-		NotAfter:              time.Now().Add(5 * time.Minute),
+		NotBefore:             time.Now().Add(nodeenrollment.NotBeforeDuration),
+		NotAfter:              time.Now().Add(-1 * nodeenrollment.NotBeforeDuration),
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}

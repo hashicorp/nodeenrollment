@@ -68,7 +68,7 @@ type InterceptingListenerConfiguration struct {
 // nodeenrollment. Any connection coming in that is not using those protos will
 // simply be passed through.
 //
-// The context value is not used here, but simply passed thorugh to other
+// The context value is not used here, but simply passed through to other
 // library functions. To stop the listener, close it normally.
 func NewInterceptingListener(
 	config *InterceptingListenerConfiguration,
@@ -78,11 +78,11 @@ func NewInterceptingListener(
 	switch {
 	case config == nil:
 		return nil, fmt.Errorf("(%s) configuration is nil", op)
-	case config.Context == nil:
+	case nodeenrollment.IsNil(config.Context):
 		return nil, fmt.Errorf("(%s) context is nil", op)
-	case config.Storage == nil:
+	case nodeenrollment.IsNil(config.Storage):
 		return nil, fmt.Errorf("(%s) storage is nil", op)
-	case config.BaseListener == nil:
+	case nodeenrollment.IsNil(config.BaseListener):
 		return nil, fmt.Errorf("(%s) base listener is nil", op)
 	case config.BaseTlsConfiguration == nil:
 		return nil, fmt.Errorf("(%s) base tls configuration is nil", op)
