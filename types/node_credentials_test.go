@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
@@ -445,6 +446,8 @@ func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
 			assert.Equal(nodeCreds.RegistrationNonce, fetchInfo.Nonce)
 			assert.NotEmpty(fetchInfo.EncryptionPublicKeyBytes)
 			assert.Equal(types.KEYTYPE_X25519, fetchInfo.EncryptionPublicKeyType)
+			assert.Negative(time.Until(fetchInfo.NotBefore.AsTime()))
+			assert.Positive(time.Until(fetchInfo.NotAfter.AsTime()))
 
 			pubKey, err := x509.ParsePKIXPublicKey(fetchInfo.CertificatePublicKeyPkix)
 			require.NoError(err)

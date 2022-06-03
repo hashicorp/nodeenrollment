@@ -20,9 +20,13 @@ const (
 )
 
 const (
-	// NotBeforeDuration is the time to subtract from NotBefore to account for
+	// DefaultNotBeforeClockSkewDuration is the time to subtract from NotBefore to account for
 	// some clock skew
-	NotBeforeDuration = -5 * time.Minute
+	DefaultNotBeforeClockSkewDuration = -5 * time.Minute
+
+	// DefaultNotAfterClockSkewDuration is the time to subtract from NotBefore to account for
+	// some clock skew
+	DefaultNotAfterClockSkewDuration = 5 * time.Minute
 
 	// DefaultCertificateLifetime is the default duration of a certificate, set
 	// to two weeks. Rotations should happen at roughly half this.
@@ -52,6 +56,9 @@ const (
 
 	// The ID that will always be used for storing root certificate messages
 	RootsMessageId = "roots"
+
+	// The default amount of time for a signed fetch request validity period
+	DefaultFetchCredentialsLifetime = time.Hour * 24
 )
 
 // ErrNotFound is a common error to use when a value is not found in storage.

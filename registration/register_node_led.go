@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math/big"
 	mathrand "math/rand"
+	"time"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/types"
@@ -25,7 +26,8 @@ import (
 // NOTE: Users of the function should check the error to see if it is
 // nodeenrollment.ErrNotFound and customize logic appropriately
 //
-// Supported options: WithWrapper (passed through to LoadNodeInformation)
+// Supported options: WithWrapper (passed through to LoadNodeInformation),
+// WithNotBeforeClockSkew/WithNotAfterClockSkew
 func validateFetchRequest(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -45,11 +47,17 @@ func validateFetchRequest(
 		return nil, nil, fmt.Errorf("(%s) empty bundle signature", op)
 	}
 
+	opts, err := nodeenrollment.GetOpts(opt...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
+	}
+
 	var reqInfo types.FetchNodeCredentialsInfo
 	if err := proto.Unmarshal(req.Bundle, &reqInfo); err != nil {
 		return nil, nil, fmt.Errorf("(%s) cannot unmarshal request info: %w", op, err)
 	}
 
+	now := time.Now()
 	switch {
 	case len(reqInfo.CertificatePublicKeyPkix) == 0:
 		return nil, nil, fmt.Errorf("(%s) empty node certificate public key", op)
@@ -63,6 +71,10 @@ func validateFetchRequest(
 		return nil, nil, fmt.Errorf("(%s) unsupported node encryption public key type %v", op, reqInfo.EncryptionPublicKeyType.String())
 	case len(reqInfo.Nonce) != nodeenrollment.NonceSize:
 		return nil, nil, fmt.Errorf("(%s) invalid registration nonce", op)
+	case reqInfo.NotBefore.AsTime().Add(opts.WithNotBeforeClockSkew).After(now):
+		return nil, nil, fmt.Errorf("(%s) validity period is after current time", op)
+	case reqInfo.NotAfter.AsTime().Add(opts.WithNotAfterClockSkew).Before(now):
+		return nil, nil, fmt.Errorf("(%s) validity period is before current time", op)
 	}
 
 	pubKeyRaw, err := x509.ParsePKIXPublicKey(reqInfo.CertificatePublicKeyPkix)
@@ -91,7 +103,9 @@ func validateFetchRequest(
 // information
 //
 // Supported options: WithRandomReader, WithWrapper (passed through to
-// LoadNoadInformation, NodeInformation.Store, and LoadRootCeritificates)
+// LoadNodeInformation, NodeInformation.Store, and LoadRootCertificates),
+// WithNotBeforeClockSkew/WithNotAfterClockSkew (passed through to
+// validateFetchRequest)
 func FetchNodeCredentials(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -181,7 +195,7 @@ func FetchNodeCredentials(
 	}, nil
 }
 
-// AuthorizeNode authorizes a node via a registration request
+// AuthorizeNode authorizes a node via a registration request.
 //
 // Note: THIS IS NOT A CONCURRENCY SAFE FUNCTION. In most cases, the given
 // storage should ensure concurrency safety; as examples, version numbers could
@@ -194,32 +208,33 @@ func FetchNodeCredentials(
 //
 // Supported options: WithWrapper (passed through to LoadNodeInformation,
 // LoadRootCertificates, and NodeInformation.Store), WithState (set into the
-// stored NodeInformation)
+// stored NodeInformation), WithNotBeforeClockSkew/WithNotAfterClockSkew (passed
+// through to validateFetchRequest), WithSkipStorage
 func AuthorizeNode(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
 	req *types.FetchNodeCredentialsRequest,
 	opt ...nodeenrollment.Option,
-) error {
+) (*types.NodeInformation, error) {
 	const op = "nodeenrollment.registration.AuthorizeNode"
 
 	opts, err := nodeenrollment.GetOpts(opt...)
 	if err != nil {
-		return fmt.Errorf("(%s) error parsing options: %w", op, err)
+		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
 	reqInfo, nodeInfo, err := validateFetchRequest(ctx, storage, req, opt...)
 	if err != nil && !errors.Is(err, nodeenrollment.ErrNotFound) {
-		return fmt.Errorf("(%s) error looking up node information from storage: %w", op, err)
+		return nil, fmt.Errorf("(%s) error looking up node information from storage: %w", op, err)
 	}
 
 	if nodeInfo != nil {
-		return fmt.Errorf("(%s) authorize node cannot be called on an existing node", op)
+		return nil, fmt.Errorf("(%s) authorize node cannot be called on an existing node", op)
 	}
 
 	keyId, err := nodeenrollment.KeyIdFromPkix(reqInfo.CertificatePublicKeyPkix)
 	if err != nil {
-		return fmt.Errorf("(%s) error deriving key id: %w", op, err)
+		return nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
 	}
 
 	nodeInfo = &types.NodeInformation{
@@ -234,16 +249,16 @@ func AuthorizeNode(
 
 	certPubKeyRaw, err := x509.ParsePKIXPublicKey(nodeInfo.CertificatePublicKeyPkix)
 	if err != nil {
-		return fmt.Errorf("(%s) error parsing node certificate public key: %w", op, err)
+		return nil, fmt.Errorf("(%s) error parsing node certificate public key: %w", op, err)
 	}
 	certPubKey, ok := certPubKeyRaw.(ed25519.PublicKey)
 	if !ok {
-		return fmt.Errorf("(%s) unable to interpret node certificate public key as an ed25519 public key", op)
+		return nil, fmt.Errorf("(%s) unable to interpret node certificate public key as an ed25519 public key", op)
 	}
 
 	rootCerts, err := types.LoadRootCertificates(ctx, storage, opt...)
 	if err != nil {
-		return fmt.Errorf("(%s) error fetching current root certificates: %w", op, err)
+		return nil, fmt.Errorf("(%s) error fetching current root certificates: %w", op, err)
 	}
 
 	// Create certificates
@@ -251,7 +266,7 @@ func AuthorizeNode(
 		for _, rootCert := range []*types.RootCertificate{rootCerts.Current, rootCerts.Next} {
 			caCert, caPrivKey, err := rootCert.SigningParams(ctx)
 			if err != nil {
-				return fmt.Errorf("(%s) error parsing signing parameters from root: %w", op, err)
+				return nil, fmt.Errorf("(%s) error parsing signing parameters from root: %w", op, err)
 			}
 
 			template := &x509.Certificate{
@@ -272,7 +287,7 @@ func AuthorizeNode(
 
 			certificateDer, err := x509.CreateCertificate(opts.WithRandomReader, template, caCert, ed25519.PublicKey(certPubKey), caPrivKey)
 			if err != nil {
-				return fmt.Errorf("(%s) error creating certificate: %w", op, err)
+				return nil, fmt.Errorf("(%s) error creating certificate: %w", op, err)
 			}
 
 			nodeInfo.CertificateBundles = append(nodeInfo.CertificateBundles, &types.CertificateBundle{
@@ -290,17 +305,19 @@ func AuthorizeNode(
 		n, err := opts.WithRandomReader.Read(nodeInfo.ServerEncryptionPrivateKeyBytes)
 		switch {
 		case err != nil:
-			return fmt.Errorf("(%s) error reading random bytes to generate server encryption key: %w", op, err)
+			return nil, fmt.Errorf("(%s) error reading random bytes to generate server encryption key: %w", op, err)
 		case n != curve25519.ScalarSize:
-			return fmt.Errorf("(%s) wrong number of random bytes read when generating server encryption key, expected %d but got %d", op, curve25519.ScalarSize, n)
+			return nil, fmt.Errorf("(%s) wrong number of random bytes read when generating server encryption key, expected %d but got %d", op, curve25519.ScalarSize, n)
 		}
 		nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE_X25519
 	}
 
-	// Save the node information into storage
-	if err := nodeInfo.Store(ctx, storage, opt...); err != nil {
-		return fmt.Errorf("(%s) error updating registration information: %w", op, err)
+	// Save the node information into storage if not skipped
+	if !opts.WithSkipStorage {
+		if err := nodeInfo.Store(ctx, storage, opt...); err != nil {
+			return nil, fmt.Errorf("(%s) error updating registration information: %w", op, err)
+		}
 	}
 
-	return nil
+	return nodeInfo, nil
 }

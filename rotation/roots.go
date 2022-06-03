@@ -29,7 +29,7 @@ import (
 //
 // Supported options: WithRandomReader, WithCertificateLifetime, WithWrapper
 // (passed through to LoadRootCertificates and RootCertificates.Store),
-// WithSkipStorage
+// WithSkipStorage, WithNotBeforeClockSkew
 func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) (*types.RootCertificates, error) {
 	const op = "nodeenrollment.rotation.RotateRootCertificates"
 	opts, err := nodeenrollment.GetOpts(opt...)
@@ -55,6 +55,10 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 
 	case len(toMake) == 1 && nextCurrent == nil:
 		return nil, fmt.Errorf("(%s) only one certificate to make but next current certificate not determined", op)
+	}
+
+	if nextCurrent != nil {
+		nextCurrent.Id = string(nodeenrollment.CurrentId)
 	}
 
 	for _, kind := range toMake {
@@ -84,14 +88,15 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 
 		// Generate certificate
 		{
+			now := time.Now()
 			template := &x509.Certificate{
 				AuthorityKeyId:        newRoot.PublicKeyPkix,
 				SubjectKeyId:          newRoot.PublicKeyPkix,
 				DNSNames:              []string{nodeenrollment.CommonDnsName},
 				KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement | x509.KeyUsageCertSign,
 				SerialNumber:          big.NewInt(mathrand.Int63()),
-				NotBefore:             time.Now().Add(nodeenrollment.NotBeforeDuration),
-				NotAfter:              time.Now().Add(opts.WithCertificateLifetime),
+				NotBefore:             now.Add(opts.WithNotBeforeClockSkew),
+				NotAfter:              now.Add(opts.WithCertificateLifetime),
 				BasicConstraintsValid: true,
 				IsCA:                  true,
 			}

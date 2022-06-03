@@ -29,6 +29,8 @@ func GetOpts(opt ...Option) (*Options, error) {
 // are parsed in various other packages.
 type Options struct {
 	WithCertificateLifetime  time.Duration
+	WithNotBeforeClockSkew   time.Duration
+	WithNotAfterClockSkew    time.Duration
 	WithRandomReader         io.Reader
 	WithNonce                string
 	WithTlsVerifyOptionsFunc func(*x509.CertPool) x509.VerifyOptions
@@ -45,15 +47,35 @@ type Option func(*Options) error
 func getDefaultOptions() *Options {
 	return &Options{
 		WithCertificateLifetime: DefaultCertificateLifetime,
+		WithNotBeforeClockSkew:  DefaultNotBeforeClockSkewDuration,
+		WithNotAfterClockSkew:   DefaultNotAfterClockSkewDuration,
 		WithRandomReader:        rand.Reader,
 	}
 }
 
-// WithCertificateLifetime allows overriding a default duration, e.g. for certificate
+// WithCertificateLifetime allows overriding a default duration for certificate
 // creation
 func WithCertificateLifetime(with time.Duration) Option {
 	return func(o *Options) error {
 		o.WithCertificateLifetime = with
+		return nil
+	}
+}
+
+// WithNotBeforeClockSkew allows overriding a default duration for certificate
+// NotBefore clock skew handling
+func WithNotBeforeClockSkew(with time.Duration) Option {
+	return func(o *Options) error {
+		o.WithNotBeforeClockSkew = with
+		return nil
+	}
+}
+
+// WithNotAfterClockSkew allows overriding a default duration for certificate
+// NotAfter clock skew handling
+func WithNotAfterClockSkew(with time.Duration) Option {
+	return func(o *Options) error {
+		o.WithNotAfterClockSkew = with
 		return nil
 	}
 }
@@ -97,7 +119,8 @@ func WithWrapper(with wrapping.Wrapper) Option {
 
 // WithSkipStorage allows indicating that the newly generated resource should
 // not be stored in storage, but simply returned in-memory only, useful for
-// tests
+// tests or cases where the storage implementation wants to manage storage
+// lifecycle (e.g. with transactions)
 func WithSkipStorage(with bool) Option {
 	return func(o *Options) error {
 		o.WithSkipStorage = with

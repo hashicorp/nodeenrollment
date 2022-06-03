@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/x509"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/rotation"
@@ -16,6 +17,7 @@ import (
 	"golang.org/x/crypto/curve25519"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
@@ -140,6 +142,24 @@ func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid-bad-notbefore",
+			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
+				info := unMarshal(t, req)
+				info.NotBefore = timestamppb.New(time.Now().Add(10 * time.Minute))
+				req.Bundle, req.BundleSignature = reMarshalAndSign(t, info)
+				return req, "after current time"
+			},
+		},
+		{
+			name: "invalid-bad-notafter",
+			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
+				info := unMarshal(t, req)
+				info.NotAfter = timestamppb.New(time.Now().Add(-10 * time.Minute))
+				req.Bundle, req.BundleSignature = reMarshalAndSign(t, info)
+				return req, "before current time"
+			},
+		},
+		{
 			name: "invalid-bundle-signature",
 			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
 				req.BundleSignature[5] = 'w'
@@ -199,7 +219,8 @@ func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
 
 			if tt.runAuthorization {
 				// We have to _actually_ authorize the node here to populate things we need
-				require.NoError(AuthorizeNode(ctx, storage, fetchReq))
+				_, err := AuthorizeNode(ctx, storage, fetchReq)
+				require.NoError(err)
 			}
 
 			resp, err := FetchNodeCredentials(ctx, storage, fetch)
@@ -300,7 +321,8 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 
 			if tt.runAuthorization {
 				// We have to _actually_ authorize the node here to populate things we need
-				require.NoError(AuthorizeNode(ctx, storage, fetchReq))
+				_, err := AuthorizeNode(ctx, storage, fetchReq)
+				require.NoError(err)
 			}
 
 			resp, err := FetchNodeCredentials(ctx, storage, fetchReq)
@@ -405,7 +427,7 @@ func TestNodeLedRegistration_AuthorizeNode(t *testing.T) {
 				wantErrContains = "existing node"
 			}
 
-			err = AuthorizeNode(ctx, storage, fetchReq)
+			_, err := AuthorizeNode(ctx, storage, fetchReq)
 			switch wantErrContains {
 			case "":
 				require.NoError(err)
