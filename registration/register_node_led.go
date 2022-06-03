@@ -103,7 +103,7 @@ func validateFetchRequest(
 // information
 //
 // Supported options: WithRandomReader, WithWrapper (passed through to
-// LoadNoadInformation, NodeInformation.Store, and LoadRootCeritificates),
+// LoadNodeInformation, NodeInformation.Store, and LoadRootCertificates),
 // WithNotBeforeClockSkew/WithNotAfterClockSkew (passed through to
 // validateFetchRequest)
 func FetchNodeCredentials(

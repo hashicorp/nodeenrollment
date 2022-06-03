@@ -119,7 +119,8 @@ func WithWrapper(with wrapping.Wrapper) Option {
 
 // WithSkipStorage allows indicating that the newly generated resource should
 // not be stored in storage, but simply returned in-memory only, useful for
-// tests
+// tests or cases where the storage implementation wants to manage storage
+// lifecycle (e.g. with transactions)
 func WithSkipStorage(with bool) Option {
 	return func(o *Options) error {
 		o.WithSkipStorage = with
