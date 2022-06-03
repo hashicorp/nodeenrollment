@@ -39,7 +39,7 @@ func TestStandardTls(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	storage, err := file.NewFileStorage(ctx)
+	storage, err := file.New(ctx)
 	require.NoError(t, err)
 	t.Cleanup(storage.Cleanup)
 
@@ -95,7 +95,7 @@ func TestStandardTls(t *testing.T) {
 	t.Log("invalid-wrong-cert-in-pool")
 	// Create a new root set (on new storage since rotating won't do anything
 	// right now due to validity windows)
-	wrongStorage, err := file.NewFileStorage(ctx)
+	wrongStorage, err := file.New(ctx)
 	require.NoError(t, err)
 	t.Cleanup(wrongStorage.Cleanup)
 	wrongRoots, err := rotation.RotateRootCertificates(ctx, wrongStorage, nodeenrollment.WithSkipStorage(true))

@@ -25,7 +25,7 @@ import (
 func TestNodeCredentials_StoreLoad(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	storage, err := file.NewFileStorage(ctx)
+	storage, err := file.New(ctx)
 	require.NoError(t, err)
 	t.Cleanup(storage.Cleanup)
 
@@ -315,7 +315,7 @@ func TestNodeCredentials_New(t *testing.T) {
 
 	ctx := context.Background()
 
-	fileStorage, err := file.NewFileStorage(ctx)
+	fileStorage, err := file.New(ctx)
 	require.NoError(t, err)
 	t.Cleanup(fileStorage.Cleanup)
 
@@ -362,7 +362,7 @@ func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
 
 	ctx := context.Background()
 
-	fileStorage, err := file.NewFileStorage(ctx)
+	fileStorage, err := file.New(ctx)
 	require.NoError(t, err)
 	t.Cleanup(fileStorage.Cleanup)
 
@@ -461,7 +461,7 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 
 	ctx := context.Background()
 
-	fileStorage, err := file.NewFileStorage(ctx)
+	fileStorage, err := file.New(ctx)
 	require.NoError(t, err)
 	t.Cleanup(fileStorage.Cleanup)
 

@@ -18,7 +18,7 @@ func TestServerLedRegistration(t *testing.T) {
 	require, assert := require.New(t), assert.New(t)
 	ctx := context.Background()
 
-	storage, err := file.NewFileStorage(ctx)
+	storage, err := file.New(ctx)
 	require.NoError(err)
 	t.Cleanup(storage.Cleanup)
 

@@ -23,7 +23,7 @@ import (
 func TestRootCertificates_StoreLoad(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	storage, err := file.NewFileStorage(ctx)
+	storage, err := file.New(ctx)
 	require.NoError(t, err)
 	t.Cleanup(storage.Cleanup)
 
@@ -212,7 +212,7 @@ func TestRootCertificates_StoreLoad(t *testing.T) {
 func TestRootCertificate_SigningParams(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	storage, err := file.NewFileStorage(ctx)
+	storage, err := file.New(ctx)
 	require.NoError(t, err)
 	t.Cleanup(storage.Cleanup)
 

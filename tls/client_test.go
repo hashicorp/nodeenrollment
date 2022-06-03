@@ -22,7 +22,7 @@ func TestClientConfig(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	fileStorage, err := file.NewFileStorage(ctx)
+	fileStorage, err := file.New(ctx)
 	require.NoError(t, err)
 	t.Cleanup(fileStorage.Cleanup)
 

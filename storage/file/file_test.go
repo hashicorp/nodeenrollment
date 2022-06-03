@@ -19,7 +19,7 @@ func Test_StorageLifecycle(t *testing.T) {
 	ctx := context.Background()
 	const numRoots = 3
 
-	ts, err := NewFileStorage(ctx)
+	ts, err := New(ctx)
 	require.NoError(err)
 	t.Cleanup(ts.Cleanup)
 
@@ -82,7 +82,7 @@ func Test_StorageMessageType(t *testing.T) {
 	tRequire := require.New(t)
 	ctx := context.Background()
 
-	ts, err := NewFileStorage(ctx)
+	ts, err := New(ctx)
 	tRequire.NoError(err)
 	t.Cleanup(ts.Cleanup)
 

@@ -21,7 +21,7 @@ func TestRotateRootCertificates(t *testing.T) {
 	require, assert := require.New(t), assert.New(t)
 	ctx := context.Background()
 
-	storage, err := file.NewFileStorage(ctx)
+	storage, err := file.New(ctx)
 	require.NoError(err)
 	t.Cleanup(storage.Cleanup)
 
@@ -114,7 +114,7 @@ func TestRotateRootCertificates(t *testing.T) {
 func TestDecideWhatToMake(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	storage, err := file.NewFileStorage(ctx)
+	storage, err := file.New(ctx)
 	require.NoError(t, err)
 	t.Cleanup(storage.Cleanup)
 

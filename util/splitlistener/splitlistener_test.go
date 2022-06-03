@@ -26,7 +26,7 @@ func TestSplitListener(t *testing.T) {
 	require, assert := require.New(t), assert.New(t)
 	ctx := context.Background()
 
-	fileStorage, err := file.NewFileStorage(ctx)
+	fileStorage, err := file.New(ctx)
 	require.NoError(err)
 	t.Cleanup(fileStorage.Cleanup)
 
