@@ -7,11 +7,13 @@ import (
 	"crypto/subtle"
 	"crypto/x509"
 	"fmt"
+	"time"
 
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
 	"github.com/hashicorp/nodeenrollment"
 	"golang.org/x/crypto/curve25519"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var _ nodeenrollment.X25519Producer = (*NodeCredentials)(nil)
@@ -335,11 +337,14 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		return nil, fmt.Errorf("(%s) error parsing private key: %w", op, err)
 	}
 
+	now := time.Now()
 	reqInfo := &FetchNodeCredentialsInfo{
 		CertificatePublicKeyPkix: n.CertificatePublicKeyPkix,
 		CertificatePublicKeyType: n.CertificatePrivateKeyType,
 		Nonce:                    n.RegistrationNonce,
 		EncryptionPublicKeyType:  KEYTYPE_X25519,
+		NotBefore:                timestamppb.New(now),
+		NotAfter:                 timestamppb.New(now.Add(nodeenrollment.DefaultFetchCredentialsLifetime)),
 	}
 	reqInfo.EncryptionPublicKeyBytes, err = curve25519.X25519(n.EncryptionPrivateKeyBytes, curve25519.Basepoint)
 	if err != nil {

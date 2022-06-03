@@ -29,6 +29,8 @@ func GetOpts(opt ...Option) (*Options, error) {
 // are parsed in various other packages.
 type Options struct {
 	WithCertificateLifetime  time.Duration
+	WithNotBeforeClockSkew   time.Duration
+	WithNotAfterClockSkew    time.Duration
 	WithRandomReader         io.Reader
 	WithNonce                string
 	WithTlsVerifyOptionsFunc func(*x509.CertPool) x509.VerifyOptions
@@ -45,15 +47,35 @@ type Option func(*Options) error
 func getDefaultOptions() *Options {
 	return &Options{
 		WithCertificateLifetime: DefaultCertificateLifetime,
+		WithNotBeforeClockSkew:  DefaultNotBeforeClockSkewDuration,
+		WithNotAfterClockSkew:   DefaultNotAfterClockSkewDuration,
 		WithRandomReader:        rand.Reader,
 	}
 }
 
-// WithCertificateLifetime allows overriding a default duration, e.g. for certificate
+// WithCertificateLifetime allows overriding a default duration for certificate
 // creation
 func WithCertificateLifetime(with time.Duration) Option {
 	return func(o *Options) error {
 		o.WithCertificateLifetime = with
+		return nil
+	}
+}
+
+// WithNotBeforeClockSkew allows overriding a default duration for certificate
+// NotBefore clock skew handling
+func WithNotBeforeClockSkew(with time.Duration) Option {
+	return func(o *Options) error {
+		o.WithNotBeforeClockSkew = with
+		return nil
+	}
+}
+
+// WithNotAfterClockSkew allows overriding a default duration for certificate
+// NotAfter clock skew handling
+func WithNotAfterClockSkew(with time.Duration) Option {
+	return func(o *Options) error {
+		o.WithNotAfterClockSkew = with
 		return nil
 	}
 }

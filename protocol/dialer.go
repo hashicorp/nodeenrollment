@@ -24,7 +24,9 @@ import (
 // InterceptingListener. It takes in storage, an address, and options.
 //
 // Supported options: WithRandomReader, WithWrapper (passed through to
-// LoadNodeCredentials and NodeCredentials.Store)
+// LoadNodeCredentials and NodeCredentials.Store),
+// WithNotBeforeClockSkew/WithNotAfterClockSkew (these are used as
+// NotBefore/NotAfter lifetimes for the generated cert used for client side TLS)
 func Dial(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -161,8 +163,8 @@ func attemptFetch(ctx context.Context, nonTlsConn net.Conn, creds *types.NodeCre
 		DNSNames:              []string{nodeenrollment.CommonDnsName},
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement | x509.KeyUsageCertSign,
 		SerialNumber:          big.NewInt(mathrand.Int63()),
-		NotBefore:             time.Now().Add(nodeenrollment.NotBeforeDuration),
-		NotAfter:              time.Now().Add(-1 * nodeenrollment.NotBeforeDuration),
+		NotBefore:             time.Now().Add(opts.WithNotBeforeClockSkew),
+		NotAfter:              time.Now().Add(opts.WithNotAfterClockSkew),
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}

@@ -30,12 +30,26 @@ func TestRotateRootCertificates(t *testing.T) {
 	require.Error(err)
 	assert.Nil(roots)
 
+	const lifetime time.Duration = 30 * time.Second
+	const skew time.Duration = 5 * time.Second
+
 	// First validate the generated parameters
 	var current, next *types.RootCertificate
-	roots, err = RotateRootCertificates(ctx, storage)
+	roots, err = RotateRootCertificates(
+		ctx,
+		storage,
+		nodeenrollment.WithCertificateLifetime(lifetime),
+		nodeenrollment.WithNotBeforeClockSkew(skew),
+		nodeenrollment.WithNotAfterClockSkew(skew),
+	)
 	for _, root := range []*types.RootCertificate{roots.Current, roots.Next} {
 		require.NoError(err)
-		assert.NotEmpty(root.Id)
+		switch root {
+		case roots.Current:
+			assert.Equal(string(nodeenrollment.CurrentId), root.Id)
+		default:
+			assert.Equal(string(nodeenrollment.NextId), root.Id)
+		}
 		assert.NotEmpty(root.PublicKeyPkix)
 		assert.NotEmpty(root.CertificateDer)
 		assert.NotEmpty(root.NotAfter)
@@ -50,8 +64,18 @@ func TestRotateRootCertificates(t *testing.T) {
 		}
 	}
 
+	// Sleep until after the skew period or the logic might thing something was
+	// wrong
+	time.Sleep(skew)
+
 	// If we call again immediately nothing should happen, should be same roots
-	r2, err := RotateRootCertificates(ctx, storage)
+	r2, err := RotateRootCertificates(
+		ctx,
+		storage,
+		nodeenrollment.WithCertificateLifetime(lifetime),
+		nodeenrollment.WithNotBeforeClockSkew(skew),
+		nodeenrollment.WithNotAfterClockSkew(skew),
+	)
 	require.NoError(err)
 	assert.Empty(cmp.Diff(r2.Current, current, protocmp.Transform()))
 	assert.Empty(cmp.Diff(r2.Next, next, protocmp.Transform()))
@@ -61,11 +85,30 @@ func TestRotateRootCertificates(t *testing.T) {
 
 	// Now validate the timeframes
 	now := time.Now()
-	assert.Less(current.NotBefore.AsTime().Sub(now)+5*time.Minute, time.Minute)
-	assert.Less(current.NotAfter.AsTime().Sub(now)-nodeenrollment.DefaultCertificateLifetime, time.Minute)
+	assert.Less(current.NotBefore.AsTime().Sub(now)+skew, 10*time.Second)
+	assert.Less(current.NotAfter.AsTime().Sub(now)-lifetime, time.Minute)
 	shift := current.NotAfter.AsTime().Sub(now) / 2
-	assert.Less(next.NotBefore.AsTime().Sub(now)+5*time.Minute-shift, time.Minute)
-	assert.Less(next.NotAfter.AsTime().Sub(now)-nodeenrollment.DefaultCertificateLifetime-shift, time.Minute)
+	assert.Less(next.NotBefore.AsTime().Sub(now)+skew-shift, 10*time.Second)
+	assert.Less(next.NotAfter.AsTime().Sub(now)-lifetime-shift, time.Minute)
+
+	// Wait so we trigger a rotation
+	time.Sleep(lifetime)
+	// Now rotate again -- we want to make sure that the previous next key is now in current position and that the IDs are correct
+	prevNextKey := r2.Next.PublicKeyPkix
+	newRoots, err := RotateRootCertificates(
+		ctx,
+		storage,
+		nodeenrollment.WithCertificateLifetime(lifetime),
+		nodeenrollment.WithNotBeforeClockSkew(skew),
+		nodeenrollment.WithNotAfterClockSkew(skew),
+	)
+	require.NoError(err)
+	require.NotNil(newRoots.Current)
+	require.NotNil(newRoots.Next)
+	assert.Equal(string(nodeenrollment.CurrentId), newRoots.Current.Id)
+	assert.Equal(string(nodeenrollment.NextId), newRoots.Next.Id)
+	assert.Equal(prevNextKey, newRoots.Current.PublicKeyPkix)
+	assert.NotEqual(prevNextKey, newRoots.Next.PublicKeyPkix)
 }
 
 func TestDecideWhatToMake(t *testing.T) {
