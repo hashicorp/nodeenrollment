@@ -86,7 +86,7 @@ func Dial(
 			return nil, fmt.Errorf("(%s) not yet authorized", op)
 		}
 
-		if err := creds.HandleFetchNodeCredentialsResponse(ctx, storage, fetchResp, opt...); err != nil {
+		if _, err := creds.HandleFetchNodeCredentialsResponse(ctx, storage, fetchResp, opt...); err != nil {
 			return nil, fmt.Errorf("(%s) error handling fetch creds response from server: %w", op, err)
 		}
 

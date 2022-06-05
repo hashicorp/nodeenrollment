@@ -589,7 +589,7 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 				f, wantFetchRespErrContains = tt.respSetupFn(proto.Clone(f).(*types.FetchNodeCredentialsResponse))
 			}
 
-			err = n.HandleFetchNodeCredentialsResponse(ctx, tt.storage, f)
+			_, err = n.HandleFetchNodeCredentialsResponse(ctx, tt.storage, f)
 			if tt.wantErrContains != "" {
 				require.Error(err)
 				assert.Contains(err.Error(), tt.wantErrContains)

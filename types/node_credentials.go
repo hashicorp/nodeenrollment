@@ -368,7 +368,8 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 
 // HandleFetchNodeCredentialsResponse parses the response from a server for node
 // credentials and attempts to decrypt and merge with the existing
-// NodeCredentials, storing the result.
+// NodeCredentials, storing the result. It returns the updated value and any
+// error.
 //
 // Supported options: WithWrapping (passed through to NodeCredentials.Store)
 func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
@@ -376,21 +377,21 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 	storage nodeenrollment.Storage,
 	input *FetchNodeCredentialsResponse,
 	opt ...nodeenrollment.Option,
-) error {
+) (*NodeCredentials, error) {
 	const op = "nodeenrollment.types.(NodeCredentials).HandleFetchNodeCredentialsResponse"
 	switch {
 	case n == nil:
-		return fmt.Errorf("(%s) node credentials is nil", op)
+		return nil, fmt.Errorf("(%s) node credentials is nil", op)
 	case input == nil:
-		return fmt.Errorf("(%s) input is nil", op)
+		return nil, fmt.Errorf("(%s) input is nil", op)
 	case len(input.EncryptedNodeCredentials) == 0:
-		return fmt.Errorf("(%s) input encrypted node credentials is nil", op)
+		return nil, fmt.Errorf("(%s) input encrypted node credentials is nil", op)
 	case len(input.ServerEncryptionPublicKeyBytes) == 0:
-		return fmt.Errorf("(%s) server encryption public key bytes is nil", op)
+		return nil, fmt.Errorf("(%s) server encryption public key bytes is nil", op)
 	case input.ServerEncryptionPublicKeyType != KEYTYPE_X25519:
-		return fmt.Errorf("(%s) server encryption public key type is unknown", op)
+		return nil, fmt.Errorf("(%s) server encryption public key type is unknown", op)
 	case nodeenrollment.IsNil(storage):
-		return fmt.Errorf("(%s) nil storage", op)
+		return nil, fmt.Errorf("(%s) nil storage", op)
 	}
 
 	n.ServerEncryptionPublicKeyBytes = input.ServerEncryptionPublicKeyBytes
@@ -399,7 +400,7 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 	newNodeCreds := new(NodeCredentials)
 	keyId, err := nodeenrollment.KeyIdFromPkix(n.CertificatePublicKeyPkix)
 	if err != nil {
-		return fmt.Errorf("(%s) error deriving key id: %w", op, err)
+		return nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
 	}
 	if err := nodeenrollment.DecryptMessage(
 		ctx,
@@ -409,12 +410,12 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 		newNodeCreds,
 		opt...,
 	); err != nil {
-		return fmt.Errorf("(%s) error decrypting server message: %w", op, err)
+		return nil, fmt.Errorf("(%s) error decrypting server message: %w", op, err)
 	}
 
 	// Validate the nonce
 	if subtle.ConstantTimeCompare(n.RegistrationNonce, newNodeCreds.RegistrationNonce) == 0 {
-		return fmt.Errorf("(%s) server message decrypted successfully but nonce does not match", op)
+		return nil, fmt.Errorf("(%s) server message decrypted successfully but nonce does not match", op)
 	}
 	n.RegistrationNonce = nil
 
@@ -423,8 +424,8 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 
 	n.Id = string(nodeenrollment.CurrentId)
 	if err := n.Store(ctx, storage, opt...); err != nil {
-		return fmt.Errorf("(%s) failed to store updated node creds: %w", op, err)
+		return nil, fmt.Errorf("(%s) failed to store updated node creds: %w", op, err)
 	}
 
-	return nil
+	return n, nil
 }
