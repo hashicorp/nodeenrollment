@@ -1,4 +1,4 @@
-package splitlistener
+package net
 
 import (
 	"context"
