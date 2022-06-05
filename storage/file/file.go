@@ -59,6 +59,9 @@ func New(ctx context.Context, opt ...Option) (*FileStorage, error) {
 			return nil, fmt.Errorf("error creating temp directory: %w", err)
 		}
 	default:
+		if err := os.MkdirAll(ts.baseDir, 0o0700); err != nil {
+			return nil, fmt.Errorf("error ensuring base directory exists: %w", err)
+		}
 		ts.skipCleanup = true
 	}
 
