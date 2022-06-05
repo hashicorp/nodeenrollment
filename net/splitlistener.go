@@ -37,10 +37,10 @@ type SplitListener struct {
 	stopped                              *atomic.Bool
 }
 
-// New creates a new listener from a base. The base listener must
+// NewSplitListener creates a new listener from a base. The base listener must
 // return *tls.Conn connections (or a net.Conn that is type-assertable to
 // *tls.Conn).
-func New(baseLn net.Listener) *SplitListener {
+func NewSplitListener(baseLn net.Listener) *SplitListener {
 	tl := &SplitListener{
 		baseLn:  baseLn,
 		stopped: atomic.NewBool(false),
