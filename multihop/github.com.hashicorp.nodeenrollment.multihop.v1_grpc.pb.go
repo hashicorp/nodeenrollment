@@ -25,6 +25,9 @@ type MultihopServiceClient interface {
 	// GenerateServerCertificates provides a capability to get a server
 	// certificate for an incoming fetch or authentication request.
 	GenerateServerCertificates(ctx context.Context, in *types.GenerateServerCertificatesRequest, opts ...grpc.CallOption) (*types.GenerateServerCertificatesResponse, error)
+	// RotateNodeCredentials a way for a node to request rotation of its
+	// credentials.
+	RotateNodeCredentials(ctx context.Context, in *types.RotateNodeCredentialsRequest, opts ...grpc.CallOption) (*types.RotateNodeCredentialsResponse, error)
 }
 
 type multihopServiceClient struct {
@@ -53,6 +56,15 @@ func (c *multihopServiceClient) GenerateServerCertificates(ctx context.Context, 
 	return out, nil
 }
 
+func (c *multihopServiceClient) RotateNodeCredentials(ctx context.Context, in *types.RotateNodeCredentialsRequest, opts ...grpc.CallOption) (*types.RotateNodeCredentialsResponse, error) {
+	out := new(types.RotateNodeCredentialsResponse)
+	err := c.cc.Invoke(ctx, "/github.com.hashicorp.nodeenrollment.multihop.v1.MultihopService/RotateNodeCredentials", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MultihopServiceServer is the server API for MultihopService service.
 // All implementations must embed UnimplementedMultihopServiceServer
 // for forward compatibility
@@ -63,6 +75,9 @@ type MultihopServiceServer interface {
 	// GenerateServerCertificates provides a capability to get a server
 	// certificate for an incoming fetch or authentication request.
 	GenerateServerCertificates(context.Context, *types.GenerateServerCertificatesRequest) (*types.GenerateServerCertificatesResponse, error)
+	// RotateNodeCredentials a way for a node to request rotation of its
+	// credentials.
+	RotateNodeCredentials(context.Context, *types.RotateNodeCredentialsRequest) (*types.RotateNodeCredentialsResponse, error)
 	mustEmbedUnimplementedMultihopServiceServer()
 }
 
@@ -75,6 +90,9 @@ func (UnimplementedMultihopServiceServer) FetchNodeCredentials(context.Context, 
 }
 func (UnimplementedMultihopServiceServer) GenerateServerCertificates(context.Context, *types.GenerateServerCertificatesRequest) (*types.GenerateServerCertificatesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GenerateServerCertificates not implemented")
+}
+func (UnimplementedMultihopServiceServer) RotateNodeCredentials(context.Context, *types.RotateNodeCredentialsRequest) (*types.RotateNodeCredentialsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RotateNodeCredentials not implemented")
 }
 func (UnimplementedMultihopServiceServer) mustEmbedUnimplementedMultihopServiceServer() {}
 
@@ -125,6 +143,24 @@ func _MultihopService_GenerateServerCertificates_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MultihopService_RotateNodeCredentials_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(types.RotateNodeCredentialsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MultihopServiceServer).RotateNodeCredentials(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/github.com.hashicorp.nodeenrollment.multihop.v1.MultihopService/RotateNodeCredentials",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MultihopServiceServer).RotateNodeCredentials(ctx, req.(*types.RotateNodeCredentialsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MultihopService_ServiceDesc is the grpc.ServiceDesc for MultihopService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -139,6 +175,10 @@ var MultihopService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GenerateServerCertificates",
 			Handler:    _MultihopService_GenerateServerCertificates_Handler,
+		},
+		{
+			MethodName: "RotateNodeCredentials",
+			Handler:    _MultihopService_RotateNodeCredentials_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

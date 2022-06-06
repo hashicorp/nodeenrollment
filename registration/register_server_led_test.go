@@ -1,4 +1,4 @@
-package registration
+package registration_test
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/go-kms-wrapping/v2/aead"
 	"github.com/hashicorp/nodeenrollment"
+	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/rotation"
 	"github.com/hashicorp/nodeenrollment/storage/file"
 	"github.com/hashicorp/nodeenrollment/types"
@@ -26,18 +27,18 @@ func TestServerLedRegistration(t *testing.T) {
 	require.NoError(err)
 
 	// Ensure nil request and/or storage are caught
-	nodeCreds, err := RegisterViaServerLedFlow(ctx, nil, &types.ServerLedRegistrationRequest{})
+	nodeCreds, err := registration.RegisterViaServerLedFlow(ctx, nil, &types.ServerLedRegistrationRequest{})
 	require.Error(err)
 	assert.Contains(err.Error(), "nil storage")
 	assert.Nil(nodeCreds)
-	nodeCreds, err = RegisterViaServerLedFlow(ctx, storage, nil)
+	nodeCreds, err = registration.RegisterViaServerLedFlow(ctx, storage, nil)
 	require.Error(err)
 	assert.Contains(err.Error(), "nil request")
 	assert.Nil(nodeCreds)
 
 	wrapper := aead.TestWrapper(t)
 
-	nodeCreds, err = RegisterViaServerLedFlow(ctx, storage, &types.ServerLedRegistrationRequest{}, nodeenrollment.WithWrapper(wrapper))
+	nodeCreds, err = registration.RegisterViaServerLedFlow(ctx, storage, &types.ServerLedRegistrationRequest{}, nodeenrollment.WithWrapper(wrapper))
 	require.NoError(err)
 	assert.Empty(nodeCreds.Id)
 	assert.NotEmpty(nodeCreds.CertificatePublicKeyPkix)

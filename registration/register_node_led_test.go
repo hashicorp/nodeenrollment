@@ -1,4 +1,4 @@
-package registration
+package registration_test
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/nodeenrollment"
+	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/rotation"
 	"github.com/hashicorp/nodeenrollment/storage/file"
 	"github.com/hashicorp/nodeenrollment/types"
@@ -219,11 +220,11 @@ func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
 
 			if tt.runAuthorization {
 				// We have to _actually_ authorize the node here to populate things we need
-				_, err := AuthorizeNode(ctx, storage, fetchReq)
+				_, err := registration.AuthorizeNode(ctx, storage, fetchReq)
 				require.NoError(err)
 			}
 
-			resp, err := FetchNodeCredentials(ctx, storage, fetch)
+			resp, err := registration.FetchNodeCredentials(ctx, storage, fetch)
 			switch wantErrContains {
 			case "":
 				require.NoError(err)
@@ -321,11 +322,11 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 
 			if tt.runAuthorization {
 				// We have to _actually_ authorize the node here to populate things we need
-				_, err := AuthorizeNode(ctx, storage, fetchReq)
+				_, err := registration.AuthorizeNode(ctx, storage, fetchReq)
 				require.NoError(err)
 			}
 
-			resp, err := FetchNodeCredentials(ctx, storage, fetchReq)
+			resp, err := registration.FetchNodeCredentials(ctx, storage, fetchReq)
 			require.NoError(err)
 			require.NotNil(resp)
 
@@ -427,7 +428,7 @@ func TestNodeLedRegistration_AuthorizeNode(t *testing.T) {
 				wantErrContains = "existing node"
 			}
 
-			_, err := AuthorizeNode(ctx, storage, fetchReq)
+			_, err := registration.AuthorizeNode(ctx, storage, fetchReq)
 			switch wantErrContains {
 			case "":
 				require.NoError(err)
