@@ -231,7 +231,7 @@ func (n *NodeCredentials) X25519EncryptionKey() ([]byte, error) {
 // which can then be merged; this happens in a different function.
 //
 // Supported options: WithRandomReader, WithWrapper (passed through to
-// NodeCredentials.Store)
+// NodeCredentials.Store), WithSkipStorage
 func NewNodeCredentials(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -297,8 +297,10 @@ func NewNodeCredentials(
 	}
 
 	n.Id = string(nodeenrollment.CurrentId)
-	if err := n.Store(ctx, storage, opt...); err != nil {
-		return nil, fmt.Errorf("(%s) failed to store generated node creds: %w", op, err)
+	if !opts.WithSkipStorage {
+		if err := n.Store(ctx, storage, opt...); err != nil {
+			return nil, fmt.Errorf("(%s) failed to store generated node creds: %w", op, err)
+		}
 	}
 
 	return n, nil

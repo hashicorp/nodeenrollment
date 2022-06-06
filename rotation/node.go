@@ -67,7 +67,7 @@ func RotateNodeCredentials(
 	// from that node so we trust the request. First we send it through
 	// AuthorizeNode to register it and derive new keys; then, we call a fetch
 	// on it and return the result, encrypted with the new keys.
-	_, err = registration.AuthorizeNode(ctx, storage, fetchRequest, opt...)
+	_, err = registration.AuthorizeNode(ctx, storage, fetchRequest, append(opt, nodeenrollment.WithState(currentNodeInfo.State))...)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error authorizing node with request: %w", op, err)
 	}
