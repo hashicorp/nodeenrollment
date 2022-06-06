@@ -170,7 +170,7 @@ func TestNodeInformation_StoreLoad(t *testing.T) {
 				testNodeInfo := &types.NodeInformation{Id: nodeInfo.Id}
 				require.NoError(storage.Load(ctx, testNodeInfo))
 				if tt.storeWrapper != nil {
-					assert.NotEqualValues(pubKey, testNodeInfo.RegistrationNonce)
+					assert.EqualValues(pubKey, testNodeInfo.RegistrationNonce)
 					assert.NotEqualValues(nodeInfo.ServerEncryptionPrivateKeyBytes, testNodeInfo.ServerEncryptionPrivateKeyBytes)
 					// This should be set in storage but not modified in the original struct
 					assert.NotEmpty(testNodeInfo.WrappingKeyId)
