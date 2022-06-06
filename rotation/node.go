@@ -14,6 +14,11 @@ import (
 // the contained value. If valid, the credentials contained in the request will
 // be registered to the system as valid credentials.
 //
+// Note that unlike RotateRootCertificates, where ownership of the roots belongs
+// to this library, this is not a method that does nothing if it is not time to
+// rotate. The node owns its credentials and should track when it's time to
+// rotate and initiate rotation at that time.
+//
 // Although WithState is not explicitly supported, keep in mind that State will
 // be transferred to the new NodeInformation. This fact can be used to match the
 // new credentials to an external ID corresponding to the current credentials.
