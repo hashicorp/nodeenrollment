@@ -209,7 +209,7 @@ func FetchNodeCredentials(
 // Supported options: WithWrapper (passed through to LoadNodeInformation,
 // LoadRootCertificates, and NodeInformation.Store), WithState (set into the
 // stored NodeInformation), WithNotBeforeClockSkew/WithNotAfterClockSkew (passed
-// through to validateFetchRequest), WithSkipStorage
+// through to validateFetchRequest), WithSkipStorage, WithRandomReader
 func AuthorizeNode(
 	ctx context.Context,
 	storage nodeenrollment.Storage,

@@ -231,7 +231,7 @@ func (n *NodeCredentials) X25519EncryptionKey() ([]byte, error) {
 // which can then be merged; this happens in a different function.
 //
 // Supported options: WithRandomReader, WithWrapper (passed through to
-// NodeCredentials.Store)
+// NodeCredentials.Store), WithSkipStorage
 func NewNodeCredentials(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -297,8 +297,10 @@ func NewNodeCredentials(
 	}
 
 	n.Id = string(nodeenrollment.CurrentId)
-	if err := n.Store(ctx, storage, opt...); err != nil {
-		return nil, fmt.Errorf("(%s) failed to store generated node creds: %w", op, err)
+	if !opts.WithSkipStorage {
+		if err := n.Store(ctx, storage, opt...); err != nil {
+			return nil, fmt.Errorf("(%s) failed to store generated node creds: %w", op, err)
+		}
 	}
 
 	return n, nil
@@ -369,9 +371,10 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 // HandleFetchNodeCredentialsResponse parses the response from a server for node
 // credentials and attempts to decrypt and merge with the existing
 // NodeCredentials, storing the result. It returns the updated value and any
-// error.
+// error and stores the result in storage, unless WithSkipStorage is passed.
 //
-// Supported options: WithWrapping (passed through to NodeCredentials.Store)
+// Supported options: WithWrapping (passed through to NodeCredentials.Store),
+// WithSkipStorage
 func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -379,6 +382,7 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 	opt ...nodeenrollment.Option,
 ) (*NodeCredentials, error) {
 	const op = "nodeenrollment.types.(NodeCredentials).HandleFetchNodeCredentialsResponse"
+
 	switch {
 	case n == nil:
 		return nil, fmt.Errorf("(%s) node credentials is nil", op)
@@ -392,6 +396,11 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 		return nil, fmt.Errorf("(%s) server encryption public key type is unknown", op)
 	case nodeenrollment.IsNil(storage):
 		return nil, fmt.Errorf("(%s) nil storage", op)
+	}
+
+	opts, err := nodeenrollment.GetOpts(opt...)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
 	n.ServerEncryptionPublicKeyBytes = input.ServerEncryptionPublicKeyBytes
@@ -423,8 +432,10 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 	n.CertificateBundles = newNodeCreds.CertificateBundles
 
 	n.Id = string(nodeenrollment.CurrentId)
-	if err := n.Store(ctx, storage, opt...); err != nil {
-		return nil, fmt.Errorf("(%s) failed to store updated node creds: %w", op, err)
+	if !opts.WithSkipStorage {
+		if err := n.Store(ctx, storage, opt...); err != nil {
+			return nil, fmt.Errorf("(%s) failed to store updated node creds: %w", op, err)
+		}
 	}
 
 	return n, nil

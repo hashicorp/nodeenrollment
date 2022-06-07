@@ -171,6 +171,27 @@ message FetchNodeCredentialsResponse {
   bytes encrypted_node_credentials_signature = 41 [json_name="encrypted_node_credentials_signature"];
 }
 
+// RotateNodeCredentialsRequest is the message used when a node wants to rotate
+// credentials
+message RotateNodeCredentialsRequest {
+  // For identification of the node, in case it's not trivial from the
+  // connection
+  bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
+
+  // Encrypted FetchNodeCredentialsRequest, with the current encryption
+  // parameters used for key generation
+  bytes encrypted_fetch_node_credentials_request = 45 [json_name="encrypted_fetch_node_credentials_request"];
+}
+
+// RotateNodeCredentialsResponse is the message used to return values
+message RotateNodeCredentialsResponse {
+  // Encrypted FetchNodeCredentialsResponse, with the current encryption
+  // parameters used for key generation. The new key will be used for the
+  // encrypted node credentials in the response.
+  bytes encrypted_fetch_node_credentials_response = 45 [json_name="encrypted_fetch_node_credentials_response"];
+}
+
+
 // GenerateServerCertificatesRequest holds values necessary for the server to
 // generate a server-side TLS certificate, either for itself or for a middle
 // node in a multi-hop scenario. The nonce and signature are provided by the
