@@ -62,6 +62,12 @@ func standardTlsConfig(ctx context.Context, tlsCerts []tls.Certificate, pool *x5
 			if len(cs.PeerCertificates) == 0 {
 				return fmt.Errorf("(%s) no peer certificates in VerifyConnection", op)
 			}
+			if opts.WithAlpnProtoPrefix == nodeenrollment.FetchNodeCredsNextProtoV1Prefix {
+				// We are always skipping verification in this case as we either
+				// are returning unauthorized or are returning an encrypted
+				// value.
+				return nil
+			}
 			var retErr *multierror.Error
 			for _, cert := range cs.PeerCertificates {
 				if _, err := cert.Verify(verifyOpts); err != nil {

@@ -123,7 +123,7 @@ func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid-bad-cert-missing nonce",
+			name: "invalid-bad-cert-missing-nonce",
 			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
 				info := unMarshal(t, req)
 				info.Nonce = nil
@@ -241,7 +241,6 @@ func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
 			require.NotNil(resp.EncryptedNodeCredentialsSignature)
 			require.NotNil(resp.ServerEncryptionPublicKeyBytes)
 			require.Equal(types.KEYTYPE_X25519, resp.ServerEncryptionPublicKeyType)
-			require.True(resp.Authorized)
 
 			// Now check the signature
 			caKey, err := x509.ParsePKIXPublicKey(roots.Current.PublicKeyPkix)
@@ -336,7 +335,6 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 			require.NotNil(resp.EncryptedNodeCredentialsSignature)
 			require.NotNil(resp.ServerEncryptionPublicKeyBytes)
 			require.Equal(types.KEYTYPE_X25519, resp.ServerEncryptionPublicKeyType)
-			require.True(resp.Authorized)
 
 			// Now check the signature
 			caKey, err := x509.ParsePKIXPublicKey(roots.Current.PublicKeyPkix)

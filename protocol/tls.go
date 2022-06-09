@@ -38,6 +38,7 @@ func (l *InterceptingListener) getTlsConfigForClient(hello *tls.ClientHelloInfo)
 
 	serverCertsReq := new(types.GenerateServerCertificatesRequest)
 	var protoToReturn string
+	opt := l.options
 
 	for _, p := range hello.SupportedProtos {
 		switch {
@@ -66,22 +67,30 @@ func (l *InterceptingListener) getTlsConfigForClient(hello *tls.ClientHelloInfo)
 			if err != nil {
 				return nil, fmt.Errorf("(%s) error handling fetch creds: %w", op, err)
 			}
-			if fetchResp == nil {
-				return nil, fmt.Errorf("(%s) nil response when fetching creds", op)
-			}
-
-			fetchRespBytes, err := proto.Marshal(fetchResp)
-			if err != nil {
-				return nil, fmt.Errorf("(%s) error marshaling fetch response: %w", op, err)
-			}
-			// Have the response put into the common name
-			serverCertsReq.CommonName = base64.RawStdEncoding.EncodeToString(fetchRespBytes)
 
 			// This is a bit redundant with the fetch function above but we need
 			// a few values
 			var reqInfo types.FetchNodeCredentialsInfo
 			if err := proto.Unmarshal(req.Bundle, &reqInfo); err != nil {
 				return nil, fmt.Errorf("(%s) cannot unmarshal request info: %w", op, err)
+			}
+
+			switch {
+			case fetchResp == nil:
+				// In this case we're not authorized, use the standard common
+				// name and we'll detect this on the fetch side. If we try to
+				// marshal the empty value we end up with a zero length message,
+				// a zero-length base-64 message, and hit an error later if we
+				// don't remember this when decoding. So just use a canary.
+				serverCertsReq.CommonName = nodeenrollment.CommonDnsName
+
+			default:
+				fetchRespBytes, err := proto.Marshal(fetchResp)
+				if err != nil {
+					return nil, fmt.Errorf("(%s) error marshaling fetch response: %w", op, err)
+				}
+				// Have the response put into the common name
+				serverCertsReq.CommonName = base64.RawStdEncoding.EncodeToString(fetchRespBytes)
 			}
 
 			// We are returning either unauthorized or encrypted creds so we
@@ -91,6 +100,8 @@ func (l *InterceptingListener) getTlsConfigForClient(hello *tls.ClientHelloInfo)
 			serverCertsReq.Nonce = reqInfo.Nonce
 			serverCertsReq.CertificatePublicKeyPkix = reqInfo.CertificatePublicKeyPkix
 			protoToReturn = p
+			// This is a hint to the standard TLS verification function to just allow it
+			opt = append(opt, nodeenrollment.WithAlpnProtoPrefix(nodeenrollment.FetchNodeCredsNextProtoV1Prefix))
 
 		case strings.HasPrefix(p, nodeenrollment.AuthenticateNodeNextProtoV1Prefix):
 			// Get the full string and pull out just the marshaled proto
@@ -119,7 +130,7 @@ func (l *InterceptingListener) getTlsConfigForClient(hello *tls.ClientHelloInfo)
 	}
 
 	// Generate a server-side certificate
-	certResp, err := l.generateServerCertificatesFn(l.ctx, l.storage, serverCertsReq, l.options...)
+	certResp, err := l.generateServerCertificatesFn(l.ctx, l.storage, serverCertsReq, opt...)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error generating server-side certificate: %w", op, err)
 	}
@@ -129,7 +140,7 @@ func (l *InterceptingListener) getTlsConfigForClient(hello *tls.ClientHelloInfo)
 
 	// Ensure that the key we just verified from the signature is the one
 	// presented by the client when we handshake
-	opt := append(l.options, nodeenrollment.WithExpectedPublicKey(serverCertsReq.CertificatePublicKeyPkix))
+	opt = append(opt, nodeenrollment.WithExpectedPublicKey(serverCertsReq.CertificatePublicKeyPkix))
 
 	tlsConf, err := nodetls.ServerConfig(l.ctx, certResp, opt...)
 	if err != nil {

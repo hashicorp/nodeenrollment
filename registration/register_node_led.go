@@ -100,7 +100,7 @@ func validateFetchRequest(
 }
 
 // FetchNodeCredentials fetches node credentials based on the submitted
-// information
+// information.
 //
 // Supported options: WithRandomReader, WithWrapper (passed through to
 // LoadNodeInformation, NodeInformation.Store, and LoadRootCertificates),
@@ -125,9 +125,8 @@ func FetchNodeCredentials(
 	}
 
 	if nodeInfo == nil {
-		return &types.FetchNodeCredentialsResponse{
-			Authorized: false,
-		}, nil
+		// Unauthorized, so return empty
+		return new(types.FetchNodeCredentialsResponse), nil
 	}
 
 	keyId, err := nodeenrollment.KeyIdFromPkix(reqInfo.CertificatePublicKeyPkix)
@@ -191,7 +190,6 @@ func FetchNodeCredentials(
 		EncryptedNodeCredentialsSignature: sigBytes,
 		ServerEncryptionPublicKeyBytes:    serverEncryptionPublicKey,
 		ServerEncryptionPublicKeyType:     nodeInfo.ServerEncryptionPrivateKeyType,
-		Authorized:                        true,
 	}, nil
 }
 

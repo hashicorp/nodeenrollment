@@ -115,4 +115,18 @@ func Test_GetOpts(t *testing.T) {
 		require.NoError(err)
 		assert.Equal(structMap, opts.WithState.AsMap())
 	})
+	t.Run("with-alpn-proto-prefix", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.Empty(opts.WithAlpnProtoPrefix)
+		opts, err = GetOpts(WithAlpnProtoPrefix(FetchNodeCredsNextProtoV1Prefix))
+		require.NoError(err)
+		assert.Equal(FetchNodeCredsNextProtoV1Prefix, opts.WithAlpnProtoPrefix)
+		opts, err = GetOpts(WithAlpnProtoPrefix(AuthenticateNodeNextProtoV1Prefix))
+		require.NoError(err)
+		assert.Equal(AuthenticateNodeNextProtoV1Prefix, opts.WithAlpnProtoPrefix)
+		opts, err = GetOpts(WithAlpnProtoPrefix("foobar"))
+		require.Error(err)
+	})
 }
