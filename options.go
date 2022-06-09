@@ -3,6 +3,7 @@ package nodeenrollment
 import (
 	"crypto/rand"
 	"crypto/x509"
+	"fmt"
 	"io"
 	"time"
 
@@ -38,6 +39,7 @@ type Options struct {
 	WithSkipStorage          bool
 	WithExpectedPublicKey    []byte
 	WithState                *structpb.Struct
+	WithAlpnProtoPrefix      string
 }
 
 // Option is a function that takes in an options struct and sets values or
@@ -143,5 +145,20 @@ func WithState(with *structpb.Struct) Option {
 	return func(o *Options) error {
 		o.WithState = with
 		return nil
+	}
+}
+
+// WithAlpnProtoPrefix is used to convey information about which proto is being used
+// to handle a connection
+func WithAlpnProtoPrefix(with string) Option {
+	const op = "nodeenrollment.WithAlpnProtoPrefix"
+	return func(o *Options) error {
+		switch with {
+		case FetchNodeCredsNextProtoV1Prefix, AuthenticateNodeNextProtoV1Prefix:
+			o.WithAlpnProtoPrefix = with
+			return nil
+		default:
+			return fmt.Errorf("(%s) unknown proto prefix %s", op, with)
+		}
 	}
 }

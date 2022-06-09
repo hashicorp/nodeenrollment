@@ -186,7 +186,7 @@ func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 		// we want to close the connection and return a temp error either way so
 		// that the node either retries with new creds or tries again to fetch later.
 		if strings.HasPrefix(tlsConn.ConnectionState().NegotiatedProtocol, nodeenrollment.FetchNodeCredsNextProtoV1Prefix) {
-			err := fmt.Errorf("(%s) fetch handled, awaiting auth connection", op)
+			err := fmt.Errorf("(%s) fetch handled, awaiting authorization or auth connection", op)
 			// If we got here we've already sent back the creds, so close the
 			// connection and return a temp error so we keep the listener alive
 			if closeErr := tlsConn.Close(); closeErr != nil {

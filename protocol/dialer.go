@@ -79,11 +79,9 @@ func Dial(
 			err = multierror.Append(err, fmt.Errorf("(%s) error closing initial connection: %w", op, closeErr))
 		}
 		if err != nil {
+			// If not authorized, this will pass ErrNotAuthorized back to the
+			// caller
 			return nil, err
-		}
-
-		if !fetchResp.Authorized {
-			return nil, fmt.Errorf("(%s) not yet authorized", op)
 		}
 
 		if _, err := creds.HandleFetchNodeCredentialsResponse(ctx, storage, fetchResp, opt...); err != nil {
@@ -110,6 +108,8 @@ func Dial(
 
 // attemptFetch creates a signed fetch request and tries to perform a TLS
 // handshake, reading the resulting certificate
+//
+// If not authorized, returns nodeenrollment.ErrNotAuthorized
 func attemptFetch(ctx context.Context, nonTlsConn net.Conn, creds *types.NodeCredentials, opt ...nodeenrollment.Option) (*types.FetchNodeCredentialsResponse, error) {
 	const op = "nodeenrollment.protocol.attemptFetch"
 
@@ -201,14 +201,22 @@ func attemptFetch(ctx context.Context, nonTlsConn net.Conn, creds *types.NodeCre
 		return nil, fmt.Errorf("(%s) error tls handshaking connection: %w", op, err)
 	}
 
-	respBytes, err := base64.RawStdEncoding.DecodeString(tlsConn.ConnectionState().PeerCertificates[0].Subject.CommonName)
-	if err != nil {
-		return nil, fmt.Errorf("(%s) error base64 decoding fetch response: %w", op, err)
-	}
-	fetchResp := new(types.FetchNodeCredentialsResponse)
-	if err := proto.Unmarshal(respBytes, fetchResp); err != nil {
-		return nil, fmt.Errorf("(%s) error decoding response from server: %w", op, err)
-	}
+	commonName := tlsConn.ConnectionState().PeerCertificates[0].Subject.CommonName
+	switch commonName {
+	case nodeenrollment.CommonDnsName:
+		// We're unauthorized
+		return nil, nodeenrollment.ErrNotAuthorized
 
-	return fetchResp, nil
+	default:
+		respBytes, err := base64.RawStdEncoding.DecodeString(tlsConn.ConnectionState().PeerCertificates[0].Subject.CommonName)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error base64 decoding fetch response: %w", op, err)
+		}
+		fetchResp := new(types.FetchNodeCredentialsResponse)
+		if err := proto.Unmarshal(respBytes, fetchResp); err != nil {
+			return nil, fmt.Errorf("(%s) error decoding response from server: %w", op, err)
+		}
+
+		return fetchResp, nil
+	}
 }
