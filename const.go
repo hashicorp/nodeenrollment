@@ -65,3 +65,7 @@ const (
 // Depending on the storage implementation it may be a different underlying
 // error, so this ensures we can use errors.Is as a check.
 var ErrNotFound = errors.New("value not found in storage")
+
+// ErrNotAuthorized is a common error that we can return to indicate that a node
+// is still awaiting authentication after attempting to fetch credentials
+var ErrNotAuthorized = errors.New("node is not yet authorized")
