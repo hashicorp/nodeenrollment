@@ -76,7 +76,7 @@ func (ts *Storage) BaseDir() string {
 
 // Cleanup provides a function to clean up after tests
 func (ts *Storage) Cleanup() {
-	if ts.skipCleanup {
+	if ts == nil || ts.skipCleanup {
 		return
 	}
 	os.RemoveAll(ts.baseDir)

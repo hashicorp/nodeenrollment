@@ -80,12 +80,19 @@ func NewInterceptingListener(
 		return nil, fmt.Errorf("(%s) configuration is nil", op)
 	case nodeenrollment.IsNil(config.Context):
 		return nil, fmt.Errorf("(%s) context is nil", op)
-	case nodeenrollment.IsNil(config.Storage):
-		return nil, fmt.Errorf("(%s) storage is nil", op)
 	case nodeenrollment.IsNil(config.BaseListener):
 		return nil, fmt.Errorf("(%s) base listener is nil", op)
 	case config.BaseTlsConfiguration == nil:
 		return nil, fmt.Errorf("(%s) base tls configuration is nil", op)
+	}
+
+	// These functions are where we use storage, so if they are being
+	// overridden, allow the provider to perform their own checks. This lets
+	// some function providers not have to instantiate storage if they don't
+	// need it.
+	if nodeenrollment.IsNil(config.Storage) &&
+		(config.FetchCredsFunc == nil || config.GenerateServerCertificatesFunc == nil) {
+		return nil, fmt.Errorf("(%s) storage is nil but not all function options are non-nil", op)
 	}
 
 	l := &InterceptingListener{
