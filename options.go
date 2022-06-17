@@ -40,6 +40,7 @@ type Options struct {
 	WithExpectedPublicKey    []byte
 	WithState                *structpb.Struct
 	WithAlpnProtoPrefix      string
+	WithServerName           string
 }
 
 // Option is a function that takes in an options struct and sets values or
@@ -160,5 +161,13 @@ func WithAlpnProtoPrefix(with string) Option {
 		default:
 			return fmt.Errorf("(%s) unknown proto prefix %s", op, with)
 		}
+	}
+}
+
+// WithServerName is used to pass a server name to include in a TLS config
+func WithServerName(with string) Option {
+	return func(o *Options) error {
+		o.WithServerName = with
+		return nil
 	}
 }

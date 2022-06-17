@@ -82,7 +82,7 @@ func TestClientConfig(t *testing.T) {
 				n, wantErrContains = tt.setupFn(proto.Clone(n).(*types.NodeCredentials))
 			}
 
-			resp, err := ClientConfig(ctx, n)
+			resp, err := ClientConfig(ctx, n, nodeenrollment.WithServerName("foobar"))
 			switch wantErrContains {
 			case "":
 				require.NoError(err)
@@ -101,6 +101,7 @@ func TestClientConfig(t *testing.T) {
 			// them or iterate over them so we have to just try manually
 			// validating certs, boo. We simply validate that the generated cert
 			// validates against the returned roots.
+			assert.Equal("foobar", resp.ServerName)
 			assert.Len(resp.Certificates, 2)
 			for _, tlsCert := range resp.Certificates {
 				assert.Len(tlsCert.Certificate, 2)

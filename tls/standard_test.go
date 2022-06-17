@@ -52,6 +52,9 @@ func TestStandardTls(t *testing.T) {
 	t.Log("valid")
 	runTest(t, ctx, storage, node, false)
 
+	t.Log("valid-with-server-name")
+	runTest(t, ctx, storage, node, false, nodeenrollment.WithServerName("barfoo"))
+
 	t.Log("invalid-nonce")
 	runTest(t, ctx, storage, node, true, nodeenrollment.WithNonce("foobar"))
 
@@ -135,6 +138,10 @@ func runTest(t *testing.T, ctx context.Context, storage nodeenrollment.Storage, 
 	clientTlsConfig, err := ClientConfig(ctx, nodeCreds, opt...)
 	require.NoError(err)
 	require.NotNil(clientTlsConfig)
+
+	if opts.WithServerName != "" {
+		assert.Equal("barfoo", clientTlsConfig.ServerName)
+	}
 
 	// Pull out the client request and generated nonce and create the generate
 	// certs response from it
