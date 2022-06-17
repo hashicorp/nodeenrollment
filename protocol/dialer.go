@@ -114,6 +114,10 @@ func Dial(
 	}
 	tlsConn := tls.Client(nonTlsConn, tlsConfig)
 
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		return nil, fmt.Errorf("(%s) error handshaking tls connection: %w", op, err)
+	}
+
 	return tlsConn, nil
 }
 
