@@ -17,7 +17,8 @@ import (
 // ClientConfig creates a client-side tls.Config by from the given
 // NodeCredentials. The values populated here can be used or modified as needed.
 //
-// Supported options: WithRandomReader
+// Supported options: WithRandomReader, WithServerName (passed through to
+// standardTlsConfig)
 func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenrollment.Option) (*tls.Config, error) {
 	const op = "nodeenrollment.tls.ClientConfig"
 

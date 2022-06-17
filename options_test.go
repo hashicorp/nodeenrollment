@@ -129,4 +129,13 @@ func Test_GetOpts(t *testing.T) {
 		opts, err = GetOpts(WithAlpnProtoPrefix("foobar"))
 		require.Error(err)
 	})
+	t.Run("with-server-name", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.Empty(opts.WithServerName)
+		opts, err = GetOpts(WithServerName("foobar"))
+		require.NoError(err)
+		assert.Equal("foobar", opts.WithServerName)
+	})
 }

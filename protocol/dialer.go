@@ -66,6 +66,8 @@ func Dial(
 		return nil, fmt.Errorf("(%s) loaded node credentials are nil", op)
 	}
 
+	opt = append(opt, nodeenrollment.WithServerName(addr))
+
 	if len(creds.CertificateBundles) == 0 {
 		// We haven't fetched creds yet, so attempt it
 		nonTlsConn, err := nonTlsConnFn()
@@ -193,6 +195,7 @@ func attemptFetch(ctx context.Context, nonTlsConn net.Conn, creds *types.NodeCre
 		// encrypted information only; we do not rely on it for security
 		InsecureSkipVerify: true,
 		NextProtos:         splitNextProtos,
+		ServerName:         opts.WithServerName,
 	}
 
 	tlsConn := tls.Client(nonTlsConn, tlsConf)

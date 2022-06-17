@@ -19,7 +19,7 @@ import (
 // appropriate roots.
 //
 // Supported options: WithRandReader, WithNonce, WithVerifyConnectionFunc,
-// WithExpectedPublicKey
+// WithExpectedPublicKey, WithServerName
 func standardTlsConfig(ctx context.Context, tlsCerts []tls.Certificate, pool *x509.CertPool, opt ...nodeenrollment.Option) (*tls.Config, error) {
 	const op = "nodeenrollment.tls.standardTlsConfig"
 
@@ -58,6 +58,7 @@ func standardTlsConfig(ctx context.Context, tlsCerts []tls.Certificate, pool *x5
 		RootCAs:            pool,
 		ClientCAs:          pool,
 		InsecureSkipVerify: true,
+		ServerName:         opts.WithServerName,
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			if len(cs.PeerCertificates) == 0 {
 				return fmt.Errorf("(%s) no peer certificates in VerifyConnection", op)
