@@ -66,7 +66,16 @@ func Dial(
 		return nil, fmt.Errorf("(%s) loaded node credentials are nil", op)
 	}
 
-	opt = append(opt, nodeenrollment.WithServerName(addr))
+	// Add in the address to SNI, but first ensure we're only adding the host
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		if strings.Contains(err.Error(), "missing port") {
+			host = addr
+		} else {
+			return nil, fmt.Errorf("(%s) error splitting address host/port: %w", op, err)
+		}
+	}
+	opt = append(opt, nodeenrollment.WithServerName(host))
 
 	if len(creds.CertificateBundles) == 0 {
 		// We haven't fetched creds yet, so attempt it
