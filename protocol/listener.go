@@ -16,6 +16,11 @@ import (
 	"github.com/hashicorp/nodeenrollment/util/temperror"
 )
 
+// ClientInfo allows us to pass information back from the TLS handshake
+type ClientInfo struct {
+	NextProtos []string
+}
+
 // InterceptingListener is a listener that transparently handles fetch
 // and auth flows if the right ALPN protos are found, and passes through
 // otherwise
@@ -139,7 +144,7 @@ func NewInterceptingListener(
 // library:
 //
 // if strings.HasPrefix(
-//      returnedConn.(*tls.Conn).ConnectionState().NegotiatedProtocol,
+//      returnedConn.(*protocol.Conn).Conn.ConnectionState().NegotiatedProtocol,
 //      nodeenrollment.AuthenticateNodeNextProtoV1Prefix
 // ) {
 //     // Authenticated by this library
@@ -160,6 +165,9 @@ func NewInterceptingListener(
 //  }); ok && tempErr.Temporary() {
 //
 // If it's temporary, continue on and accept the next connection.
+//
+// What's returned is a protocol.Conn; it contains an embedded *tls.Conn as the
+// Conn variable, if needed.
 func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 	const op = "nodeenrollment.protocol.(InterceptingListener).Accept"
 	for {
@@ -175,8 +183,9 @@ func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 		}
 
 		// Wrap the connection in our config
+		var clientInfo ClientInfo
 		tlsConn := tls.Server(conn, &tls.Config{
-			GetConfigForClient: l.getTlsConfigForClient,
+			GetConfigForClient: l.getTlsConfigForClient(&clientInfo),
 		})
 
 		// Force a handshake to run our logic
@@ -202,7 +211,10 @@ func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 			return nil, temperror.New(err)
 		}
 
-		return tlsConn, nil
+		return &Conn{
+			Conn:             tlsConn,
+			clientNextProtos: clientInfo.NextProtos,
+		}, nil
 	}
 }
 

@@ -41,6 +41,7 @@ type Options struct {
 	WithState                *structpb.Struct
 	WithAlpnProtoPrefix      string
 	WithServerName           string
+	WithExtraAlpnProtos      []string
 }
 
 // Option is a function that takes in an options struct and sets values or
@@ -168,6 +169,17 @@ func WithAlpnProtoPrefix(with string) Option {
 func WithServerName(with string) Option {
 	return func(o *Options) error {
 		o.WithServerName = with
+		return nil
+	}
+}
+
+// WithExtraAlpnProtos is used to allow passing additional ALPN protos in via a
+// ClientHello message, e.g. via the Dial function in the protocol package. This
+// can allow users of the library to perform an extra switch on the desired
+// protocol post-authentication.
+func WithExtraAlpnProtos(with []string) Option {
+	return func(o *Options) error {
+		o.WithExtraAlpnProtos = with
 		return nil
 	}
 }

@@ -18,7 +18,7 @@ import (
 // NodeCredentials. The values populated here can be used or modified as needed.
 //
 // Supported options: WithRandomReader, WithServerName (passed through to
-// standardTlsConfig)
+// standardTlsConfig), WithExtraAlpnProtos
 func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenrollment.Option) (*tls.Config, error) {
 	const op = "nodeenrollment.tls.ClientConfig"
 
@@ -136,5 +136,6 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error breaking request into next protos: %w", op, err)
 	}
+	tlsConfig.NextProtos = append(tlsConfig.NextProtos, opts.WithExtraAlpnProtos...)
 	return tlsConfig, nil
 }

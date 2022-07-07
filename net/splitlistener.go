@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/nodeenrollment"
+	"github.com/hashicorp/nodeenrollment/protocol"
 	"github.com/hashicorp/nodeenrollment/util/temperror"
 	"go.uber.org/atomic"
 )
@@ -91,14 +92,19 @@ func (l *SplitListener) Start() error {
 			}
 			return err
 		}
-		tlsConn, ok := conn.(*tls.Conn)
-		if !ok {
-			// This is an error; put it out the other listener but as a temp
-			// error so we accept more
-			_ = tlsConn.Close()
-			l.otherBabyListener.incoming <- splitConn{err: temperror.New(errors.New("expected tls connection but it is not"))}
+
+		var tlsConn *tls.Conn
+		switch c := conn.(type) {
+		case *protocol.Conn:
+			tlsConn = c.Conn
+		case *tls.Conn:
+			tlsConn = c
+		default:
+			_ = conn.Close()
+			l.otherBabyListener.incoming <- splitConn{err: temperror.New(fmt.Errorf("unknown connection type %T", c))}
 			continue
 		}
+
 		if !tlsConn.ConnectionState().HandshakeComplete {
 			if err := tlsConn.Handshake(); err != nil {
 				// Without a successful handshake we can't know which proto;
@@ -116,7 +122,7 @@ func (l *SplitListener) Start() error {
 			if strings.HasPrefix(negProto, nodeenrollment.AuthenticateNodeNextProtoV1Prefix) {
 				// This is the only case when we actually send the connection
 				// over -- when it's been fully authenticated
-				l.nodeeBabyListener.incoming <- splitConn{conn: tlsConn}
+				l.nodeeBabyListener.incoming <- splitConn{conn: conn}
 			} else {
 				// If it's the fetch proto, the TLS handshake should be all that is
 				// needed and the connection should be closed already. Close it for
@@ -124,7 +130,7 @@ func (l *SplitListener) Start() error {
 				_ = conn.Close()
 			}
 		default:
-			l.otherBabyListener.incoming <- splitConn{conn: tlsConn}
+			l.otherBabyListener.incoming <- splitConn{conn: conn}
 		}
 	}
 }
