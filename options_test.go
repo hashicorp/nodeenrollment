@@ -126,7 +126,7 @@ func Test_GetOpts(t *testing.T) {
 		opts, err = GetOpts(WithAlpnProtoPrefix(AuthenticateNodeNextProtoV1Prefix))
 		require.NoError(err)
 		assert.Equal(AuthenticateNodeNextProtoV1Prefix, opts.WithAlpnProtoPrefix)
-		opts, err = GetOpts(WithAlpnProtoPrefix("foobar"))
+		_, err = GetOpts(WithAlpnProtoPrefix("foobar"))
 		require.Error(err)
 	})
 	t.Run("with-server-name", func(t *testing.T) {
@@ -137,5 +137,14 @@ func Test_GetOpts(t *testing.T) {
 		opts, err = GetOpts(WithServerName("foobar"))
 		require.NoError(err)
 		assert.Equal("foobar", opts.WithServerName)
+	})
+	t.Run("with-extra-alpn-protos", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.Empty(opts.WithExtraAlpnProtos)
+		opts, err = GetOpts(WithExtraAlpnProtos([]string{"foo", "bar"}))
+		require.NoError(err)
+		assert.Equal([]string{"foo", "bar"}, opts.WithExtraAlpnProtos)
 	})
 }

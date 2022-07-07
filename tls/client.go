@@ -136,5 +136,6 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error breaking request into next protos: %w", op, err)
 	}
+	tlsConfig.NextProtos = append(tlsConfig.NextProtos, opts.WithExtraAlpnProtos...)
 	return tlsConfig, nil
 }

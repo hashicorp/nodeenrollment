@@ -26,7 +26,9 @@ import (
 // Supported options: WithRandomReader, WithWrapper (passed through to
 // LoadNodeCredentials and NodeCredentials.Store),
 // WithNotBeforeClockSkew/WithNotAfterClockSkew (these are used as
-// NotBefore/NotAfter lifetimes for the generated cert used for client side TLS)
+// NotBefore/NotAfter lifetimes for the generated cert used for client side
+// TLS), WithExtraAlpnProtos (passed through to the client side TLS
+// configuration)
 func Dial(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
