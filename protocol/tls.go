@@ -21,7 +21,8 @@ import (
 // configuration will be chained to.
 //
 // Supported options: WithWrapper (passed through to LoadRootCertificate),
-// WithRandReader (passed through to ServerConfig and GenerateServerCertificates)
+// WithRandReader (passed through to ServerConfig and
+// GenerateServerCertificates)
 func (l *InterceptingListener) getTlsConfigForClient(clientInfo *ClientInfo) func(*tls.ClientHelloInfo) (*tls.Config, error) {
 	const op = "nodeenrollment.protocol.(InterceptingListener).getTlsConfigForClient"
 

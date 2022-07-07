@@ -18,7 +18,7 @@ import (
 // NodeCredentials. The values populated here can be used or modified as needed.
 //
 // Supported options: WithRandomReader, WithServerName (passed through to
-// standardTlsConfig)
+// standardTlsConfig), WithExtraAlpnProtos
 func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenrollment.Option) (*tls.Config, error) {
 	const op = "nodeenrollment.tls.ClientConfig"
 
