@@ -8,6 +8,21 @@ type Conn struct {
 	clientNextProtos []string
 }
 
+// NewConn constructs a conn from a base TLS connection and possibly client next
+// protos
+func NewConn(base *tls.Conn, clientNextProtos []string) *Conn {
+	conn := &Conn{Conn: base}
+	switch {
+	case clientNextProtos == nil:
+	case len(clientNextProtos) == 0:
+		conn.clientNextProtos = make([]string, 0)
+	default:
+		conn.clientNextProtos = make([]string, len(clientNextProtos))
+		copy(conn.clientNextProtos, clientNextProtos)
+	}
+	return conn
+}
+
 // ClientNextProtos returns the value of NextProtos originally presented by the
 // client at connection time
 func (c *Conn) ClientNextProtos() []string {
