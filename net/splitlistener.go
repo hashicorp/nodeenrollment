@@ -19,8 +19,8 @@ type splitConn struct {
 }
 
 // SplitListener takes in a base listener and sends incoming connections to one
-// of two listeners: one that is used if the TLS connection negotiated to one
-// of this package's standard ALPN proto values and one if not.
+// of two listeners: one that is used if the TLS connection negotiated to one of
+// this package's standard ALPN proto values and one if not.
 //
 // It is required that the base listener return *tls.Conn values on Accept.
 //
@@ -32,6 +32,9 @@ type splitConn struct {
 //
 // On receiving an error from the underlying Accept from the base listener that
 // is not a Temporary error, the listener will stop listening.
+//
+// NOTE: The NodeEnrollmentListener will return values of type *protocol.Conn;
+// the OtherListener will return values of type *tls.Conn.
 type SplitListener struct {
 	baseLn                               net.Listener
 	nodeeBabyListener, otherBabyListener *babySplitListener
@@ -130,7 +133,7 @@ func (l *SplitListener) Start() error {
 				_ = conn.Close()
 			}
 		default:
-			l.otherBabyListener.incoming <- splitConn{conn: conn}
+			l.otherBabyListener.incoming <- splitConn{conn: tlsConn}
 		}
 	}
 }
