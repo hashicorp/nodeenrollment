@@ -29,8 +29,8 @@ func (l *InterceptingListener) getTlsConfigForClient(clientInfo *ClientInfo) fun
 	return func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 		// Copy client next proto information to returned value
 		if len(hello.SupportedProtos) > 0 {
-			clientInfo.NextProtos = make([]string, len(hello.SupportedProtos))
-			copy(clientInfo.NextProtos, hello.SupportedProtos)
+			clientInfo.nextProtos = make([]string, len(hello.SupportedProtos))
+			copy(clientInfo.nextProtos, hello.SupportedProtos)
 		}
 
 		// If they aren't announcing support, return the base configuration

@@ -18,7 +18,7 @@ import (
 
 // ClientInfo allows us to pass information back from the TLS handshake
 type ClientInfo struct {
-	NextProtos []string
+	nextProtos []string
 }
 
 // InterceptingListener is a listener that transparently handles fetch
@@ -213,7 +213,7 @@ func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 
 		return &Conn{
 			Conn:             tlsConn,
-			clientNextProtos: clientInfo.NextProtos,
+			clientNextProtos: clientInfo.nextProtos,
 		}, nil
 	}
 }
