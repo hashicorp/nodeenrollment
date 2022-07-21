@@ -135,9 +135,9 @@ func (l *SplitListener) Start() error {
 				continue
 			}
 
-			// This is a verified authenticated listener. However, if it was
-			// only a *tls.Conn we have no client conns to match on, so in that
-			// case first/only look for the authenticated next proto.
+			// This is a verified authenticated conn. However, if it was only a
+			// *tls.Conn we have no client conns to match on, so in that case
+			// first/only look for the authenticated next proto.
 			if !isProtoConn {
 				val, ok := l.babyListeners.Load(AuthenticatedNonSpecificNextProto)
 				if !ok {
