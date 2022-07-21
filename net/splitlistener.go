@@ -286,7 +286,8 @@ func (l *babySplitListener) Accept() (net.Conn, error) {
 			select {
 			case <-l.ctx.Done():
 				// Check one more time in case this was pseduo-randomly chosen
-				// as the valid case
+				// as the valid case; if so close the conn and return ErrClosed
+				_ = in.conn.Close()
 				return nil, net.ErrClosed
 			default:
 				return in.conn, in.err
