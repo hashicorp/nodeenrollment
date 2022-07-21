@@ -1,11 +1,13 @@
 package net
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/protocol"
@@ -50,30 +52,25 @@ func NewSplitListener(baseLn net.Listener) *SplitListener {
 		stopped: atomic.NewBool(false),
 	}
 	tl.nodeeBabyListener = &babySplitListener{
-		tl:       tl,
-		incoming: make(chan splitConn),
+		tl:           tl,
+		incoming:     make(chan splitConn),
+		drainSpawned: new(sync.Once),
 	}
+	tl.nodeeBabyListener.ctx, tl.nodeeBabyListener.cancel = context.WithCancel(context.Background())
 	tl.otherBabyListener = &babySplitListener{
-		tl:       tl,
-		incoming: make(chan splitConn),
+		tl:           tl,
+		incoming:     make(chan splitConn),
+		drainSpawned: new(sync.Once),
 	}
+	tl.otherBabyListener.ctx, tl.otherBabyListener.cancel = context.WithCancel(context.Background())
 	return tl
 }
 
-// Stop stops the listener. If this is the first time it's called it will close
-// the underlying listener (causing the Start function to exit) and return that
-// error. On any future call it is a noop.
-func (l *SplitListener) Stop() error {
-	if l.stopped.CAS(false, true) {
-		return l.baseLn.Close()
-	}
-	return nil
-}
-
-// Start starts the listener running. It will run until Stop is called, causing
-// the base listener to Close and the Accept to return a non-temporary error.
+// Start starts the listener running. It will run until the base listener is
+// closed, causing Accept to return a non-temporary error.
 //
-// Any temporary errors encountered will just cause that connection to be closed.
+// Any temporary errors encountered will cause just that connection to be
+// closed.
 func (l *SplitListener) Start() error {
 	defer func() {
 		close(l.nodeeBabyListener.incoming)
@@ -150,8 +147,11 @@ func (l *SplitListener) OtherListener() net.Listener {
 }
 
 type babySplitListener struct {
-	tl       *SplitListener
-	incoming chan splitConn
+	tl           *SplitListener
+	incoming     chan splitConn
+	ctx          context.Context
+	cancel       context.CancelFunc
+	drainSpawned *sync.Once
 }
 
 // Addr satisfies the net.Listener interface and returns the base listener
@@ -160,20 +160,58 @@ func (l *babySplitListener) Addr() net.Addr {
 	return l.tl.baseLn.Addr()
 }
 
-// Close satisfies the net.Listener interface. It does nothing; close the
-// SplitListener, not this.
+// Close satisfies the net.Listener interface and closes this specific listener.
+// We call drainConnections here in case Accept hasn't been called.
 func (l *babySplitListener) Close() error {
+	l.cancel()
+	l.drainConnections()
 	return nil
 }
 
 // Accept satisfies the net.Listener interface and returns any connections that
 // have been sent to this listener. Accept will return when the channel is shut
-// down, which happens when Stop is called on the SplitListener, which also
-// closes the underlying listener, hence once the range ends we return
-// net.ErrClosed.
+// down, which happens when Stop is called on the SplitListener (or the
+// underlying listener is closed), which also closes the underlying listener,
+// hence once the range ends we return net.ErrClosed.
 func (l *babySplitListener) Accept() (net.Conn, error) {
-	for in := range l.incoming {
-		return in.conn, in.err
+	for {
+		select {
+		case <-l.ctx.Done():
+			// If Close() was called this would happen anyways, but in case it
+			// was only called on the parent listener, ensure we drain
+			// connections
+			l.drainConnections()
+			return nil, net.ErrClosed
+
+		case in, ok := <-l.incoming:
+			if !ok {
+				// Channel has been closed, trigger cancel behavior and loop
+				// back up to the case above
+				l.cancel()
+				continue
+			}
+			select {
+			case <-l.ctx.Done():
+				// Check one more time in case this was pseduo-randomly chosen
+				// as the valid case
+				return nil, net.ErrClosed
+			default:
+				return in.conn, in.err
+			}
+		}
 	}
-	return nil, net.ErrClosed
+}
+
+// drainConnections ensures we close any connections sent our way once the
+// listener is closed so no open connections leak
+func (l *babySplitListener) drainConnections() {
+	l.drainSpawned.Do(func() {
+		go func() {
+			for in := range l.incoming {
+				if in.conn != nil {
+					_ = in.conn.Close()
+				}
+			}
+		}()
+	})
 }

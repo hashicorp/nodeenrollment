@@ -8,6 +8,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/registration"
@@ -127,10 +128,12 @@ func TestSplitListener(t *testing.T) {
 		require.NoError(conn.Close())
 	}
 
-	require.NoError(splitListener.Stop())
+	time.Sleep(2 * time.Second)
+
+	require.NoError(tlsListener.Close())
 	wg.Wait()
 
-	assert.Equal(net.ErrClosed.Error(), startErr.Load())
+	assert.Contains(startErr.Load(), net.ErrClosed.Error())
 	assert.True(nodeeListenerReturnedDone.Load())
 	assert.True(otherListenerReturnedDone.Load())
 	assert.Empty(nodeeListenerReturnedErr.Load())
