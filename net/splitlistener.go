@@ -177,6 +177,7 @@ func (l *SplitListener) Start() error {
 			} else {
 				_ = conn.Close()
 			}
+			continue
 		}
 
 		// Not authenticated
