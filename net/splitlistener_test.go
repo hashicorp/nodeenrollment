@@ -71,14 +71,18 @@ func TestSplitListener(t *testing.T) {
 
 	splitListener := NewSplitListener(tlsListener)
 
+	authLn, err := splitListener.GetListener(AuthenticatedNonSpecificNextProto)
+	require.NoError(err)
+	unauthLn, err := splitListener.GetListener(UnauthenticatedNextProto)
+	require.NoError(err)
+
 	wg := new(sync.WaitGroup)
 	wg.Add(3)
 
 	go func() {
 		defer wg.Done()
-		ln := splitListener.NodeEnrollmentListener()
 		for {
-			_, err := ln.Accept()
+			_, err := authLn.Accept()
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {
 					nodeeListenerReturnedDone.Store(true)
@@ -93,9 +97,8 @@ func TestSplitListener(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		ln := splitListener.OtherListener()
 		for {
-			_, err := ln.Accept()
+			_, err := unauthLn.Accept()
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {
 					otherListenerReturnedDone.Store(true)
