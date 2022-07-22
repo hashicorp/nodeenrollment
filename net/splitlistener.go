@@ -27,7 +27,7 @@ type splitConn struct {
 // their own handling of connections off of a net.Listener. One such example is
 // gRPC which expects to be handed a listener and has deprecated any ability to
 // simply hand it a connection. GetListener can be called with
-// AuthenticatedNonSpecificNextProto can be given to the gRPC server to pass
+// AuthenticatedNonSpecificNextProto which in turn can be given to the gRPC server to pass
 // authenticated connections to gRPC, and a listener with
 // UnauthenticatedNextProto can be passed to another handler.
 //
