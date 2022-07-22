@@ -114,7 +114,7 @@ func (l *SplitListener) Start() error {
 		if !tlsConn.ConnectionState().HandshakeComplete {
 			if err := tlsConn.Handshake(); err != nil {
 				// Without a successful handshake we can't know which proto;
-				// send down the unauth listener
+				// send it down to the unauth listener
 				val, ok := l.babyListeners.Load(UnauthenticatedNextProto)
 				if !ok {
 					_ = conn.Close()
