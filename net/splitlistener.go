@@ -37,7 +37,7 @@ type splitConn struct {
 // further switching based on listeners retrieved from GetListener with custom
 // protos.
 //
-// Regardless of client-specified NextProto or not, any connections that return
+// Regardless of client-specified NextProto or not, any connections that's return
 // from a listener retrieved from GetListener will always have been
 // authenticated with NodeEnrollment _unless_ they are coming from an
 // UnauthenticatedNextProto listener.
