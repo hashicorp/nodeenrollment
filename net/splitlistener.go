@@ -2,7 +2,6 @@ package net
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -27,40 +26,45 @@ type splitConn struct {
 // their own handling of connections off of a net.Listener. One such example is
 // gRPC which expects to be handed a listener and has deprecated any ability to
 // simply hand it a connection. GetListener can be called with
-// AuthenticatedNonSpecificNextProto which in turn can be given to the gRPC server to pass
-// authenticated connections to gRPC, and a listener with
+// AuthenticatedNonSpecificNextProto which in turn can be given to the gRPC
+// server to pass authenticated connections to gRPC, and a listener with
 // UnauthenticatedNextProto can be passed to another handler.
 //
 // SplitListener is compatible with the protocol package's Dialer's
-// WithExtraAlpnProtos option. If the base listener is a protocol.Listener, the
+// WithExtraAlpnProtos option. As the base listener is a *protocol.Listener, the
 // client-specified NextProtos will be passed through to here and used to allow
 // further switching based on listeners retrieved from GetListener with custom
 // protos.
 //
-// Regardless of client-specified NextProto or not, any connections that's return
-// from a listener retrieved from GetListener will always have been
+// Regardless of client-specified NextProto or not, any connection that's
+// returned from a listener retrieved from GetListener will always have been
 // authenticated with NodeEnrollment _unless_ they are coming from an
 // UnauthenticatedNextProto listener.
 //
 // On receiving an error from the underlying Accept from the base listener that
 // is not a Temporary error, the listener will stop listening.
 type SplitListener struct {
-	baseLn        net.Listener
+	baseLn        *protocol.InterceptingListener
 	babyListeners *sync.Map
 	ctx           context.Context
 	cancel        context.CancelFunc
 }
 
-// NewSplitListener creates a new listener from a base listener. The base
-// listener must return *tls.Conn connections (or a net.Conn that is
-// type-assertable to *tls.Conn).
-func NewSplitListener(baseLn net.Listener) *SplitListener {
+// NewSplitListener creates a new listener from a base listener, which must be a
+// *protocol.InterceptingListener.
+func NewSplitListener(baseLn net.Listener) (*SplitListener, error) {
+	const op = "nodeenrollment.net.NewSplitListener"
+	intLn, ok := baseLn.(*protocol.InterceptingListener)
+	if !ok {
+		return nil, fmt.Errorf("(%s): listener is not a *protocol.InterceptingListener", op)
+	}
+
 	l := &SplitListener{
-		baseLn:        baseLn,
+		baseLn:        intLn,
 		babyListeners: new(sync.Map),
 	}
 	l.ctx, l.cancel = context.WithCancel(context.Background())
-	return l
+	return l, nil
 }
 
 // Start starts the listener running. It will run until the base listener is
@@ -91,38 +95,23 @@ func (l *SplitListener) Start() error {
 			return err
 		}
 
-		var isProtoConn bool
-		var tlsConn *tls.Conn
-		switch c := conn.(type) {
-		case *protocol.Conn:
-			isProtoConn = true
-			tlsConn = c.Conn
-		case *tls.Conn:
-			tlsConn = c
-		default:
-			// Not a TLS connection or another kind we know about so can't do
-			// anything with it
-			val, ok := l.babyListeners.Load(UnauthenticatedNextProto)
-			if !ok {
-				_ = conn.Close()
-			} else {
-				val.(*babySplitListener).incoming <- splitConn{conn: conn}
-			}
+		protoConn, ok := conn.(*protocol.Conn)
+		if !ok {
+			// It'd be nice not to be silent about this, but since we've
+			// verified that only *protocol.InterceptingListener can be the
+			// underlying listener, this should never really happen
+			_ = conn.Close()
 			continue
 		}
 
+		tlsConn := protoConn.Conn
 		if !tlsConn.ConnectionState().HandshakeComplete {
-			if err := tlsConn.Handshake(); err != nil {
-				// Without a successful handshake we can't know which proto;
-				// send it down to the unauth listener
-				val, ok := l.babyListeners.Load(UnauthenticatedNextProto)
-				if !ok {
-					_ = conn.Close()
-				} else {
-					val.(*babySplitListener).incoming <- splitConn{conn: conn}
-				}
-				continue
-			}
+			// Another case where assuming it is in fact the listener we expect,
+			// it will always have performed a handshake as the protocol
+			// requires it; so it'd be nice not to be silent about this, but
+			// this should never really happen
+			_ = conn.Close()
+			continue
 		}
 
 		negProto := tlsConn.ConnectionState().NegotiatedProtocol
@@ -135,21 +124,8 @@ func (l *SplitListener) Start() error {
 				continue
 			}
 
-			// This is a verified authenticated conn. However, if it was only a
-			// *tls.Conn we have no client conns to match on, so in that case
-			// first/only look for the authenticated next proto.
-			if !isProtoConn {
-				val, ok := l.babyListeners.Load(AuthenticatedNonSpecificNextProto)
-				if !ok {
-					_ = conn.Close()
-				} else {
-					val.(*babySplitListener).incoming <- splitConn{conn: tlsConn}
-				}
-				continue
-			}
-
 			// Get client conns and do a search
-			clientNextProtos := conn.(*protocol.Conn).ClientNextProtos()
+			clientNextProtos := protoConn.ClientNextProtos()
 			var foundListener *babySplitListener
 			l.babyListeners.Range(func(k, v any) bool {
 				for _, proto := range clientNextProtos {
@@ -185,7 +161,7 @@ func (l *SplitListener) Start() error {
 		if !ok {
 			_ = conn.Close()
 		} else {
-			val.(*babySplitListener).incoming <- splitConn{conn: conn}
+			val.(*babySplitListener).incoming <- splitConn{conn: tlsConn}
 		}
 	}
 }
@@ -208,8 +184,7 @@ func (l *SplitListener) Start() error {
 // returned on it. This includes connections that did not successfully TLS
 // handshake or that are not TLS connections.
 //
-// Except via an UnauthenticatedNextProto listener, the connections returned
-// over the listener will always be *tls.Conn.
+// The connections returned over the listener will always be *tls.Conn.
 //
 // If there was a previous listener for the given value, it is returned,
 // otherwise a new one is created.
