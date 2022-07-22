@@ -190,7 +190,7 @@ func (l *SplitListener) Start() error {
 	}
 }
 
-// GetListener returns a listener that will send connections that satisfy both
+// GetListener returns a listener that will return connections that satisfy both
 // of the following:
 //
 // * It has been authenticated with the nodeenrollment library
