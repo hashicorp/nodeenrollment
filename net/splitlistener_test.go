@@ -289,6 +289,11 @@ func TestIngressListener(t *testing.T) {
 		require.NoError(conn.Close())
 	}
 
+	for i := 0; i < 10; i++ {
+		conn := &net.TCPConn{}
+		mxLn.IngressConn(conn, nil)
+	}
+
 	time.Sleep(3 * time.Second)
 
 	require.NoError(baseLn1.Close())
@@ -298,5 +303,5 @@ func TestIngressListener(t *testing.T) {
 
 	assert.True(listenerReturnedDone.Load())
 	assert.Empty(listenerReturnedErr.Load())
-	assert.EqualValues(30, conns.Load())
+	assert.EqualValues(40, conns.Load())
 }

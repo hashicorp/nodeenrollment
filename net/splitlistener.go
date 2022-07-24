@@ -17,11 +17,6 @@ const (
 	AuthenticatedNonSpecificNextProto = "__AUTH__"
 )
 
-type SplitConn struct {
-	Conn net.Conn
-	Err  error
-}
-
 // SplitListener can be useful for integration with systems that expect to do
 // their own handling of connections off of a net.Listener. One such example is
 // gRPC which expects to be handed a listener and has deprecated any ability to
@@ -75,7 +70,7 @@ func NewSplitListener(baseLn net.Listener) (*SplitListener, error) {
 func (l *SplitListener) Start() error {
 	defer func() {
 		l.babyListeners.Range(func(k, v any) bool {
-			v.(*monoplexingListener).Close()
+			v.(*MonoplexingListener).Close()
 			return true
 		})
 	}()
@@ -126,11 +121,11 @@ func (l *SplitListener) Start() error {
 
 			// Get client conns and do a search
 			clientNextProtos := protoConn.ClientNextProtos()
-			var foundListener *monoplexingListener
+			var foundListener *MonoplexingListener
 			l.babyListeners.Range(func(k, v any) bool {
 				for _, proto := range clientNextProtos {
 					if k.(string) == proto {
-						foundListener = v.(*monoplexingListener)
+						foundListener = v.(*MonoplexingListener)
 						return false
 					}
 				}
@@ -142,14 +137,14 @@ func (l *SplitListener) Start() error {
 			if foundListener == nil {
 				val, ok := l.babyListeners.Load(AuthenticatedNonSpecificNextProto)
 				if ok {
-					foundListener = val.(*monoplexingListener)
+					foundListener = val.(*MonoplexingListener)
 				}
 			}
 
 			// If we found a listener send the conn down, otherwise close the
 			// conn
 			if foundListener != nil {
-				foundListener.incoming <- SplitConn{Conn: tlsConn}
+				foundListener.IngressConn(tlsConn, nil)
 			} else {
 				_ = conn.Close()
 			}
@@ -161,7 +156,7 @@ func (l *SplitListener) Start() error {
 		if !ok {
 			_ = conn.Close()
 		} else {
-			val.(*monoplexingListener).incoming <- SplitConn{Conn: tlsConn}
+			val.(*MonoplexingListener).IngressConn(tlsConn, nil)
 		}
 	}
 }
@@ -210,20 +205,30 @@ func (l *SplitListener) GetListener(nextProto string) (net.Listener, error) {
 		_ = newMonoplexingListener.Close()
 		// In this case we know it's safe to close the channel too
 		close(newMonoplexingListener.incoming)
-		return existing.(*monoplexingListener), nil
+		return existing.(*MonoplexingListener), nil
 	}
 	return newMonoplexingListener, nil
 }
 
-type monoplexingListener struct {
+type splitConn struct {
+	conn net.Conn
+	err  error
+}
+
+// MonoplexingListener presents a listener interface, with connections sourced
+// from direct function calls or listeners passed in.
+//
+// Always use NewMonoplexingListener to create an instance. Failure to do so may
+// result in an eventual runtime panic.
+type MonoplexingListener struct {
 	addr         net.Addr
-	incoming     chan SplitConn
+	incoming     chan splitConn
 	ctx          context.Context
 	cancel       context.CancelFunc
 	drainSpawned *sync.Once
 }
 
-func NewMonoplexingListener(ctx context.Context, addr net.Addr) (*monoplexingListener, error) {
+func NewMonoplexingListener(ctx context.Context, addr net.Addr) (*MonoplexingListener, error) {
 	const op = "nodeenrollment.net.NewMonoplexingListener"
 	switch {
 	case nodeenrollment.IsNil(ctx):
@@ -232,9 +237,9 @@ func NewMonoplexingListener(ctx context.Context, addr net.Addr) (*monoplexingLis
 		return nil, fmt.Errorf("(%s): nil addr", op)
 	}
 
-	monoplexer := &monoplexingListener{
+	monoplexer := &MonoplexingListener{
 		addr:         addr,
-		incoming:     make(chan SplitConn),
+		incoming:     make(chan splitConn),
 		drainSpawned: new(sync.Once),
 	}
 	monoplexer.ctx, monoplexer.cancel = context.WithCancel(ctx)
@@ -244,14 +249,14 @@ func NewMonoplexingListener(ctx context.Context, addr net.Addr) (*monoplexingLis
 
 // Addr satisfies the net.Listener interface and returns the base listener
 // address
-func (l *monoplexingListener) Addr() net.Addr {
+func (l *MonoplexingListener) Addr() net.Addr {
 	return l.addr
 }
 
 // Close satisfies the net.Listener interface and closes this specific listener.
 // We call drainConnections here to ensure that senders don't block even though
 // we're no longer accepting them.
-func (l *monoplexingListener) Close() error {
+func (l *MonoplexingListener) Close() error {
 	l.drainConnections()
 	return nil
 }
@@ -259,7 +264,7 @@ func (l *monoplexingListener) Close() error {
 // Accept satisfies the net.Listener interface and returns the next connection
 // that has been sent to this listener, or net.ErrClosed if the listener has
 // been closed.
-func (l *monoplexingListener) Accept() (net.Conn, error) {
+func (l *MonoplexingListener) Accept() (net.Conn, error) {
 	select {
 	case <-l.ctx.Done():
 		// If Close() was called this would happen anyways, but in case it
@@ -269,7 +274,7 @@ func (l *monoplexingListener) Accept() (net.Conn, error) {
 		return nil, net.ErrClosed
 
 	case in, ok := <-l.incoming:
-		if !ok || nodeenrollment.IsNil(in.Conn) {
+		if !ok || nodeenrollment.IsNil(in.conn) {
 			// Channel has been closed
 			return nil, net.ErrClosed
 		}
@@ -279,21 +284,21 @@ func (l *monoplexingListener) Accept() (net.Conn, error) {
 			// Check one more time in case this was pseduo-randomly chosen as
 			// the valid case and the context is done; if so close the conn and
 			// return ErrClosed
-			_ = in.Conn.Close()
+			_ = in.conn.Close()
 			return nil, net.ErrClosed
 
 		default:
-			return in.Conn, in.Err
+			return in.conn, in.err
 		}
 	}
 }
 
-// IngressConns will read connections off the given listener until the listener
+// IngressListener will read connections off the given listener until the listener
 // is closed and returns net.ErrClosed; any other error during listen will be
 // sent through as-is. Any conns will be put onto the internal channel. This
 // function does not block; it will only ever error if the listener is nil.
-func (l *monoplexingListener) IngressListener(ln net.Listener) error {
-	const op = "nodeenrollment.net.(monoplexingListener).IngressConns"
+func (l *MonoplexingListener) IngressListener(ln net.Listener) error {
+	const op = "nodeenrollment.net.(monoplexingListener).IngressListener"
 	if ln == nil {
 		return fmt.Errorf("%s: nil listener", op)
 	}
@@ -304,24 +309,34 @@ func (l *monoplexingListener) IngressListener(ln net.Listener) error {
 			if err != nil && errors.Is(err, net.ErrClosed) {
 				return
 			}
-			l.incoming <- SplitConn{Conn: conn, Err: err}
+			l.incoming <- splitConn{conn: conn, err: err}
 		}
 	}()
 
 	return nil
 }
 
+// IngressConn sends a connection and associated error through the listener
+// as-is. It does not perform any nil checking on the given values.
+func (l *MonoplexingListener) IngressConn(conn net.Conn, err error) {
+	l.incoming <- splitConn{conn: conn, err: err}
+}
+
 // drainConnections ensures we close any connections sent our way once the
 // listener is closed so no open connections leak
-func (l *monoplexingListener) drainConnections() {
-	l.cancel()
-	l.drainSpawned.Do(func() {
-		go func() {
-			for in := range l.incoming {
-				if in.Conn != nil {
-					_ = in.Conn.Close()
+func (l *MonoplexingListener) drainConnections() {
+	if l.cancel != nil {
+		l.cancel()
+	}
+	if l.drainSpawned != nil {
+		l.drainSpawned.Do(func() {
+			go func() {
+				for in := range l.incoming {
+					if in.conn != nil {
+						_ = in.conn.Close()
+					}
 				}
-			}
-		}()
-	})
+			}()
+		})
+	}
 }
