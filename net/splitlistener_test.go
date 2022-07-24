@@ -123,8 +123,14 @@ func testSplitListener(t *testing.T, withNonSpecific bool) {
 		require.NoError(err)
 		numWgVals = 4
 	}
+
 	unauthLn, err := splitListener.GetListener(nodeenet.UnauthenticatedNextProto)
 	require.NoError(err)
+	// Test that it's the same listener
+	unauthLn2, err := splitListener.GetListener(nodeenet.UnauthenticatedNextProto)
+	require.NoError(err)
+	require.Equal(unauthLn, unauthLn2)
+
 	const testClientNextProtoValue = "expected-val"
 	expLn, err := splitListener.GetListener(testClientNextProtoValue)
 	require.NoError(err)
@@ -227,4 +233,70 @@ func testSplitListener(t *testing.T, withNonSpecific bool) {
 	assert.True(expListenerReturnedDone.Load())
 	assert.Empty(expListenerReturnedErr.Load())
 	assert.EqualValues(6, expConns.Load())
+}
+
+func TestIngressListener(t *testing.T) {
+	t.Parallel()
+	require, assert := require.New(t), assert.New(t)
+	ctx := context.Background()
+
+	// Create the base listener
+	baseLn1, err := net.Listen("tcp4", "127.0.0.1:0")
+	require.NoError(err)
+	baseLn2, err := net.Listen("tcp4", "127.0.0.1:0")
+	require.NoError(err)
+
+	conns := new(atomic.Int32)
+	listenerReturnedDone := new(atomic.Bool)
+	listenerReturnedErr := new(atomic.String)
+
+	mxLn, err := nodeenet.NewMonoplexingListener(ctx, baseLn1.Addr())
+	require.NoError(err)
+	require.NoError(mxLn.IngressListener(baseLn1))
+	require.NoError(mxLn.IngressListener(baseLn2))
+
+	wg := new(sync.WaitGroup)
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		for {
+			_, err := mxLn.Accept()
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					listenerReturnedDone.Store(true)
+					return
+				}
+				listenerReturnedErr.Store(err.Error())
+				return
+			}
+			conns.Add(1)
+		}
+	}()
+
+	for i := 0; i < 30; i++ {
+		var conn net.Conn
+		var err error
+		switch {
+		case i%2 == 0:
+			conn, err = net.Dial("tcp4", baseLn1.Addr().String())
+		default:
+			conn, err = net.Dial("tcp4", baseLn2.Addr().String())
+		}
+
+		require.NoError(err)
+		require.NotNil(conn, i)
+		require.NoError(conn.Close())
+	}
+
+	time.Sleep(3 * time.Second)
+
+	require.NoError(baseLn1.Close())
+	require.NoError(baseLn2.Close())
+	require.NoError(mxLn.Close())
+	wg.Wait()
+
+	assert.True(listenerReturnedDone.Load())
+	assert.Empty(listenerReturnedErr.Load())
+	assert.EqualValues(30, conns.Load())
 }
