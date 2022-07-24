@@ -17,9 +17,9 @@ const (
 	AuthenticatedNonSpecificNextProto = "__AUTH__"
 )
 
-type splitConn struct {
-	conn net.Conn
-	err  error
+type SplitConn struct {
+	Conn net.Conn
+	Err  error
 }
 
 // SplitListener can be useful for integration with systems that expect to do
@@ -75,7 +75,7 @@ func NewSplitListener(baseLn net.Listener) (*SplitListener, error) {
 func (l *SplitListener) Start() error {
 	defer func() {
 		l.babyListeners.Range(func(k, v any) bool {
-			close(v.(*babySplitListener).incoming)
+			v.(*monoplexingListener).Close()
 			return true
 		})
 	}()
@@ -126,11 +126,11 @@ func (l *SplitListener) Start() error {
 
 			// Get client conns and do a search
 			clientNextProtos := protoConn.ClientNextProtos()
-			var foundListener *babySplitListener
+			var foundListener *monoplexingListener
 			l.babyListeners.Range(func(k, v any) bool {
 				for _, proto := range clientNextProtos {
 					if k.(string) == proto {
-						foundListener = v.(*babySplitListener)
+						foundListener = v.(*monoplexingListener)
 						return false
 					}
 				}
@@ -142,14 +142,14 @@ func (l *SplitListener) Start() error {
 			if foundListener == nil {
 				val, ok := l.babyListeners.Load(AuthenticatedNonSpecificNextProto)
 				if ok {
-					foundListener = val.(*babySplitListener)
+					foundListener = val.(*monoplexingListener)
 				}
 			}
 
 			// If we found a listener send the conn down, otherwise close the
 			// conn
 			if foundListener != nil {
-				foundListener.incoming <- splitConn{conn: tlsConn}
+				foundListener.incoming <- SplitConn{Conn: tlsConn}
 			} else {
 				_ = conn.Close()
 			}
@@ -161,7 +161,7 @@ func (l *SplitListener) Start() error {
 		if !ok {
 			_ = conn.Close()
 		} else {
-			val.(*babySplitListener).incoming <- splitConn{conn: tlsConn}
+			val.(*monoplexingListener).incoming <- SplitConn{Conn: tlsConn}
 		}
 	}
 }
@@ -199,86 +199,127 @@ func (l *SplitListener) GetListener(nextProto string) (net.Listener, error) {
 	if l.ctx.Err() != nil {
 		return nil, net.ErrClosed
 	}
-	newBabyListener := &babySplitListener{
-		addr:         l.baseLn.Addr(),
-		incoming:     make(chan splitConn),
-		drainSpawned: new(sync.Once),
+
+	newMonoplexingListener, err := NewMonoplexingListener(l.ctx, l.baseLn.Addr())
+	if err != nil {
+		return nil, fmt.Errorf("(%s): error creating monoplexing listener: %w", op, err)
 	}
-	newBabyListener.ctx, newBabyListener.cancel = context.WithCancel(l.ctx)
-	existing, loaded := l.babyListeners.LoadOrStore(nextProto, newBabyListener)
+
+	existing, loaded := l.babyListeners.LoadOrStore(nextProto, newMonoplexingListener)
 	if loaded {
-		close(newBabyListener.incoming)
-		newBabyListener.cancel()
-		return existing.(*babySplitListener), nil
+		_ = newMonoplexingListener.Close()
+		// In this case we know it's safe to close the channel too
+		close(newMonoplexingListener.incoming)
+		return existing.(*monoplexingListener), nil
 	}
-	return newBabyListener, nil
+	return newMonoplexingListener, nil
 }
 
-type babySplitListener struct {
+type monoplexingListener struct {
 	addr         net.Addr
-	incoming     chan splitConn
+	incoming     chan SplitConn
 	ctx          context.Context
 	cancel       context.CancelFunc
 	drainSpawned *sync.Once
 }
 
+func NewMonoplexingListener(ctx context.Context, addr net.Addr) (*monoplexingListener, error) {
+	const op = "nodeenrollment.net.NewMonoplexingListener"
+	switch {
+	case nodeenrollment.IsNil(ctx):
+		return nil, fmt.Errorf("(%s): nil context", op)
+	case nodeenrollment.IsNil(addr):
+		return nil, fmt.Errorf("(%s): nil addr", op)
+	}
+
+	monoplexer := &monoplexingListener{
+		addr:         addr,
+		incoming:     make(chan SplitConn),
+		drainSpawned: new(sync.Once),
+	}
+	monoplexer.ctx, monoplexer.cancel = context.WithCancel(ctx)
+
+	return monoplexer, nil
+}
+
 // Addr satisfies the net.Listener interface and returns the base listener
 // address
-func (l *babySplitListener) Addr() net.Addr {
+func (l *monoplexingListener) Addr() net.Addr {
 	return l.addr
 }
 
 // Close satisfies the net.Listener interface and closes this specific listener.
-// We call drainConnections here in case Accept hasn't been called.
-func (l *babySplitListener) Close() error {
-	l.cancel()
+// We call drainConnections here to ensure that senders don't block even though
+// we're no longer accepting them.
+func (l *monoplexingListener) Close() error {
 	l.drainConnections()
 	return nil
 }
 
-// Accept satisfies the net.Listener interface and returns any connections that
-// have been sent to this listener. Accept will return when the channel is shut
-// down, which happens when Stop is called on the SplitListener (or the
-// underlying listener is closed), which also closes the underlying listener,
-// hence once the range ends we return net.ErrClosed.
-func (l *babySplitListener) Accept() (net.Conn, error) {
-	for {
+// Accept satisfies the net.Listener interface and returns the next connection
+// that has been sent to this listener, or net.ErrClosed if the listener has
+// been closed.
+func (l *monoplexingListener) Accept() (net.Conn, error) {
+	select {
+	case <-l.ctx.Done():
+		// If Close() was called this would happen anyways, but in case it
+		// was only called on the parent context, ensure we drain
+		// connections
+		l.drainConnections()
+		return nil, net.ErrClosed
+
+	case in, ok := <-l.incoming:
+		if !ok || nodeenrollment.IsNil(in.Conn) {
+			// Channel has been closed
+			return nil, net.ErrClosed
+		}
+
 		select {
 		case <-l.ctx.Done():
-			// If Close() was called this would happen anyways, but in case it
-			// was only called on the parent listener, ensure we drain
-			// connections
-			l.drainConnections()
+			// Check one more time in case this was pseduo-randomly chosen as
+			// the valid case and the context is done; if so close the conn and
+			// return ErrClosed
+			_ = in.Conn.Close()
 			return nil, net.ErrClosed
 
-		case in, ok := <-l.incoming:
-			if !ok {
-				// Channel has been closed, trigger cancel behavior and loop
-				// back up to the case above
-				l.cancel()
-				continue
-			}
-			select {
-			case <-l.ctx.Done():
-				// Check one more time in case this was pseduo-randomly chosen
-				// as the valid case; if so close the conn and return ErrClosed
-				_ = in.conn.Close()
-				return nil, net.ErrClosed
-			default:
-				return in.conn, in.err
-			}
+		default:
+			return in.Conn, in.Err
 		}
 	}
 }
 
+// IngressConns will read connections off the given listener until the listener
+// is closed and returns net.ErrClosed; any other error during listen will be
+// sent through as-is. Any conns will be put onto the internal channel. This
+// function does not block; it will only ever error if the listener is nil.
+func (l *monoplexingListener) IngressListener(ln net.Listener) error {
+	const op = "nodeenrollment.net.(monoplexingListener).IngressConns"
+	if ln == nil {
+		return fmt.Errorf("%s: nil listener", op)
+	}
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil && errors.Is(err, net.ErrClosed) {
+				return
+			}
+			l.incoming <- SplitConn{Conn: conn, Err: err}
+		}
+	}()
+
+	return nil
+}
+
 // drainConnections ensures we close any connections sent our way once the
 // listener is closed so no open connections leak
-func (l *babySplitListener) drainConnections() {
+func (l *monoplexingListener) drainConnections() {
+	l.cancel()
 	l.drainSpawned.Do(func() {
 		go func() {
 			for in := range l.incoming {
-				if in.conn != nil {
-					_ = in.conn.Close()
+				if in.Conn != nil {
+					_ = in.Conn.Close()
 				}
 			}
 		}()
