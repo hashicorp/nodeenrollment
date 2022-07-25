@@ -250,7 +250,7 @@ func TestIngressListener(t *testing.T) {
 	listenerReturnedDone := new(atomic.Bool)
 	listenerReturnedErr := new(atomic.String)
 
-	mxLn, err := nodeenet.NewMonoplexingListener(ctx, baseLn1.Addr())
+	mxLn, err := nodeenet.NewMultiplexingListener(ctx, baseLn1.Addr())
 	require.NoError(err)
 	require.NoError(mxLn.IngressListener(baseLn1))
 	require.NoError(mxLn.IngressListener(baseLn2))

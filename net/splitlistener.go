@@ -70,7 +70,7 @@ func NewSplitListener(baseLn net.Listener) (*SplitListener, error) {
 func (l *SplitListener) Start() error {
 	defer func() {
 		l.babyListeners.Range(func(k, v any) bool {
-			v.(*MonoplexingListener).Close()
+			v.(*MultiplexingListener).Close()
 			return true
 		})
 	}()
@@ -121,11 +121,11 @@ func (l *SplitListener) Start() error {
 
 			// Get client conns and do a search
 			clientNextProtos := protoConn.ClientNextProtos()
-			var foundListener *MonoplexingListener
+			var foundListener *MultiplexingListener
 			l.babyListeners.Range(func(k, v any) bool {
 				for _, proto := range clientNextProtos {
 					if k.(string) == proto {
-						foundListener = v.(*MonoplexingListener)
+						foundListener = v.(*MultiplexingListener)
 						return false
 					}
 				}
@@ -137,7 +137,7 @@ func (l *SplitListener) Start() error {
 			if foundListener == nil {
 				val, ok := l.babyListeners.Load(AuthenticatedNonSpecificNextProto)
 				if ok {
-					foundListener = val.(*MonoplexingListener)
+					foundListener = val.(*MultiplexingListener)
 				}
 			}
 
@@ -156,7 +156,7 @@ func (l *SplitListener) Start() error {
 		if !ok {
 			_ = conn.Close()
 		} else {
-			val.(*MonoplexingListener).IngressConn(tlsConn, nil)
+			val.(*MultiplexingListener).IngressConn(tlsConn, nil)
 		}
 	}
 }
@@ -195,19 +195,19 @@ func (l *SplitListener) GetListener(nextProto string) (net.Listener, error) {
 		return nil, net.ErrClosed
 	}
 
-	newMonoplexingListener, err := NewMonoplexingListener(l.ctx, l.baseLn.Addr())
+	newMultiplexingListener, err := NewMultiplexingListener(l.ctx, l.baseLn.Addr())
 	if err != nil {
-		return nil, fmt.Errorf("(%s): error creating monoplexing listener: %w", op, err)
+		return nil, fmt.Errorf("(%s): error creating multiplexing listener: %w", op, err)
 	}
 
-	existing, loaded := l.babyListeners.LoadOrStore(nextProto, newMonoplexingListener)
+	existing, loaded := l.babyListeners.LoadOrStore(nextProto, newMultiplexingListener)
 	if loaded {
-		_ = newMonoplexingListener.Close()
+		_ = newMultiplexingListener.Close()
 		// In this case we know it's safe to close the channel too
-		close(newMonoplexingListener.incoming)
-		return existing.(*MonoplexingListener), nil
+		close(newMultiplexingListener.incoming)
+		return existing.(*MultiplexingListener), nil
 	}
-	return newMonoplexingListener, nil
+	return newMultiplexingListener, nil
 }
 
 type splitConn struct {
@@ -215,12 +215,12 @@ type splitConn struct {
 	err  error
 }
 
-// MonoplexingListener presents a listener interface, with connections sourced
+// MultiplexingListener presents a listener interface, with connections sourced
 // from direct function calls or listeners passed in.
 //
-// Always use NewMonoplexingListener to create an instance. Failure to do so may
+// Always use NewMultiplexingListener to create an instance. Failure to do so may
 // result in an eventual runtime panic.
-type MonoplexingListener struct {
+type MultiplexingListener struct {
 	addr         net.Addr
 	incoming     chan splitConn
 	ctx          context.Context
@@ -228,8 +228,8 @@ type MonoplexingListener struct {
 	drainSpawned *sync.Once
 }
 
-func NewMonoplexingListener(ctx context.Context, addr net.Addr) (*MonoplexingListener, error) {
-	const op = "nodeenrollment.net.NewMonoplexingListener"
+func NewMultiplexingListener(ctx context.Context, addr net.Addr) (*MultiplexingListener, error) {
+	const op = "nodeenrollment.net.NewMultiplexingListener"
 	switch {
 	case nodeenrollment.IsNil(ctx):
 		return nil, fmt.Errorf("(%s): nil context", op)
@@ -237,26 +237,26 @@ func NewMonoplexingListener(ctx context.Context, addr net.Addr) (*MonoplexingLis
 		return nil, fmt.Errorf("(%s): nil addr", op)
 	}
 
-	monoplexer := &MonoplexingListener{
+	multiplexer := &MultiplexingListener{
 		addr:         addr,
 		incoming:     make(chan splitConn),
 		drainSpawned: new(sync.Once),
 	}
-	monoplexer.ctx, monoplexer.cancel = context.WithCancel(ctx)
+	multiplexer.ctx, multiplexer.cancel = context.WithCancel(ctx)
 
-	return monoplexer, nil
+	return multiplexer, nil
 }
 
 // Addr satisfies the net.Listener interface and returns the base listener
 // address
-func (l *MonoplexingListener) Addr() net.Addr {
+func (l *MultiplexingListener) Addr() net.Addr {
 	return l.addr
 }
 
 // Close satisfies the net.Listener interface and closes this specific listener.
 // We call drainConnections here to ensure that senders don't block even though
 // we're no longer accepting them.
-func (l *MonoplexingListener) Close() error {
+func (l *MultiplexingListener) Close() error {
 	l.drainConnections()
 	return nil
 }
@@ -264,7 +264,7 @@ func (l *MonoplexingListener) Close() error {
 // Accept satisfies the net.Listener interface and returns the next connection
 // that has been sent to this listener, or net.ErrClosed if the listener has
 // been closed.
-func (l *MonoplexingListener) Accept() (net.Conn, error) {
+func (l *MultiplexingListener) Accept() (net.Conn, error) {
 	select {
 	case <-l.ctx.Done():
 		// If Close() was called this would happen anyways, but in case it
@@ -297,8 +297,8 @@ func (l *MonoplexingListener) Accept() (net.Conn, error) {
 // is closed and returns net.ErrClosed; any other error during listen will be
 // sent through as-is. Any conns will be put onto the internal channel. This
 // function does not block; it will only ever error if the listener is nil.
-func (l *MonoplexingListener) IngressListener(ln net.Listener) error {
-	const op = "nodeenrollment.net.(monoplexingListener).IngressListener"
+func (l *MultiplexingListener) IngressListener(ln net.Listener) error {
+	const op = "nodeenrollment.net.(multiplexingListener).IngressListener"
 	if ln == nil {
 		return fmt.Errorf("%s: nil listener", op)
 	}
@@ -318,13 +318,13 @@ func (l *MonoplexingListener) IngressListener(ln net.Listener) error {
 
 // IngressConn sends a connection and associated error through the listener
 // as-is. It does not perform any nil checking on the given values.
-func (l *MonoplexingListener) IngressConn(conn net.Conn, err error) {
+func (l *MultiplexingListener) IngressConn(conn net.Conn, err error) {
 	l.incoming <- splitConn{conn: conn, err: err}
 }
 
 // drainConnections ensures we close any connections sent our way once the
 // listener is closed so no open connections leak
-func (l *MonoplexingListener) drainConnections() {
+func (l *MultiplexingListener) drainConnections() {
 	if l.cancel != nil {
 		l.cancel()
 	}
