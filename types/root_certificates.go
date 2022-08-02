@@ -85,6 +85,10 @@ func (r *RootCertificates) Store(ctx context.Context, storage nodeenrollment.Sto
 		}
 	}
 
+	if opts.WithState != nil {
+		rootsToStore.State = opts.WithState
+	}
+
 	if err := storage.Store(ctx, rootsToStore); err != nil {
 		return fmt.Errorf("(%s) error storing root certificates: %w", op, err)
 	}
