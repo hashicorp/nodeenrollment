@@ -107,7 +107,7 @@ func Dial(
 
 	nonTlsConn, err := nonTlsConnFn()
 	if err != nil {
-		return nil, fmt.Errorf("(%s) unable to dial to controller: %w", op, err)
+		return nil, fmt.Errorf("(%s) unable to dial to server: %w", op, err)
 	}
 
 	tlsConfig, err := nodetls.ClientConfig(ctx, creds, opt...)
