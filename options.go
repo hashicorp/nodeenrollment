@@ -42,6 +42,7 @@ type Options struct {
 	WithAlpnProtoPrefix      string
 	WithServerName           string
 	WithExtraAlpnProtos      []string
+	WithReinitializeRoots    bool
 }
 
 // Option is a function that takes in an options struct and sets values or
@@ -180,6 +181,15 @@ func WithServerName(with string) Option {
 func WithExtraAlpnProtos(with []string) Option {
 	return func(o *Options) error {
 		o.WithExtraAlpnProtos = with
+		return nil
+	}
+}
+
+// WithReinitializeRoots, if set to true, indicates that the existing roots should be
+// removed entirely before rotation
+func WithReinitializeRoots(with bool) Option {
+	return func(o *Options) error {
+		o.WithReinitializeRoots = with
 		return nil
 	}
 }
