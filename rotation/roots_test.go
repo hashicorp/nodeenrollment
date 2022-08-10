@@ -64,7 +64,7 @@ func TestRotateRootCertificates(t *testing.T) {
 		}
 	}
 
-	// Sleep until after the skew period or the logic might thing something was
+	// Sleep until after the skew period or the logic might think something was
 	// wrong
 	time.Sleep(skew)
 
@@ -148,7 +148,7 @@ func TestReinitializeRootCertificates(t *testing.T) {
 		assert.Empty(roots.WrappingKeyId)
 	}
 
-	// Sleep until after the skew period or the logic might thing something was
+	// Sleep until after the skew period or the logic might think something was
 	// wrong
 	time.Sleep(skew)
 
