@@ -64,7 +64,7 @@ func TestRotateRootCertificates(t *testing.T) {
 		}
 	}
 
-	// Sleep until after the skew period or the logic might thing something was
+	// Sleep until after the skew period or the logic might think something was
 	// wrong
 	time.Sleep(skew)
 
@@ -109,6 +109,63 @@ func TestRotateRootCertificates(t *testing.T) {
 	assert.Equal(string(nodeenrollment.NextId), newRoots.Next.Id)
 	assert.Equal(prevNextKey, newRoots.Current.PublicKeyPkix)
 	assert.NotEqual(prevNextKey, newRoots.Next.PublicKeyPkix)
+}
+
+func TestReinitializeRootCertificates(t *testing.T) {
+	t.Parallel()
+	require, assert := require.New(t), assert.New(t)
+	ctx := context.Background()
+
+	storage, err := file.New(ctx)
+	require.NoError(err)
+	t.Cleanup(storage.Cleanup)
+
+	const lifetime time.Duration = 30 * time.Second
+	const skew time.Duration = 5 * time.Second
+
+	// First validate the generated parameters
+	roots, err := RotateRootCertificates(
+		ctx,
+		storage,
+		nodeenrollment.WithCertificateLifetime(lifetime),
+		nodeenrollment.WithNotBeforeClockSkew(skew),
+		nodeenrollment.WithNotAfterClockSkew(skew),
+	)
+	for _, root := range []*types.RootCertificate{roots.Current, roots.Next} {
+		require.NoError(err)
+		switch root {
+		case roots.Current:
+			assert.Equal(string(nodeenrollment.CurrentId), root.Id)
+		default:
+			assert.Equal(string(nodeenrollment.NextId), root.Id)
+		}
+		assert.NotEmpty(root.PublicKeyPkix)
+		assert.NotEmpty(root.CertificateDer)
+		assert.NotEmpty(root.NotAfter)
+		assert.NotEmpty(root.NotBefore)
+		assert.NotEmpty(root.PrivateKeyPkcs8)
+		assert.Equal(types.KEYTYPE_ED25519, root.PrivateKeyType)
+		assert.Empty(roots.WrappingKeyId)
+	}
+
+	// Sleep until after the skew period or the logic might think something was
+	// wrong
+	time.Sleep(skew)
+
+	// Rotate with the reinitialization option
+	// Should see an entirely new set of roots
+	newRoots, err := RotateRootCertificates(
+		ctx,
+		storage,
+		nodeenrollment.WithReinitializeRoots(true),
+	)
+	require.NoError(err)
+	require.NotNil(newRoots.Current)
+	require.NotNil(newRoots.Next)
+	assert.Equal(string(nodeenrollment.CurrentId), newRoots.Current.Id)
+	assert.Equal(string(nodeenrollment.NextId), newRoots.Next.Id)
+	assert.NotEqual(roots.Next.PublicKeyPkix, newRoots.Current.PublicKeyPkix)
+	assert.NotEqual(roots.Next.PublicKeyPkix, newRoots.Next.PublicKeyPkix)
 }
 
 func TestDecideWhatToMake(t *testing.T) {

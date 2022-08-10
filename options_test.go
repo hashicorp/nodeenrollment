@@ -147,4 +147,13 @@ func Test_GetOpts(t *testing.T) {
 		require.NoError(err)
 		assert.Equal([]string{"foo", "bar"}, opts.WithExtraAlpnProtos)
 	})
+	t.Run("with-reinitialize", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.False(opts.WithReinitializeRoots)
+		opts, err = GetOpts(WithReinitializeRoots(true))
+		require.NoError(err)
+		assert.True(opts.WithReinitializeRoots)
+	})
 }
