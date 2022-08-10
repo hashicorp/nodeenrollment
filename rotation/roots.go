@@ -29,7 +29,7 @@ import (
 //
 // Supported options: WithRandomReader, WithCertificateLifetime, WithWrapper
 // (passed through to LoadRootCertificates and RootCertificates.Store),
-// WithSkipStorage, WithNotBeforeClockSkew
+// WithSkipStorage, WithNotBeforeClockSkew, WithReinitializeRoots
 func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) (*types.RootCertificates, error) {
 	const op = "nodeenrollment.rotation.RotateRootCertificates"
 	opts, err := nodeenrollment.GetOpts(opt...)
