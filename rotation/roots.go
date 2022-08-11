@@ -43,9 +43,14 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 
 	if opts.WithReinitializeRoots {
 		roots := &types.RootCertificates{
-			Id: nodeenrollment.RootsMessageId,
+			Id:    nodeenrollment.RootsMessageId,
+			State: opts.WithState,
 		}
-		storage.Remove(ctx, roots)
+		err = storage.Remove(ctx, roots)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error removing existing roots: %w", op, err)
+		}
+		opt = append(opt, nodeenrollment.WithState(roots.State))
 	}
 
 	currentRoots, err := types.LoadRootCertificates(ctx, storage, opt...)
