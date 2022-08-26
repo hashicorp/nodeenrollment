@@ -1,7 +1,6 @@
 package tls
 
 import (
-	"context"
 	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/base64"
@@ -9,9 +8,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/nodeenrollment"
-	"github.com/hashicorp/nodeenrollment/registration"
-	"github.com/hashicorp/nodeenrollment/rotation"
-	"github.com/hashicorp/nodeenrollment/storage/file"
+	nodetesting "github.com/hashicorp/nodeenrollment/testing"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,18 +17,8 @@ import (
 
 func TestClientConfig(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 
-	fileStorage, err := file.New(ctx)
-	require.NoError(t, err)
-	t.Cleanup(fileStorage.Cleanup)
-
-	_, err = rotation.RotateRootCertificates(ctx, fileStorage)
-	require.NoError(t, err)
-
-	// Create node credentials and have them authorized
-	nodeCreds, err := registration.RegisterViaServerLedFlow(ctx, fileStorage, &types.ServerLedRegistrationRequest{})
-	require.NoError(t, err)
+	ctx, _, nodeCreds := nodetesting.CommonTestParams(t)
 
 	tests := []struct {
 		name string

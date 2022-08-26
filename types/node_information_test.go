@@ -96,13 +96,6 @@ func TestNodeInformation_StoreLoad(t *testing.T) {
 			storeStorageNil: true,
 		},
 		{
-			name: "store-invalid-no-pkix-key",
-			storeSetupFn: func(nodeInfo *types.NodeInformation) (*types.NodeInformation, string) {
-				nodeInfo.CertificatePublicKeyPkix = nil
-				return nodeInfo, "no certificate pkix public key"
-			},
-		},
-		{
 			name: "load-valid",
 		},
 		{

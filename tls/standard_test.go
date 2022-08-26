@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/nodeenrollment"
-	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/rotation"
 	"github.com/hashicorp/nodeenrollment/storage/file"
+	nodetesting "github.com/hashicorp/nodeenrollment/testing"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,17 +37,8 @@ import (
 // succeed based on that verify function.
 func TestStandardTls(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 
-	storage, err := file.New(ctx)
-	require.NoError(t, err)
-	t.Cleanup(storage.Cleanup)
-
-	_, err = rotation.RotateRootCertificates(ctx, storage)
-	require.NoError(t, err)
-
-	node, err := registration.RegisterViaServerLedFlow(ctx, storage, &types.ServerLedRegistrationRequest{})
-	require.NoError(t, err)
+	ctx, storage, node := nodetesting.CommonTestParams(t)
 
 	t.Log("valid")
 	runTest(t, ctx, storage, node, false)

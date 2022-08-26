@@ -16,10 +16,7 @@ import (
 	"github.com/hashicorp/nodeenrollment"
 	nodeenet "github.com/hashicorp/nodeenrollment/net"
 	"github.com/hashicorp/nodeenrollment/protocol"
-	"github.com/hashicorp/nodeenrollment/registration"
-	"github.com/hashicorp/nodeenrollment/rotation"
-	"github.com/hashicorp/nodeenrollment/storage/file"
-	"github.com/hashicorp/nodeenrollment/types"
+	nodetesting "github.com/hashicorp/nodeenrollment/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -37,19 +34,8 @@ func TestSplitListener(t *testing.T) {
 func testSplitListener(t *testing.T, withNonSpecific bool) {
 	t.Parallel()
 	require, assert := require.New(t), assert.New(t)
-	ctx := context.Background()
 
-	fileStorage, err := file.New(ctx)
-	require.NoError(err)
-	t.Cleanup(fileStorage.Cleanup)
-
-	// Get a TLS stack. Hey, we can use other parts of the lib!
-	_, err = rotation.RotateRootCertificates(ctx, fileStorage)
-	require.NoError(err)
-	nodeCreds, err := registration.RegisterViaServerLedFlow(ctx, fileStorage, &types.ServerLedRegistrationRequest{})
-	require.NoError(err)
-	nodeCreds.Id = string(nodeenrollment.CurrentId)
-	require.NoError(nodeCreds.Store(ctx, fileStorage))
+	ctx, fileStorage, _ := nodetesting.CommonTestParams(t)
 
 	// Create the base listener
 	baseLn, err := net.Listen("tcp4", "127.0.0.1:0")

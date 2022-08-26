@@ -7,10 +7,12 @@ import (
 	"crypto/subtle"
 	"crypto/x509"
 	"fmt"
+	"strings"
 	"time"
 
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
 	"github.com/hashicorp/nodeenrollment"
+	"github.com/mr-tron/base58"
 	"golang.org/x/crypto/curve25519"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -231,7 +233,7 @@ func (n *NodeCredentials) X25519EncryptionKey() ([]byte, error) {
 // which can then be merged; this happens in a different function.
 //
 // Supported options: WithRandomReader, WithWrapper (passed through to
-// NodeCredentials.Store), WithSkipStorage
+// NodeCredentials.Store), WithSkipStorage, WithActivationToken
 func NewNodeCredentials(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -255,13 +257,22 @@ func NewNodeCredentials(
 		certPrivKey ed25519.PrivateKey
 	)
 
-	n.RegistrationNonce = make([]byte, nodeenrollment.NonceSize)
-	num, err := opts.WithRandomReader.Read(n.RegistrationNonce)
-	switch {
-	case err != nil:
-		return nil, fmt.Errorf("(%s) error generating nonce: %w", op, err)
-	case num != nodeenrollment.NonceSize:
-		return nil, fmt.Errorf("(%s) read incorrect number of bytes for nonce, wanted %d, got %d", op, nodeenrollment.NonceSize, num)
+	switch len(opts.WithActivationToken) {
+	case 0:
+		n.RegistrationNonce = make([]byte, nodeenrollment.NonceSize)
+		num, err := opts.WithRandomReader.Read(n.RegistrationNonce)
+		switch {
+		case err != nil:
+			return nil, fmt.Errorf("(%s) error generating nonce: %w", op, err)
+		case num != nodeenrollment.NonceSize:
+			return nil, fmt.Errorf("(%s) read incorrect number of bytes for nonce, wanted %d, got %d", op, nodeenrollment.NonceSize, num)
+		}
+	default:
+		nonce, err := base58.FastBase58Decoding(strings.TrimPrefix(opts.WithActivationToken, nodeenrollment.ServerLedActivationTokenPrefix))
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error base58-decoding activation token: %w", op, err)
+		}
+		n.RegistrationNonce = nonce
 	}
 
 	// Create certificate keypair

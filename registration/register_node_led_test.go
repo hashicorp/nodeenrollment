@@ -21,7 +21,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
+func TestValidateFetchRequest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
@@ -40,6 +40,16 @@ func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
 	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)
 	nodePubKey, err := curve25519.X25519(nodeCreds.EncryptionPrivateKeyBytes, curve25519.Basepoint)
+	require.NoError(t, err)
+
+	// Also create a server-led value for that path
+	_, activationToken, err := registration.CreateServerLedActivationToken(ctx, fileStorage, &types.ServerLedRegistrationRequest{})
+	require.NoError(t, err)
+	serverLedNodeCreds, err := types.NewNodeCredentials(ctx, fileStorage, nodeenrollment.WithActivationToken(activationToken))
+	require.NoError(t, err)
+	serverLedFetchReq, err := serverLedNodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	require.NoError(t, err)
+	serverLedKeyId, err := nodeenrollment.KeyIdFromPkix(serverLedNodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)
 
 	// Cache the decoded bundle for error checking
@@ -79,6 +89,11 @@ func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
 		storageNil bool
 		// Flag to trigger an AuthorizeNode call
 		runAuthorization bool
+		// Flag to indicate an expected authorization error
+		wantAuthzErrContains string
+		// checkNodeInfoIdOverride allows overriding the id used in the load for
+		// the check node info
+		checkNodeInfoIdOverride string
 	}{
 		{
 			name:       "invalid-no-storage",
@@ -88,6 +103,15 @@ func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
 			name: "invalid-no-req",
 			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
 				return nil, "nil request"
+			},
+		},
+		{
+			name: "invalid-empty-nonce",
+			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
+				info := unMarshal(t, req)
+				info.Nonce = nil
+				req.Bundle, req.BundleSignature = reMarshalAndSign(t, info)
+				return req, "empty nonce"
 			},
 		},
 		{
@@ -120,15 +144,6 @@ func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
 				info.CertificatePublicKeyType = types.KEYTYPE_X25519
 				req.Bundle, req.BundleSignature = reMarshalAndSign(t, info)
 				return req, "unsupported node certificate public key type"
-			},
-		},
-		{
-			name: "invalid-bad-cert-missing-nonce",
-			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
-				info := unMarshal(t, req)
-				info.Nonce = nil
-				req.Bundle, req.BundleSignature = reMarshalAndSign(t, info)
-				return req, "empty nonce"
 			},
 		},
 		{
@@ -196,6 +211,25 @@ func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
 				return req, "invalid registration nonce"
 			},
 		},
+		{
+			name: "invalid-attempt-to-authorize-with-server-led",
+			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
+				return serverLedFetchReq, ""
+			},
+			runAuthorization:     true,
+			wantAuthzErrContains: "server-led activation tokens cannot be used",
+		},
+		{
+			name:             "valid",
+			runAuthorization: true,
+		},
+		{
+			name: "valid-server-led",
+			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
+				return serverLedFetchReq, ""
+			},
+			checkNodeInfoIdOverride: serverLedKeyId,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -203,7 +237,6 @@ func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
 
 			storage := fileStorage
 
-			var ni *types.NodeInformation
 			// Remove anything left from previous tests
 			_ = storage.Remove(ctx, baseNodeInfo)
 
@@ -220,8 +253,15 @@ func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
 
 			if tt.runAuthorization {
 				// We have to _actually_ authorize the node here to populate things we need
-				_, err := registration.AuthorizeNode(ctx, storage, fetchReq)
-				require.NoError(err)
+				_, err := registration.AuthorizeNode(ctx, storage, fetch)
+				switch tt.wantAuthzErrContains {
+				case "":
+					require.NoError(err)
+				default:
+					require.Error(err)
+					assert.Contains(err.Error(), tt.wantAuthzErrContains)
+					return
+				}
 			}
 
 			resp, err := registration.FetchNodeCredentials(ctx, storage, fetch)
@@ -235,8 +275,12 @@ func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
 				return
 			}
 
-			// Now run other checks depending on which path we took
-			checkNodeInfo := &types.NodeInformation{Id: baseNodeInfo.Id}
+			// Now run checks on valid paths
+			checkNodeInfoId := baseNodeInfo.Id
+			if tt.checkNodeInfoIdOverride != "" {
+				checkNodeInfoId = tt.checkNodeInfoIdOverride
+			}
+			checkNodeInfo := &types.NodeInformation{Id: checkNodeInfoId}
 			require.NotNil(resp.EncryptedNodeCredentials)
 			require.NotNil(resp.EncryptedNodeCredentialsSignature)
 			require.NotNil(resp.ServerEncryptionPublicKeyBytes)
@@ -254,8 +298,10 @@ func TestNodeLedRegistgration_validateFetchRequest(t *testing.T) {
 			require.NoError(nodeenrollment.DecryptMessage(ctx, checkNodeInfo.Id, resp.EncryptedNodeCredentials, checkNodeInfo, &receivedNodeCreds))
 			assert.NotEmpty(receivedNodeCreds.ServerEncryptionPublicKeyBytes)
 			assert.Equal(types.KEYTYPE_X25519, receivedNodeCreds.ServerEncryptionPublicKeyType)
-			assert.Equal(ni.RegistrationNonce, receivedNodeCreds.RegistrationNonce)
 			assert.Len(receivedNodeCreds.CertificateBundles, 2) // Won't go through them here, have one that in other tests
+
+			fetchInfo := unMarshal(t, fetch)
+			assert.Equal(fetchInfo.Nonce, receivedNodeCreds.RegistrationNonce)
 		})
 	}
 }

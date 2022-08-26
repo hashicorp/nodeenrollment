@@ -224,3 +224,24 @@ message GenerateServerCertificatesResponse {
 // can add parameters later without an API change.
 message ServerLedRegistrationRequest {
 }
+
+// ServerLedActivationToken contains a per-token key and the actual bytes.
+message ServerLedActivationToken {
+  bytes hmac_key_bytes = 10 [json_name = "hmac_key_bytes"];
+  bytes bundle = 20;
+}
+
+// ServerLedActivationTokenBundle contains the actual activation token data.
+message ServerLedActivationTokenBundle {
+  // The nonce ensures uniqueness of any given bundle, although the lookups of
+  // data are performed on the serialized versions of this.
+  bytes nonce = 20;
+
+  // The time at which this was created
+  google.protobuf.Timestamp creation_time = 30 [json_name="creation_time"];
+
+  // State is data that the implementor of a Store can use to round-trip data
+  // through this library; as an example, a verison number on the resource for
+  // implementing transactions.
+  google.protobuf.Struct state = 50;
+}

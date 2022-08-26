@@ -1,7 +1,6 @@
 package tls
 
 import (
-	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/x509"
@@ -10,9 +9,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/nodeenrollment"
-	"github.com/hashicorp/nodeenrollment/registration"
-	"github.com/hashicorp/nodeenrollment/rotation"
-	"github.com/hashicorp/nodeenrollment/storage/file"
+	nodetesting "github.com/hashicorp/nodeenrollment/testing"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,18 +18,8 @@ import (
 
 func TestGenerateServerCertificates(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 
-	fileStorage, err := file.New(ctx)
-	require.NoError(t, err)
-	t.Cleanup(fileStorage.Cleanup)
-
-	_, err = rotation.RotateRootCertificates(ctx, fileStorage)
-	require.NoError(t, err)
-
-	// Create node credentials and have them authorized
-	nodeCreds, err := registration.RegisterViaServerLedFlow(ctx, fileStorage, &types.ServerLedRegistrationRequest{})
-	require.NoError(t, err)
+	ctx, fileStorage, nodeCreds := nodetesting.CommonTestParams(t)
 
 	nonceBytes := make([]byte, nodeenrollment.NonceSize)
 	w, err := rand.Read(nonceBytes)
@@ -166,18 +153,8 @@ func TestGenerateServerCertificates(t *testing.T) {
 
 func TestServerConfig(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 
-	fileStorage, err := file.New(ctx)
-	require.NoError(t, err)
-	t.Cleanup(fileStorage.Cleanup)
-
-	_, err = rotation.RotateRootCertificates(ctx, fileStorage)
-	require.NoError(t, err)
-
-	// Create node credentials and have them authorized
-	nodeCreds, err := registration.RegisterViaServerLedFlow(ctx, fileStorage, &types.ServerLedRegistrationRequest{})
-	require.NoError(t, err)
+	ctx, fileStorage, nodeCreds := nodetesting.CommonTestParams(t)
 
 	nonceBytes := make([]byte, nodeenrollment.NonceSize)
 	w, err := rand.Read(nonceBytes)

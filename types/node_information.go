@@ -25,11 +25,6 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 	case nodeenrollment.IsNil(n):
 		return fmt.Errorf("(%s) node information is nil", op)
 
-	case len(n.CertificatePublicKeyPkix) == 0:
-		// This isn't really a validation function, but we want to avoid
-		// wrapping with nil AAD so we do a check here
-		return fmt.Errorf("(%s) refusing to store node information with no certificate pkix public key", op)
-
 	case n.Id == "":
 		return fmt.Errorf("(%s) node is missing id", op)
 	}
