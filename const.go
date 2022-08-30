@@ -32,6 +32,7 @@ const (
 	// to two weeks. Rotations should happen at roughly half this.
 	DefaultCertificateLifetime = time.Hour * 24 * 14
 
+	// This is the default time that an server-led activation token is alive
 	DefaultMaximumServerLedActivationTokenLifetime = time.Hour * 24 * 14
 
 	// CommonDnsName is a name we can use in the absence of anything more

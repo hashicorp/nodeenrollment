@@ -110,11 +110,8 @@ func validateFetchRequest(
 		}
 		consumingServerActivationToken = true
 
-		nonce := strings.TrimPrefix(string(reqInfo.Nonce), nodeenrollment.ServerLedActivationTokenPrefix)
-
-		// Regenerate the lookup ID from an HMAC of the given values
 		activationToken := new(types.ServerLedActivationToken)
-		if err := proto.Unmarshal([]byte(nonce), activationToken); err != nil {
+		if err := proto.Unmarshal(reqInfo.Nonce, activationToken); err != nil {
 			if strings.Contains(err.Error(), "cannot parse invalid wire-format data") {
 				return nil, nil, fmt.Errorf("(%s) invalid registration nonce: %w", op, err)
 			}
@@ -124,6 +121,7 @@ func validateFetchRequest(
 			return nil, nil, fmt.Errorf("(%s) nil activation token bundle", op)
 		}
 
+		// Regenerate the lookup ID from an HMAC of the given values
 		hm := hmac.New(sha256.New, activationToken.HmacKeyBytes)
 		idBytes := hm.Sum(activationToken.Bundle)
 		lookupId = fmt.Sprintf("%s%s", nodeenrollment.ServerLedActivationTokenPrefix, base58.FastBase58Encoding(idBytes))
