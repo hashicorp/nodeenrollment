@@ -99,7 +99,6 @@ func validateFetchRequest(
 	}
 
 	lookupId := keyId
-	var consumingServerActivationToken bool
 	switch len(reqInfo.Nonce) {
 	case nodeenrollment.NonceSize:
 		// Nothing; use as-is
@@ -108,7 +107,6 @@ func validateFetchRequest(
 		if fromAuthorize {
 			return nil, nil, fmt.Errorf("(%s) server-led activation tokens cannot be used with node-led authorize call", op)
 		}
-		consumingServerActivationToken = true
 
 		activationToken := new(types.ServerLedActivationToken)
 		if err := proto.Unmarshal(reqInfo.Nonce, activationToken); err != nil {
@@ -120,11 +118,6 @@ func validateFetchRequest(
 		if len(activationToken.Bundle) == 0 {
 			return nil, nil, fmt.Errorf("(%s) nil activation token bundle", op)
 		}
-
-		// Regenerate the lookup ID from an HMAC of the given values
-		hm := hmac.New(sha256.New, activationToken.HmacKeyBytes)
-		idBytes := hm.Sum(activationToken.Bundle)
-		lookupId = fmt.Sprintf("%s%s", nodeenrollment.ServerLedActivationTokenPrefix, base58.FastBase58Encoding(idBytes))
 
 		// Fetch bundle info to get state and creation time
 		activationTokenBundle := new(types.ServerLedActivationTokenBundle)
@@ -148,10 +141,15 @@ func validateFetchRequest(
 		if activationTokenBundle.State != nil {
 			opt = append(opt, nodeenrollment.WithState(activationTokenBundle.State))
 		}
+
+		// Regenerate the lookup ID from an HMAC of the given values
+		hm := hmac.New(sha256.New, activationToken.HmacKeyBytes)
+		idBytes := hm.Sum(activationToken.Bundle)
+		lookupId = fmt.Sprintf("%s%s", nodeenrollment.ServerLedActivationTokenPrefix, base58.FastBase58Encoding(idBytes))
 	}
 
 	nodeInfo, err := types.LoadNodeInformation(ctx, storage, lookupId, opt...)
-	if consumingServerActivationToken {
+	if strings.HasPrefix(lookupId, nodeenrollment.ServerLedActivationTokenPrefix) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("(%s) error looking up activation token: %w", op, err)
 		}
