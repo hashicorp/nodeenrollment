@@ -396,7 +396,8 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 // error and stores the result in storage, unless WithSkipStorage is passed.
 //
 // Supported options: WithWrapping (passed through to NodeCredentials.Store),
-// WithSkipStorage
+// WithSkipStorage, WithActivationToken (overrides the NodeCredentials' nonce
+// when using server-led node authorization)
 func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -445,7 +446,14 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 	}
 
 	// Validate the nonce
-	if subtle.ConstantTimeCompare(n.RegistrationNonce, newNodeCreds.RegistrationNonce) == 0 {
+	nonce := n.RegistrationNonce
+	if opts.WithActivationToken != "" {
+		nonce, err = base58.FastBase58Decoding(strings.TrimPrefix(opts.WithActivationToken, nodeenrollment.ServerLedActivationTokenPrefix))
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error base58-decoding activation token: %w", op, err)
+		}
+	}
+	if subtle.ConstantTimeCompare(nonce, newNodeCreds.RegistrationNonce) == 0 {
 		return nil, fmt.Errorf("(%s) server message decrypted successfully but nonce does not match", op)
 	}
 	n.RegistrationNonce = nil
