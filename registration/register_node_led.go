@@ -154,7 +154,8 @@ func validateFetchRequest(
 			return nil, nil, fmt.Errorf("(%s) error looking up activation token: %w", op, err)
 		}
 		if nodeInfo == nil {
-			return nil, nil, fmt.Errorf("(%s) activation token from lookup is nil", op)
+			// Returning ErrNotFound here will result in the Fetch call returning unauthorized
+			return nil, nil, fmt.Errorf("(%s) activation token from lookup is nil: %w", op, nodeenrollment.ErrNotFound)
 		}
 
 		// We need to remove this since it's one-time-use. Note that it's up to
