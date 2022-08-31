@@ -22,7 +22,7 @@ import (
 // and the token itself.
 //
 // Supported options: WithRandomReader, WithWrapper (passed through to
-// NodeInformation.Store), WithSkipStorage (useful for tests), WithState (to
+// NodeInformation.Store), WithSkipStorage, WithState (to
 // encode state in the activation token)
 func CreateServerLedActivationToken(
 	ctx context.Context,
