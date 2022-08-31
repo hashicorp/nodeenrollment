@@ -70,7 +70,7 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 // LoadNodeInformation loads the node information from storage, unwrapping encrypted
 // values if needed.
 //
-// Supported options: WithWrapper
+// Supported options: WithWrapper, WithState
 func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id string, opt ...nodeenrollment.Option) (*NodeInformation, error) {
 	const op = "nodeenrollment.types.LoadNodeInformation"
 
@@ -87,7 +87,8 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 	}
 
 	nodeInfo := &NodeInformation{
-		Id: id,
+		Id:    id,
+		State: opts.WithState,
 	}
 	if err := storage.Load(ctx, nodeInfo); err != nil {
 		return nil, fmt.Errorf("(%s) error loading node information from storage: %w", op, err)
