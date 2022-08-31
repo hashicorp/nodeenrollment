@@ -317,10 +317,12 @@ func NewNodeCredentials(
 	return n, nil
 }
 
-// CreateFetchNodeCredentialsRequest creates and returns a fetch request based on the
-// current node creds
+// CreateFetchNodeCredentialsRequest creates and returns a fetch request based
+// on the current node creds
 //
-// Supported options: WithRandomReader
+// Supported options: WithRandomReader, WithActivationToken (used in place of
+// the node's nonce value if provided, for the server-led flow; note that this
+// should be the full string token, it will be decoded by this function)
 func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 	ctx context.Context,
 	opt ...nodeenrollment.Option,
@@ -359,6 +361,15 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		NotBefore:                timestamppb.New(now),
 		NotAfter:                 timestamppb.New(now.Add(nodeenrollment.DefaultFetchCredentialsLifetime)),
 	}
+
+	if opts.WithActivationToken != "" {
+		nonce, err := base58.FastBase58Decoding(strings.TrimPrefix(opts.WithActivationToken, nodeenrollment.ServerLedActivationTokenPrefix))
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error base58-decoding activation token: %w", op, err)
+		}
+		reqInfo.Nonce = nonce
+	}
+
 	reqInfo.EncryptionPublicKeyBytes, err = curve25519.X25519(n.EncryptionPrivateKeyBytes, curve25519.Basepoint)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error performing x25519 operation on private key: %w", op, err)
