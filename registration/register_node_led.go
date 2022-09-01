@@ -98,82 +98,82 @@ func validateFetchRequest(
 		return nil, nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
 	}
 
-	lookupId := keyId
-	switch len(reqInfo.Nonce) {
-	case nodeenrollment.NonceSize:
-		// Nothing; use as-is
-	default:
-		// Treat it as a server-led activation token
-		if fromAuthorize {
-			return nil, nil, fmt.Errorf("(%s) server-led activation tokens cannot be used with node-led authorize call", op)
-		}
-
-		activationToken := new(types.ServerLedActivationToken)
-		if err := proto.Unmarshal(reqInfo.Nonce, activationToken); err != nil {
-			if strings.Contains(err.Error(), "cannot parse invalid wire-format data") {
-				return nil, nil, fmt.Errorf("(%s) invalid registration nonce: %w", op, err)
-			}
-			return nil, nil, fmt.Errorf("(%s) error unmarshaling server-led activation token: %w", op, err)
-		}
-		if len(activationToken.Bundle) == 0 {
-			return nil, nil, fmt.Errorf("(%s) nil activation token bundle", op)
-		}
-
-		// Fetch bundle info to get state and creation time
-		activationTokenBundle := new(types.ServerLedActivationTokenBundle)
-		if err := proto.Unmarshal(activationToken.Bundle, activationTokenBundle); err != nil {
-			return nil, nil, fmt.Errorf("(%s) error unmarshaling server-led activation token bundle: %w", op, err)
-		}
-
-		switch {
-		case activationTokenBundle.CreationTime == nil:
-			return nil, nil, fmt.Errorf("(%s) nil activation token creation time", op)
-		case activationTokenBundle.CreationTime.AsTime().IsZero():
-			return nil, nil, fmt.Errorf("(%s) activation token creation time is zero", op)
-		}
-		if activationTokenBundle.CreationTime.AsTime().Add(opts.WithMaximumServerLedActivationTokenLifetime).Before(time.Now()) {
-			return nil, nil, fmt.Errorf("(%s) activation token has expired", op)
-		}
-
-		// If state was provided, use it. Note that it may clash if state is
-		// passed into the function directly; either transfer state via the
-		// activation token, or when calling this function.
-		if activationTokenBundle.State != nil {
-			opt = append(opt, nodeenrollment.WithState(activationTokenBundle.State))
-		}
-
-		// Regenerate the lookup ID from an HMAC of the given values
-		hm := hmac.New(sha256.New, activationToken.HmacKeyBytes)
-		idBytes := hm.Sum(activationToken.Bundle)
-		lookupId = fmt.Sprintf("%s%s", nodeenrollment.ServerLedActivationTokenPrefix, base58.FastBase58Encoding(idBytes))
+	// If it's our expected nonce-size it's a normal fetch, not a
+	// server-generated activation token
+	if len(reqInfo.Nonce) == nodeenrollment.NonceSize {
+		nodeInfo, err := types.LoadNodeInformation(ctx, storage, keyId, opt...)
+		return reqInfo, nodeInfo, err
 	}
 
+	// Treat it as a server-led activation token; first ensure this path didn't
+	// come an authorize call
+	if fromAuthorize {
+		return nil, nil, fmt.Errorf("(%s) server-led activation tokens cannot be used with node-led authorize call", op)
+	}
+
+	activationToken := new(types.ServerLedActivationToken)
+	if err := proto.Unmarshal(reqInfo.Nonce, activationToken); err != nil {
+		if strings.Contains(err.Error(), "cannot parse invalid wire-format data") {
+			return nil, nil, fmt.Errorf("(%s) invalid registration nonce: %w", op, err)
+		}
+		return nil, nil, fmt.Errorf("(%s) error unmarshaling server-led activation token: %w", op, err)
+	}
+	if len(activationToken.Bundle) == 0 {
+		return nil, nil, fmt.Errorf("(%s) nil activation token bundle", op)
+	}
+
+	// Fetch bundle info to get state and creation time
+	activationTokenBundle := new(types.ServerLedActivationTokenBundle)
+	if err := proto.Unmarshal(activationToken.Bundle, activationTokenBundle); err != nil {
+		return nil, nil, fmt.Errorf("(%s) error unmarshaling server-led activation token bundle: %w", op, err)
+	}
+
+	switch {
+	case activationTokenBundle.CreationTime == nil:
+		return nil, nil, fmt.Errorf("(%s) nil activation token creation time", op)
+	case activationTokenBundle.CreationTime.AsTime().IsZero():
+		return nil, nil, fmt.Errorf("(%s) activation token creation time is zero", op)
+	}
+	if activationTokenBundle.CreationTime.AsTime().Add(opts.WithMaximumServerLedActivationTokenLifetime).Before(time.Now()) {
+		return nil, nil, fmt.Errorf("(%s) activation token has expired", op)
+	}
+
+	// If state was provided, use it. Note that it may clash if state is
+	// passed into the function directly; either transfer state via the
+	// activation token, or when calling this function.
+	if activationTokenBundle.State != nil {
+		opt = append(opt, nodeenrollment.WithState(activationTokenBundle.State))
+	}
+
+	// Regenerate the lookup ID from an HMAC of the given values
+	hm := hmac.New(sha256.New, activationToken.HmacKeyBytes)
+	idBytes := hm.Sum(activationToken.Bundle)
+	lookupId := fmt.Sprintf("%s%s", nodeenrollment.ServerLedActivationTokenPrefix, base58.FastBase58Encoding(idBytes))
+
+	// Do a lookup for the nodeInfo matching that lookupId
 	nodeInfo, err := types.LoadNodeInformation(ctx, storage, lookupId, opt...)
-	if strings.HasPrefix(lookupId, nodeenrollment.ServerLedActivationTokenPrefix) {
-		if err != nil {
-			return nil, nil, fmt.Errorf("(%s) error looking up activation token: %w", op, err)
-		}
-		if nodeInfo == nil {
-			// Returning ErrNotFound here will result in the Fetch call returning unauthorized
-			return nil, nil, fmt.Errorf("(%s) activation token from lookup is nil: %w", op, nodeenrollment.ErrNotFound)
-		}
-
-		// We need to remove this since it's one-time-use. Note that it's up to
-		// the storage implementation to have this be truly one-time or not
-		// (e.g. in a transaction)
-		if err := storage.Remove(ctx, nodeInfo); err != nil {
-			return nil, nil, fmt.Errorf("(%s) error removing server-led activation token: %w", op, err)
-		}
-		// Verify that we don't have this authorization already
-		if keyCheck, _ := types.LoadNodeInformation(ctx, storage, keyId, opt...); keyCheck != nil {
-			return nil, nil, fmt.Errorf("(%s) node cannot be authorized as there is an existing node", op)
-		}
-		// Authorize the node; we'll then fall through to the rest of the fetch
-		// workflow (we've already ensured we're not in an authorize call up
-		// above)
-		nodeInfo, err = authorizeNodeCommon(ctx, storage, reqInfo, opt...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("(%s) error looking up activation token: %w", op, err)
+	}
+	if nodeInfo == nil {
+		// Returning ErrNotFound here will result in the Fetch call returning unauthorized
+		return nil, nil, fmt.Errorf("(%s) activation token from lookup is nil: %w", op, nodeenrollment.ErrNotFound)
 	}
 
+	// We need to remove this since it's one-time-use. Note that it's up to
+	// the storage implementation to have this be truly one-time or not
+	// (e.g. in a transaction)
+	if err := storage.Remove(ctx, nodeInfo); err != nil {
+		return nil, nil, fmt.Errorf("(%s) error removing server-led activation token: %w", op, err)
+	}
+	// Verify that we don't have an authorization already for the given key ID
+	if keyCheck, _ := types.LoadNodeInformation(ctx, storage, keyId, opt...); keyCheck != nil {
+		return nil, nil, fmt.Errorf("(%s) node cannot be authorized as there is an existing node", op)
+	}
+	// Authorize the node; we'll then fall through to the rest of the fetch
+	// workflow (we've already ensured we're not in an authorize call up
+	// above)
+	nodeInfo, err = authorizeNodeCommon(ctx, storage, reqInfo, opt...)
 	return reqInfo, nodeInfo, err
 }
 
