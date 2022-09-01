@@ -2,6 +2,8 @@ package registration_test
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"strings"
 	"testing"
 
@@ -41,8 +43,7 @@ func TestServerLedRegistration(t *testing.T) {
 
 	wrapper := aead.TestWrapper(t)
 
-	var tokenId string
-	tokenId, token, err = registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{}, nodeenrollment.WithWrapper(wrapper))
+	tokenId, token, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{}, nodeenrollment.WithWrapper(wrapper))
 	require.NoError(err)
 	assert.NotEmpty(token)
 	assert.True(strings.HasPrefix(token, nodeenrollment.ServerLedActivationTokenPrefix))
@@ -50,21 +51,17 @@ func TestServerLedRegistration(t *testing.T) {
 	nonce, err := base58.FastBase58Decoding(strings.TrimPrefix(token, nodeenrollment.ServerLedActivationTokenPrefix))
 	require.NoError(err)
 
-	// We should now look for a NodeInformation value in storage and validate it
-	activationToken := new(types.ServerLedActivationToken)
-	require.NoError(proto.Unmarshal(nonce, activationToken))
-	nodeInfo, err := types.LoadNodeInformation(ctx, storage, tokenId, nodeenrollment.WithWrapper(wrapper))
+	// We should now look for a ServerLedActivationToken value in storage and validate it
+	tokenNonce := new(types.ServerLedActivationTokenNonce)
+	require.NoError(proto.Unmarshal(nonce, tokenNonce))
+	hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
+	idBytes := hm.Sum(tokenNonce.Nonce)
+	assert.Equal(tokenId, base58.FastBase58Encoding(idBytes))
+	tokenEntry, err := types.LoadServerLedActivationToken(ctx, storage, base58.FastBase58Encoding(idBytes), nodeenrollment.WithWrapper(wrapper))
 	require.NoError(err)
-	require.NotNil(nodeInfo)
-	assert.NotEmpty(nodeInfo.Id)
-	assert.Empty(nodeInfo.CertificatePublicKeyPkix)
-	assert.Equal(types.KEYTYPE_UNSPECIFIED, nodeInfo.CertificatePublicKeyType)
-	assert.Len(nodeInfo.CertificateBundles, 0)
-	assert.Empty(nodeInfo.EncryptionPublicKeyBytes)
-	assert.Equal(types.KEYTYPE_UNSPECIFIED, nodeInfo.EncryptionPublicKeyType)
-	assert.Empty(nodeInfo.ServerEncryptionPrivateKeyBytes)
-	assert.Equal(types.KEYTYPE_UNSPECIFIED, nodeInfo.ServerEncryptionPrivateKeyType)
-	assert.NotEmpty(nodeInfo.RegistrationNonce)
-	assert.Empty(nodeInfo.WrappingKeyId)
-	assert.Equal(nodeInfo.RegistrationNonce, nonce)
+	require.NotNil(tokenEntry)
+	assert.NotEmpty(tokenEntry.Id)
+	assert.NotNil(tokenEntry.CreationTime)
+	assert.NotEmpty(tokenEntry.CreationTimeMarshaled)
+	assert.Empty(tokenEntry.WrappingKeyId)
 }

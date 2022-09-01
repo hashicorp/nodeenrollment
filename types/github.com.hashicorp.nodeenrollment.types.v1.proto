@@ -225,23 +225,34 @@ message GenerateServerCertificatesResponse {
 message ServerLedRegistrationRequest {
 }
 
-// ServerLedActivationToken contains a per-token key and the actual bytes.
+// ServerLedActivationToken contains stored information about a
+// one-time-use activation token. The ID is created by the actual returned
+// token's nonce HMAC'd by the token's keybytes.
 message ServerLedActivationToken {
-  bytes hmac_key_bytes = 10 [json_name = "hmac_key_bytes"];
-  bytes bundle = 20;
-}
+  string id = 1;
 
-// ServerLedActivationTokenBundle contains the actual activation token data.
-message ServerLedActivationTokenBundle {
-  // The nonce ensures uniqueness of any given bundle, although the lookups of
-  // data are performed on the serialized versions of this.
-  bytes nonce = 20;
+  // The time at which this was created; always overwritten on load from
+  // creation_time_marshaled
+  google.protobuf.Timestamp creation_time = 10 [json_name="creation_time"];
 
-  // The time at which this was created
-  google.protobuf.Timestamp creation_time = 30 [json_name="creation_time"];
+  // This stores a marshaled version of the creation time so that it can easily
+  // be wrapped
+  bytes creation_time_marshaled = 11 [json_name="creation_time_marshaled"];
+
+  // If set, the key ID of the wrapping key used to encrypt the private keys
+  string wrapping_key_id = 30 [json_name="wrapping_key_id"];
 
   // State is data that the implementor of a Store can use to round-trip data
   // through this library; as an example, a verison number on the resource for
   // implementing transactions.
   google.protobuf.Struct state = 50;
+}
+
+// ServerLedActivationTokenNonce is the value actually returned to a user.
+// The a SHA256-HMAC of the nonce by the key bytes should result in an ID that
+// can be found in storage.
+message ServerLedActivationTokenNonce {
+  bytes nonce = 1;
+
+  bytes hmac_key_bytes = 2 [json_name = "hmac_key_bytes"];
 }
