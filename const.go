@@ -32,6 +32,9 @@ const (
 	// to two weeks. Rotations should happen at roughly half this.
 	DefaultCertificateLifetime = time.Hour * 24 * 14
 
+	// This is the default time that an server-led activation token is alive
+	DefaultMaximumServerLedActivationTokenLifetime = time.Hour * 24 * 14
+
 	// CommonDnsName is a name we can use in the absence of anything more
 	// specific. In most cases we actually do not care about common name or DNS
 	// SAN verification, and when we do we have an explicit test for it. In all
@@ -59,6 +62,10 @@ const (
 
 	// The default amount of time for a signed fetch request validity period
 	DefaultFetchCredentialsLifetime = time.Hour * 24
+
+	// ServerLedActivationTokenPrefix is used to identify an incoming nonce at
+	// activation time that should trigger a lookup for a server-generated token
+	ServerLedActivationTokenPrefix = "neslat_" // NodeEnrollment Server-Led Activation Token
 )
 
 // ErrNotFound is a common error to use when a value is not found in storage.

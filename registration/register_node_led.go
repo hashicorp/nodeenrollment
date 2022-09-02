@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto"
 	"crypto/ed25519"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -11,10 +13,12 @@ import (
 	"fmt"
 	"math/big"
 	mathrand "math/rand"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/types"
+	"github.com/mr-tron/base58"
 	"golang.org/x/crypto/curve25519"
 	"google.golang.org/protobuf/proto"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -27,11 +31,13 @@ import (
 // nodeenrollment.ErrNotFound and customize logic appropriately
 //
 // Supported options: WithWrapper (passed through to LoadNodeInformation),
-// WithNotBeforeClockSkew/WithNotAfterClockSkew
+// WithNotBeforeClockSkew/WithNotAfterClockSkew, WithState (passed through to
+// authorizeNodeCommon.
 func validateFetchRequest(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
 	req *types.FetchNodeCredentialsRequest,
+	fromAuthorize bool,
 	opt ...nodeenrollment.Option,
 ) (*types.FetchNodeCredentialsInfo, *types.NodeInformation, error) {
 	const op = "nodeenrollment.registration.validateFetchRequest"
@@ -52,8 +58,8 @@ func validateFetchRequest(
 		return nil, nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
-	var reqInfo types.FetchNodeCredentialsInfo
-	if err := proto.Unmarshal(req.Bundle, &reqInfo); err != nil {
+	reqInfo := new(types.FetchNodeCredentialsInfo)
+	if err := proto.Unmarshal(req.Bundle, reqInfo); err != nil {
 		return nil, nil, fmt.Errorf("(%s) cannot unmarshal request info: %w", op, err)
 	}
 
@@ -69,8 +75,6 @@ func validateFetchRequest(
 		return nil, nil, fmt.Errorf("(%s) empty node encryption public key", op)
 	case reqInfo.EncryptionPublicKeyType != types.KEYTYPE_X25519:
 		return nil, nil, fmt.Errorf("(%s) unsupported node encryption public key type %v", op, reqInfo.EncryptionPublicKeyType.String())
-	case len(reqInfo.Nonce) != nodeenrollment.NonceSize:
-		return nil, nil, fmt.Errorf("(%s) invalid registration nonce", op)
 	case reqInfo.NotBefore.AsTime().Add(opts.WithNotBeforeClockSkew).After(now):
 		return nil, nil, fmt.Errorf("(%s) validity period is after current time", op)
 	case reqInfo.NotAfter.AsTime().Add(opts.WithNotAfterClockSkew).Before(now):
@@ -94,9 +98,82 @@ func validateFetchRequest(
 		return nil, nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
 	}
 
-	nodeInfo, err := types.LoadNodeInformation(ctx, storage, keyId, opt...)
+	// If it's our expected nonce-size it's a normal fetch, not a
+	// server-generated activation token
+	if len(reqInfo.Nonce) == nodeenrollment.NonceSize {
+		nodeInfo, err := types.LoadNodeInformation(ctx, storage, keyId, opt...)
+		return reqInfo, nodeInfo, err
+	}
 
-	return &reqInfo, nodeInfo, err
+	// Treat it as a server-led activation token; first ensure this path didn't
+	// come an authorize call
+	if fromAuthorize {
+		return nil, nil, fmt.Errorf("(%s) server-led activation tokens cannot be used with node-led authorize call", op)
+	}
+
+	tokenNonce := new(types.ServerLedActivationTokenNonce)
+	if err := proto.Unmarshal(reqInfo.Nonce, tokenNonce); err != nil {
+		if strings.Contains(err.Error(), "cannot parse invalid wire-format data") {
+			return nil, nil, fmt.Errorf("(%s) invalid registration nonce: %w", op, err)
+		}
+		return nil, nil, fmt.Errorf("(%s) error unmarshaling server-led activation token: %w", op, err)
+	}
+	switch {
+	case len(tokenNonce.Nonce) == 0:
+		return nil, nil, fmt.Errorf("(%s) nil activation token nonce", op)
+	case len(tokenNonce.HmacKeyBytes) == 0:
+		return nil, nil, fmt.Errorf("(%s) nil activation token hmac key bytes", op)
+	}
+
+	// Generate the ID from the token values for lookup
+	hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
+	idBytes := hm.Sum(tokenNonce.Nonce)
+	tokenEntry, err := types.LoadServerLedActivationToken(ctx, storage, base58.FastBase58Encoding(idBytes), opt...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("(%s) error looking up activation token: %w", op, err)
+	}
+	if tokenEntry == nil {
+		// Returning ErrNotFound here will result in the Fetch call returning unauthorized
+		return nil, nil, fmt.Errorf("(%s) activation token from lookup is nil: %w", op, nodeenrollment.ErrNotFound)
+	}
+
+	// Validate the time since creation
+	switch {
+	case tokenEntry.CreationTime == nil:
+		return nil, nil, fmt.Errorf("(%s) nil activation token creation time", op)
+	case tokenEntry.CreationTime.AsTime().IsZero():
+		return nil, nil, fmt.Errorf("(%s) activation token creation time is zero", op)
+	}
+	if tokenEntry.CreationTime.AsTime().Add(opts.WithMaximumServerLedActivationTokenLifetime).Before(time.Now()) {
+		return nil, nil, fmt.Errorf("(%s) activation token has expired", op)
+	}
+
+	// If state was provided, use it. Note that it may clash if state is passed
+	// into the function directly; either transfer state via token entry, or
+	// when calling this function.
+	if tokenEntry.State != nil {
+		opt = append(opt, nodeenrollment.WithState(tokenEntry.State))
+	}
+
+	// We need to remove this since it's one-time-use. Note that it's up to the
+	// storage implementation to have this be truly one-time or not (e.g. in a
+	// transaction). If possible, storage should communicate anything unexpected
+	// (such as the value not being found) as an error so we don't proceed
+	// towards authorization.
+	if err := storage.Remove(ctx, tokenEntry); err != nil {
+		return nil, nil, fmt.Errorf("(%s) error removing server-led activation token: %w", op, err)
+	}
+
+	// Verify that we don't have an authorization already for the given key ID
+	if keyCheck, _ := types.LoadNodeInformation(ctx, storage, keyId, opt...); keyCheck != nil {
+		return nil, nil, fmt.Errorf("(%s) node cannot be authorized as there is an existing node", op)
+	}
+
+	// Authorize the node; we'll then fall through to the rest of the fetch
+	// workflow (we've already ensured we're not in an authorize call up
+	// above)
+	nodeInfo, err := authorizeNodeCommon(ctx, storage, reqInfo, opt...)
+	return reqInfo, nodeInfo, err
 }
 
 // FetchNodeCredentials fetches node credentials based on the submitted
@@ -104,8 +181,13 @@ func validateFetchRequest(
 //
 // Supported options: WithRandomReader, WithWrapper (passed through to
 // LoadNodeInformation, NodeInformation.Store, and LoadRootCertificates),
-// WithNotBeforeClockSkew/WithNotAfterClockSkew (passed through to
+// WithNotBeforeClockSkew/WithNotAfterClockSkew/WithState (passed through to
 // validateFetchRequest)
+//
+// Note: If the request nonce is a server-led activation token and it contains
+// state, this will overwrite any state passed in via options to this function;
+// either transfer state via the activation token, or when calling this
+// function.
 func FetchNodeCredentials(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -119,7 +201,7 @@ func FetchNodeCredentials(
 		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
-	reqInfo, nodeInfo, err := validateFetchRequest(ctx, storage, req, opt...)
+	reqInfo, nodeInfo, err := validateFetchRequest(ctx, storage, req, false, opt...)
 	if err != nil && !errors.Is(err, nodeenrollment.ErrNotFound) {
 		return nil, fmt.Errorf("(%s) error looking up node information from storage: %w", op, err)
 	}
@@ -216,12 +298,7 @@ func AuthorizeNode(
 ) (*types.NodeInformation, error) {
 	const op = "nodeenrollment.registration.AuthorizeNode"
 
-	opts, err := nodeenrollment.GetOpts(opt...)
-	if err != nil {
-		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
-	}
-
-	reqInfo, nodeInfo, err := validateFetchRequest(ctx, storage, req, opt...)
+	reqInfo, nodeInfo, err := validateFetchRequest(ctx, storage, req, true, opt...)
 	if err != nil && !errors.Is(err, nodeenrollment.ErrNotFound) {
 		return nil, fmt.Errorf("(%s) error looking up node information from storage: %w", op, err)
 	}
@@ -230,12 +307,29 @@ func AuthorizeNode(
 		return nil, fmt.Errorf("(%s) authorize node cannot be called on an existing node", op)
 	}
 
+	return authorizeNodeCommon(ctx, storage, reqInfo, opt...)
+}
+
+// Note: this is called via paths that run the common validateFetchRequest
+// function which contains common validation functions
+func authorizeNodeCommon(
+	ctx context.Context,
+	storage nodeenrollment.Storage,
+	reqInfo *types.FetchNodeCredentialsInfo,
+	opt ...nodeenrollment.Option,
+) (*types.NodeInformation, error) {
+	const op = "nodeenrollment.registration.authorizeNodeCommon"
 	keyId, err := nodeenrollment.KeyIdFromPkix(reqInfo.CertificatePublicKeyPkix)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
 	}
 
-	nodeInfo = &types.NodeInformation{
+	opts, err := nodeenrollment.GetOpts(opt...)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
+	}
+
+	nodeInfo := &types.NodeInformation{
 		Id:                       keyId,
 		CertificatePublicKeyPkix: reqInfo.CertificatePublicKeyPkix,
 		CertificatePublicKeyType: reqInfo.CertificatePublicKeyType,

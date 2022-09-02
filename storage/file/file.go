@@ -16,9 +16,10 @@ import (
 
 // These paths are used for different kinds of storage
 const (
-	rootsSubPath     = "roots"
-	nodeInfoSubPath  = "nodeinfo"
-	nodeCredsSubPath = "nodecreds"
+	rootsSubPath                 = "roots"
+	nodeInfoSubPath              = "nodeinfo"
+	nodeCredsSubPath             = "nodecreds"
+	serverLedActivationTokenPath = "serverledactivationtokens"
 )
 
 type Storage struct {
@@ -93,6 +94,8 @@ func subPathFromMsg(msg proto.Message) (string, error) {
 		return nodeInfoSubPath, nil
 	case *types.RootCertificates:
 		return rootsSubPath, nil
+	case *types.ServerLedActivationToken:
+		return serverLedActivationTokenPath, nil
 	default:
 		return "", fmt.Errorf("(%s) unknown message type %T", op, t)
 	}

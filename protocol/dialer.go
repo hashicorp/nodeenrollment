@@ -28,7 +28,8 @@ import (
 // WithNotBeforeClockSkew/WithNotAfterClockSkew (these are used as
 // NotBefore/NotAfter lifetimes for the generated cert used for client side
 // TLS), WithExtraAlpnProtos (passed through to the client side TLS
-// configuration)
+// configuration), WithActivationToken (passed through to
+// CreateFetchNodeCredentialsRequest)
 func Dial(
 	ctx context.Context,
 	storage nodeenrollment.Storage,

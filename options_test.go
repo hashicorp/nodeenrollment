@@ -156,4 +156,22 @@ func Test_GetOpts(t *testing.T) {
 		require.NoError(err)
 		assert.True(opts.WithReinitializeRoots)
 	})
+	t.Run("with-activation-token", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.Empty(opts.WithActivationToken)
+		opts, err = GetOpts(WithActivationToken("foo"))
+		require.NoError(err)
+		assert.Equal("foo", opts.WithActivationToken)
+	})
+	t.Run("with-max-activation-token-lifetime", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.Equal(DefaultMaximumServerLedActivationTokenLifetime, opts.WithMaximumServerLedActivationTokenLifetime)
+		opts, err = GetOpts(WithMaximumServerLedActivationTokenLifetime(time.Second))
+		require.NoError(err)
+		assert.Equal(time.Second, opts.WithMaximumServerLedActivationTokenLifetime)
+	})
 }

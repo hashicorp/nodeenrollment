@@ -25,11 +25,6 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 	case nodeenrollment.IsNil(n):
 		return fmt.Errorf("(%s) node information is nil", op)
 
-	case len(n.CertificatePublicKeyPkix) == 0:
-		// This isn't really a validation function, but we want to avoid
-		// wrapping with nil AAD so we do a check here
-		return fmt.Errorf("(%s) refusing to store node information with no certificate pkix public key", op)
-
 	case n.Id == "":
 		return fmt.Errorf("(%s) node is missing id", op)
 	}
@@ -75,7 +70,7 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 // LoadNodeInformation loads the node information from storage, unwrapping encrypted
 // values if needed.
 //
-// Supported options: WithWrapper
+// Supported options: WithWrapper, WithState
 func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id string, opt ...nodeenrollment.Option) (*NodeInformation, error) {
 	const op = "nodeenrollment.types.LoadNodeInformation"
 
@@ -92,7 +87,8 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 	}
 
 	nodeInfo := &NodeInformation{
-		Id: id,
+		Id:    id,
+		State: opts.WithState,
 	}
 	if err := storage.Load(ctx, nodeInfo); err != nil {
 		return nil, fmt.Errorf("(%s) error loading node information from storage: %w", op, err)

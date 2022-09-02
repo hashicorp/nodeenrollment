@@ -104,6 +104,10 @@ func Test_StorageMessageType(t *testing.T) {
 			msg:  &types.RootCertificates{Id: "foobar"},
 		},
 		{
+			name: "valid-server-led-activation-token",
+			msg:  &types.ServerLedActivationToken{Id: "foobar"},
+		},
+		{
 			name:            "nil-msg",
 			wantErrContains: "nil message",
 		},

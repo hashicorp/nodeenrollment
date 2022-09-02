@@ -29,20 +29,22 @@ func GetOpts(opt ...Option) (*Options, error) {
 // Options contains various options. The values are exported since the options
 // are parsed in various other packages.
 type Options struct {
-	WithCertificateLifetime  time.Duration
-	WithNotBeforeClockSkew   time.Duration
-	WithNotAfterClockSkew    time.Duration
-	WithRandomReader         io.Reader
-	WithNonce                string
-	WithTlsVerifyOptionsFunc func(*x509.CertPool) x509.VerifyOptions
-	WithWrapper              wrapping.Wrapper
-	WithSkipStorage          bool
-	WithExpectedPublicKey    []byte
-	WithState                *structpb.Struct
-	WithAlpnProtoPrefix      string
-	WithServerName           string
-	WithExtraAlpnProtos      []string
-	WithReinitializeRoots    bool
+	WithCertificateLifetime                     time.Duration
+	WithNotBeforeClockSkew                      time.Duration
+	WithNotAfterClockSkew                       time.Duration
+	WithRandomReader                            io.Reader
+	WithNonce                                   string
+	WithTlsVerifyOptionsFunc                    func(*x509.CertPool) x509.VerifyOptions
+	WithWrapper                                 wrapping.Wrapper
+	WithSkipStorage                             bool
+	WithExpectedPublicKey                       []byte
+	WithState                                   *structpb.Struct
+	WithAlpnProtoPrefix                         string
+	WithServerName                              string
+	WithExtraAlpnProtos                         []string
+	WithReinitializeRoots                       bool
+	WithActivationToken                         string
+	WithMaximumServerLedActivationTokenLifetime time.Duration
 }
 
 // Option is a function that takes in an options struct and sets values or
@@ -51,10 +53,11 @@ type Option func(*Options) error
 
 func getDefaultOptions() *Options {
 	return &Options{
-		WithCertificateLifetime: DefaultCertificateLifetime,
-		WithNotBeforeClockSkew:  DefaultNotBeforeClockSkewDuration,
-		WithNotAfterClockSkew:   DefaultNotAfterClockSkewDuration,
-		WithRandomReader:        rand.Reader,
+		WithCertificateLifetime:                     DefaultCertificateLifetime,
+		WithNotBeforeClockSkew:                      DefaultNotBeforeClockSkewDuration,
+		WithNotAfterClockSkew:                       DefaultNotAfterClockSkewDuration,
+		WithMaximumServerLedActivationTokenLifetime: DefaultMaximumServerLedActivationTokenLifetime,
+		WithRandomReader:                            rand.Reader,
 	}
 }
 
@@ -190,6 +193,24 @@ func WithExtraAlpnProtos(with []string) Option {
 func WithReinitializeRoots(with bool) Option {
 	return func(o *Options) error {
 		o.WithReinitializeRoots = with
+		return nil
+	}
+}
+
+// WithActivationToken is used to pass an activation token; typically this will
+// be to pass a server-generated activation token as the nonce for a request
+func WithActivationToken(with string) Option {
+	return func(o *Options) error {
+		o.WithActivationToken = with
+		return nil
+	}
+}
+
+// WithMaximumActivationTokenLifetime allows overriding a default duration for
+// server-led activation token lifetime
+func WithMaximumServerLedActivationTokenLifetime(with time.Duration) Option {
+	return func(o *Options) error {
+		o.WithMaximumServerLedActivationTokenLifetime = with
 		return nil
 	}
 }
