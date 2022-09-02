@@ -148,9 +148,9 @@ func validateFetchRequest(
 		return nil, nil, fmt.Errorf("(%s) activation token has expired", op)
 	}
 
-	// If state was provided, use it. Note that it may clash if state is
-	// passed into the function directly; either transfer state via the
-	// activation token, or when calling this function.
+	// If state was provided, use it. Note that it may clash if state is passed
+	// into the function directly; either transfer state via token entry, or
+	// when calling this function.
 	if tokenEntry.State != nil {
 		opt = append(opt, nodeenrollment.WithState(tokenEntry.State))
 	}
