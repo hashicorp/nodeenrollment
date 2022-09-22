@@ -155,6 +155,8 @@ func (n *NodeInformation) X25519EncryptionKey() ([]byte, error) {
 	return out, nil
 }
 
+// PreviousKey satisfies the X25519Producer and will produce a shared
+// encryption key via X25519 if previous key data is present
 func (n *NodeInformation) PreviousKey() ([]byte, error) {
 	const op = "nodeenrollment.types.(NodeInformation).PreviousKey"
 
