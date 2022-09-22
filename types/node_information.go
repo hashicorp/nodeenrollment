@@ -129,9 +129,10 @@ func (n *NodeInformation) SetPreviousEncryptionKey(oldNodeCredentials *NodeInfor
 	}
 
 	previousEncryptionKey := &EncryptionKey{
-		PrivateKeyBytes: oldNodeCredentials.ServerEncryptionPrivateKeyBytes,
+		Id:              oldNodeCredentials.Id,
+		PrivateKeyPkcs8: oldNodeCredentials.ServerEncryptionPrivateKeyBytes,
 		PrivateKeyType:  oldNodeCredentials.ServerEncryptionPrivateKeyType,
-		PublicKeyBytes:  oldNodeCredentials.EncryptionPublicKeyBytes,
+		PublicKeyPkix:   oldNodeCredentials.EncryptionPublicKeyBytes,
 		PublicKeyType:   oldNodeCredentials.EncryptionPublicKeyType,
 	}
 	n.PreviousEncryptionKey = previousEncryptionKey
@@ -157,21 +158,21 @@ func (n *NodeInformation) X25519EncryptionKey() ([]byte, error) {
 
 // PreviousKey satisfies the X25519Producer and will produce a shared
 // encryption key via X25519 if previous key data is present
-func (n *NodeInformation) PreviousKey() ([]byte, error) {
+func (n *NodeInformation) PreviousKey() (string, []byte, error) {
 	const op = "nodeenrollment.types.(NodeInformation).PreviousKey"
 
 	if nodeenrollment.IsNil(n) {
-		return nil, fmt.Errorf("(%s) node information is empty", op)
+		return "", nil, fmt.Errorf("(%s) node information is empty", op)
 	}
 
 	previousKey := n.PreviousEncryptionKey
 	if previousKey == nil {
-		return nil, fmt.Errorf("(%s) previous key is empty", op)
+		return "", nil, fmt.Errorf("(%s) previous key is empty", op)
 	}
 
-	out, err := X25519EncryptionKey(previousKey.PrivateKeyBytes, previousKey.PrivateKeyType, previousKey.PublicKeyBytes, previousKey.PublicKeyType)
+	out, err := X25519EncryptionKey(previousKey.PrivateKeyPkcs8, previousKey.PrivateKeyType, previousKey.PublicKeyPkix, previousKey.PublicKeyType)
 	if err != nil {
-		return nil, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
+		return "", nil, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
 	}
-	return out, nil
+	return previousKey.Id, out, nil
 }

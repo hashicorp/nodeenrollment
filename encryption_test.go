@@ -24,8 +24,8 @@ func (t testNode) X25519EncryptionKey() ([]byte, error) {
 	return curve25519.X25519(t.priv, t.otherPub)
 }
 
-func (t testNode) PreviousKey() ([]byte, error) {
-	return nil, nil
+func (t testNode) PreviousKey() (string, []byte, error) {
+	return "", nil, nil
 }
 
 var _ X25519Producer = (*testNode)(nil)

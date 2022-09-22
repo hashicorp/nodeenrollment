@@ -238,6 +238,7 @@ func TestNodeCredentials_X25519(t *testing.T) {
 	require.NoError(t, err)
 
 	nodeCreds := &types.NodeCredentials{
+		Id:                             "i'm a node id!",
 		EncryptionPrivateKeyBytes:      privKey,
 		EncryptionPrivateKeyType:       types.KEYTYPE_X25519,
 		ServerEncryptionPublicKeyBytes: pubKey,
@@ -324,6 +325,7 @@ func TestNodeCredentials_X25519(t *testing.T) {
 	require.NoError(t, err)
 
 	nodeCreds2 := &types.NodeCredentials{
+		Id:                             "i'm another node id!",
 		EncryptionPrivateKeyBytes:      privKey3,
 		EncryptionPrivateKeyType:       types.KEYTYPE_X25519,
 		ServerEncryptionPublicKeyBytes: pubKey2,
@@ -360,7 +362,7 @@ func TestNodeCredentials_X25519(t *testing.T) {
 			require.NoError(err)
 			require.NotNil(xKey)
 
-			pKey, err := n.PreviousKey()
+			_, pKey, err := n.PreviousKey()
 			require.NoError(err)
 			oldCredKey, err := tt.previousCreds.X25519EncryptionKey()
 			require.NoError(err)

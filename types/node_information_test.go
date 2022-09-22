@@ -214,6 +214,7 @@ func TestNodeInformation_X25519(t *testing.T) {
 	require.NoError(t, err)
 
 	nodeInfo := &types.NodeInformation{
+		Id:                              "i'm a node id!",
 		ServerEncryptionPrivateKeyBytes: privKey,
 		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
 		EncryptionPublicKeyBytes:        pubKey,
@@ -299,6 +300,7 @@ func TestNodeInformation_X25519(t *testing.T) {
 	require.NoError(t, err)
 
 	nodeInfo2 := &types.NodeInformation{
+		Id:                              "i'm another node id!",
 		ServerEncryptionPrivateKeyBytes: privKey3,
 		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
 		EncryptionPublicKeyBytes:        pubKey2,
@@ -335,7 +337,7 @@ func TestNodeInformation_X25519(t *testing.T) {
 			require.NoError(err)
 			require.NotNil(xKey)
 
-			pKey, err := n.PreviousKey()
+			_, pKey, err := n.PreviousKey()
 			require.NoError(err)
 			oldCredKey, err := tt.previousInfo.X25519EncryptionKey()
 			require.NoError(err)

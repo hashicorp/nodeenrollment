@@ -227,23 +227,23 @@ func (n *NodeCredentials) X25519EncryptionKey() ([]byte, error) {
 
 // PreviousKey satisfies the X25519Producer and will produce a shared
 // encryption key via X25519 if previous key data is present
-func (n *NodeCredentials) PreviousKey() ([]byte, error) {
+func (n *NodeCredentials) PreviousKey() (string, []byte, error) {
 	const op = "nodeenrollment.types.(NodeCredentials).PreviousKey"
 
 	if nodeenrollment.IsNil(n) {
-		return nil, fmt.Errorf("(%s) node credentials is empty", op)
+		return "", nil, fmt.Errorf("(%s) node credentials is empty", op)
 	}
 
 	previousKey := n.PreviousEncryptionKey
 	if previousKey == nil {
-		return nil, fmt.Errorf("(%s) previous key is empty", op)
+		return "", nil, fmt.Errorf("(%s) previous key is empty", op)
 	}
 
-	out, err := X25519EncryptionKey(previousKey.PrivateKeyBytes, previousKey.PrivateKeyType, previousKey.PublicKeyBytes, previousKey.PublicKeyType)
+	out, err := X25519EncryptionKey(previousKey.PrivateKeyPkcs8, previousKey.PrivateKeyType, previousKey.PublicKeyPkix, previousKey.PublicKeyType)
 	if err != nil {
-		return nil, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
+		return "", nil, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
 	}
-	return out, nil
+	return previousKey.Id, out, nil
 }
 
 // NewNodeCredentials creates a new node credentials object and populates it
@@ -347,9 +347,10 @@ func (n *NodeCredentials) SetPreviousEncryptionKey(oldNodeCredentials *NodeCrede
 	}
 
 	previousEncryptionKey := &EncryptionKey{
-		PrivateKeyBytes: oldNodeCredentials.EncryptionPrivateKeyBytes,
+		Id:              oldNodeCredentials.Id,
+		PrivateKeyPkcs8: oldNodeCredentials.EncryptionPrivateKeyBytes,
 		PrivateKeyType:  oldNodeCredentials.EncryptionPrivateKeyType,
-		PublicKeyBytes:  oldNodeCredentials.ServerEncryptionPublicKeyBytes,
+		PublicKeyPkix:   oldNodeCredentials.ServerEncryptionPublicKeyBytes,
 		PublicKeyType:   oldNodeCredentials.ServerEncryptionPublicKeyType,
 	}
 	n.PreviousEncryptionKey = previousEncryptionKey

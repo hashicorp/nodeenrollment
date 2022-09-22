@@ -13,7 +13,7 @@ import (
 // that produces an encryption key via X25519.
 type X25519Producer interface {
 	X25519EncryptionKey() ([]byte, error)
-	PreviousKey() ([]byte, error)
+	PreviousKey() (string, []byte, error)
 }
 
 // EncryptMessage takes any proto.Message and a valid key source that implements
@@ -113,11 +113,11 @@ func DecryptMessage(ctx context.Context, id string, ct []byte, keySource X25519P
 
 	// If decryption fails with the current key, try with the previous key, if present
 	if err != nil {
-		previousKey, prevErr := keySource.PreviousKey()
+		prevId, previousKey, prevErr := keySource.PreviousKey()
 		if prevErr != nil || previousKey == nil {
 			return err
 		}
-		prevErr = decryptWithKey(ctx, id, ct, previousKey, result)
+		prevErr = decryptWithKey(ctx, prevId, ct, previousKey, result)
 		if prevErr != nil {
 			return prevErr
 		}
