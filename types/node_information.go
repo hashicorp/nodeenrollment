@@ -120,6 +120,25 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 	return nodeInfo, nil
 }
 
+// SetPreviousEncryptionKey will set this NodeInformation's PreviousEncryptionKey field
+// using the passed NodeInformation
+func (n *NodeInformation) SetPreviousEncryptionKey(oldNodeCredentials *NodeInformation) error {
+	const op = "nodeenrollment.types.(NodeInformation).SetPreviousEncryptionKey"
+	if oldNodeCredentials == nil {
+		return fmt.Errorf("(%s) empty prior node information passed in", op)
+	}
+
+	previousEncryptionKey := &EncryptionKey{
+		PrivateKeyBytes: oldNodeCredentials.ServerEncryptionPrivateKeyBytes,
+		PrivateKeyType:  oldNodeCredentials.ServerEncryptionPrivateKeyType,
+		PublicKeyBytes:  oldNodeCredentials.EncryptionPublicKeyBytes,
+		PublicKeyType:   oldNodeCredentials.EncryptionPublicKeyType,
+	}
+	n.PreviousEncryptionKey = previousEncryptionKey
+
+	return nil
+}
+
 // X25519EncryptionKey uses the NodeInformation's values to produce a shared
 // encryption key via X25519
 func (n *NodeInformation) X25519EncryptionKey() ([]byte, error) {
@@ -132,6 +151,25 @@ func (n *NodeInformation) X25519EncryptionKey() ([]byte, error) {
 	out, err := X25519EncryptionKey(n.ServerEncryptionPrivateKeyBytes, n.ServerEncryptionPrivateKeyType, n.EncryptionPublicKeyBytes, n.EncryptionPublicKeyType)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error deriving encryption key: %w", op, err)
+	}
+	return out, nil
+}
+
+func (n *NodeInformation) PreviousKey() ([]byte, error) {
+	const op = "nodeenrollment.types.(NodeInformation).PreviousKey"
+
+	if nodeenrollment.IsNil(n) {
+		return nil, fmt.Errorf("(%s) node information is empty", op)
+	}
+
+	previousKey := n.PreviousEncryptionKey
+	if previousKey == nil {
+		return nil, fmt.Errorf("(%s) previous key is empty", op)
+	}
+
+	out, err := X25519EncryptionKey(previousKey.PrivateKeyBytes, previousKey.PrivateKeyType, previousKey.PublicKeyBytes, previousKey.PublicKeyType)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
 	}
 	return out, nil
 }

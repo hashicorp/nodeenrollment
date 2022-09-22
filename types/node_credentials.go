@@ -225,6 +225,25 @@ func (n *NodeCredentials) X25519EncryptionKey() ([]byte, error) {
 	return out, nil
 }
 
+func (n *NodeCredentials) PreviousKey() ([]byte, error) {
+	const op = "nodeenrollment.types.(NodeCredentials).PreviousKey"
+
+	if nodeenrollment.IsNil(n) {
+		return nil, fmt.Errorf("(%s) node credentials is empty", op)
+	}
+
+	previousKey := n.PreviousEncryptionKey
+	if previousKey == nil {
+		return nil, fmt.Errorf("(%s) previous key is empty", op)
+	}
+
+	out, err := X25519EncryptionKey(previousKey.PrivateKeyBytes, previousKey.PrivateKeyType, previousKey.PublicKeyBytes, previousKey.PublicKeyType)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
+	}
+	return out, nil
+}
+
 // NewNodeCredentials creates a new node credentials object and populates it
 // with suitable parameters for presenting for registration.
 //
@@ -315,6 +334,25 @@ func NewNodeCredentials(
 	}
 
 	return n, nil
+}
+
+// SetPreviousEncryptionKey will set this NodeCredential's PreviousEncryptionKey field
+// using the passed NodeCredentials
+func (n *NodeCredentials) SetPreviousEncryptionKey(oldNodeCredentials *NodeCredentials) error {
+	const op = "nodeenrollment.types.(NodeCredentials).SetPreviousEncryptionKey"
+	if oldNodeCredentials == nil {
+		return fmt.Errorf("(%s) empty prior credentials passed in", op)
+	}
+
+	previousEncryptionKey := &EncryptionKey{
+		PrivateKeyBytes: oldNodeCredentials.EncryptionPrivateKeyBytes,
+		PrivateKeyType:  oldNodeCredentials.EncryptionPrivateKeyType,
+		PublicKeyBytes:  oldNodeCredentials.ServerEncryptionPublicKeyBytes,
+		PublicKeyType:   oldNodeCredentials.ServerEncryptionPublicKeyType,
+	}
+	n.PreviousEncryptionKey = previousEncryptionKey
+
+	return nil
 }
 
 // CreateFetchNodeCredentialsRequest creates and returns a fetch request based

@@ -13,6 +13,7 @@ import (
 // that produces an encryption key via X25519.
 type X25519Producer interface {
 	X25519EncryptionKey() ([]byte, error)
+	PreviousKey() ([]byte, error)
 }
 
 // EncryptMessage takes any proto.Message and a valid key source that implements
@@ -88,6 +89,10 @@ func EncryptMessage(ctx context.Context, id string, msg proto.Message, keySource
 // ID should match what was passed into the encryption function. It is also
 // passed as additional authenticated data to the decryption function, if
 // supported.
+//
+// If decryption fails with the current key, and a prior key is present,
+// use that to try and decrypt the message in the case an older key
+// was used to encrypt the incoming message
 func DecryptMessage(ctx context.Context, id string, ct []byte, keySource X25519Producer, result proto.Message, _ ...Option) error {
 	const op = "nodeenrollment.DecryptMessage"
 	switch {
@@ -103,6 +108,26 @@ func DecryptMessage(ctx context.Context, id string, ct []byte, keySource X25519P
 	if err != nil {
 		return fmt.Errorf("(%s) error deriving shared encryption key: %w", op, err)
 	}
+
+	err = decryptWithKey(ctx, id, ct, sharedKey, result)
+
+	// If decryption fails with the current key, try with the previous key, if present
+	if err != nil {
+		previousKey, prevErr := keySource.PreviousKey()
+		if prevErr != nil || previousKey == nil {
+			return err
+		}
+		prevErr = decryptWithKey(ctx, id, ct, previousKey, result)
+		if prevErr != nil {
+			return prevErr
+		}
+	}
+
+	return nil
+}
+
+func decryptWithKey(ctx context.Context, id string, ct []byte, sharedKey []byte, result proto.Message) error {
+	const op = "nodeenrollment.decryptWithKey"
 
 	aeadWrapper := aead.NewWrapper()
 	if _, err := aeadWrapper.SetConfig(

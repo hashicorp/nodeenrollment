@@ -284,4 +284,63 @@ func TestNodeInformation_X25519(t *testing.T) {
 			}
 		})
 	}
+
+	// Generate a suitable root
+	privKey3 := make([]byte, curve25519.ScalarSize)
+	n2, err := rand.Read(privKey3)
+	require.NoError(t, err)
+	require.Equal(t, n2, curve25519.ScalarSize)
+
+	privKey4 := make([]byte, curve25519.ScalarSize)
+	n2, err = rand.Read(privKey)
+	require.NoError(t, err)
+	require.Equal(t, n2, curve25519.ScalarSize)
+	pubKey2, err := curve25519.X25519(privKey4, curve25519.Basepoint)
+	require.NoError(t, err)
+
+	nodeInfo2 := &types.NodeInformation{
+		ServerEncryptionPrivateKeyBytes: privKey3,
+		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
+		EncryptionPublicKeyBytes:        pubKey2,
+		EncryptionPublicKeyType:         types.KEYTYPE_X25519,
+	}
+
+	nodeInfo2.SetPreviousEncryptionKey(nodeInfo)
+	tests2 := []struct {
+		name         string
+		previousInfo *types.NodeInformation
+		wantErr      bool
+	}{
+		{
+			name:    "empty-previous-creds",
+			wantErr: true,
+		},
+		{
+			name:         "valid",
+			previousInfo: nodeInfo,
+			wantErr:      false,
+		},
+	}
+	for _, tt := range tests2 {
+		t.Run(tt.name, func(t *testing.T) {
+			require, assert := require.New(t), assert.New(t)
+			n := nodeInfo2
+			err := n.SetPreviousEncryptionKey(tt.previousInfo)
+			if tt.wantErr {
+				assert.Error(err)
+				return
+			}
+			require.NoError(err)
+			xKey, err := n.X25519EncryptionKey()
+			require.NoError(err)
+			require.NotNil(xKey)
+
+			pKey, err := n.PreviousKey()
+			require.NoError(err)
+			oldCredKey, err := tt.previousInfo.X25519EncryptionKey()
+			require.NoError(err)
+			require.NotNil(pKey, oldCredKey)
+
+		})
+	}
 }

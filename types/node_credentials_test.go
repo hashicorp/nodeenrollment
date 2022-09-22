@@ -308,6 +308,66 @@ func TestNodeCredentials_X25519(t *testing.T) {
 			}
 		})
 	}
+
+	// Test setting and using prior encryption keys
+	// Generate a suitable root
+	privKey3 := make([]byte, curve25519.ScalarSize)
+	n2, err := rand.Read(privKey3)
+	require.NoError(t, err)
+	require.Equal(t, n2, curve25519.ScalarSize)
+
+	privKey4 := make([]byte, curve25519.ScalarSize)
+	n2, err = rand.Read(privKey4)
+	require.NoError(t, err)
+	require.Equal(t, n2, curve25519.ScalarSize)
+	pubKey2, err := curve25519.X25519(privKey4, curve25519.Basepoint)
+	require.NoError(t, err)
+
+	nodeCreds2 := &types.NodeCredentials{
+		EncryptionPrivateKeyBytes:      privKey3,
+		EncryptionPrivateKeyType:       types.KEYTYPE_X25519,
+		ServerEncryptionPublicKeyBytes: pubKey2,
+		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
+	}
+
+	nodeCreds2.SetPreviousEncryptionKey(nodeCreds)
+	tests2 := []struct {
+		name          string
+		previousCreds *types.NodeCredentials
+		wantErr       bool
+	}{
+		{
+			name:    "empty-previous-creds",
+			wantErr: true,
+		},
+		{
+			name:          "valid",
+			previousCreds: nodeCreds,
+			wantErr:       false,
+		},
+	}
+	for _, tt := range tests2 {
+		t.Run(tt.name, func(t *testing.T) {
+			require, assert := require.New(t), assert.New(t)
+			n := nodeCreds2
+			err := n.SetPreviousEncryptionKey(tt.previousCreds)
+			if tt.wantErr {
+				assert.Error(err)
+				return
+			}
+			require.NoError(err)
+			xKey, err := n.X25519EncryptionKey()
+			require.NoError(err)
+			require.NotNil(xKey)
+
+			pKey, err := n.PreviousKey()
+			require.NoError(err)
+			oldCredKey, err := tt.previousCreds.X25519EncryptionKey()
+			require.NoError(err)
+			require.NotNil(pKey, oldCredKey)
+
+		})
+	}
 }
 
 func TestNodeCredentials_New(t *testing.T) {
