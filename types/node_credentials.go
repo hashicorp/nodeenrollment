@@ -249,7 +249,13 @@ func (n *NodeCredentials) PreviousX25519EncryptionKey() (string, []byte, error) 
 	if err != nil {
 		return "", nil, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
 	}
-	return previousKey.Id, out, nil
+
+	keyId, err := nodeenrollment.KeyIdFromPkix(previousKey.PublicKeyPkix)
+	if err != nil {
+		return "", nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
+	}
+
+	return keyId, out, nil
 }
 
 // NewNodeCredentials creates a new node credentials object and populates it

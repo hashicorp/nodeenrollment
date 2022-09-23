@@ -304,6 +304,10 @@ func TestNodeInformation_X25519(t *testing.T) {
 	require.Equal(t, n2, curve25519.ScalarSize)
 	pubKey2, err := curve25519.X25519(privKey4, curve25519.Basepoint)
 	require.NoError(t, err)
+	certPubKey2, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	pubKeyPkix2, err := x509.MarshalPKIXPublicKey(certPubKey2)
+	require.NoError(t, err)
 
 	nodeInfo2 := &types.NodeInformation{
 		Id:                              "i'm another node id!",
@@ -311,6 +315,7 @@ func TestNodeInformation_X25519(t *testing.T) {
 		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
 		EncryptionPublicKeyBytes:        pubKey2,
 		EncryptionPublicKeyType:         types.KEYTYPE_X25519,
+		CertificatePublicKeyPkix:        pubKeyPkix2,
 	}
 
 	nodeInfo2.SetPreviousEncryptionKey(nodeInfo)
@@ -339,13 +344,13 @@ func TestNodeInformation_X25519(t *testing.T) {
 				return
 			}
 			require.NoError(err)
-			xKey, err := n.X25519EncryptionKey()
+			_, xKey, err := n.X25519EncryptionKey()
 			require.NoError(err)
 			require.NotNil(xKey)
 
 			_, pKey, err := n.PreviousX25519EncryptionKey()
 			require.NoError(err)
-			oldCredKey, err := tt.previousInfo.X25519EncryptionKey()
+			_, oldCredKey, err := tt.previousInfo.X25519EncryptionKey()
 			require.NoError(err)
 			require.NotNil(pKey, oldCredKey)
 

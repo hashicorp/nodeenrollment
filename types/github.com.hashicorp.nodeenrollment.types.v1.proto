@@ -55,12 +55,11 @@ message RootCertificates {
 // NodeInformation and NodeCredentials will store their previous encryption key
 // using this message type
 message EncryptionKey{
-  string id = 1;
-  bytes private_key_pkcs8 = 2 [json_name="private_key_pkcs8"];
-  KEYTYPE private_key_type = 3 [json_name="private_key_type"];
+  bytes private_key_pkcs8 = 1 [json_name="private_key_pkcs8"];
+  KEYTYPE private_key_type = 2 [json_name="private_key_type"];
 
-  bytes public_key_pkix = 4 [json_name="public_key_pkix"];
-  KEYTYPE public_key_type = 5 [json_name="public_key_type"];
+  bytes public_key_pkix = 3 [json_name="public_key_pkix"];
+  KEYTYPE public_key_type = 4 [json_name="public_key_type"];
 }
 
 // NodeInformation contains server-side information about a node: its

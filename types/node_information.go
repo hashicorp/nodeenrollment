@@ -129,7 +129,6 @@ func (n *NodeInformation) SetPreviousEncryptionKey(oldNodeInformation *NodeInfor
 	}
 
 	previousEncryptionKey := &EncryptionKey{
-		Id:              oldNodeInformation.Id,
 		PrivateKeyPkcs8: oldNodeInformation.ServerEncryptionPrivateKeyBytes,
 		PrivateKeyType:  oldNodeInformation.ServerEncryptionPrivateKeyType,
 		PublicKeyPkix:   oldNodeInformation.EncryptionPublicKeyBytes,
@@ -180,5 +179,11 @@ func (n *NodeInformation) PreviousX25519EncryptionKey() (string, []byte, error) 
 	if err != nil {
 		return "", nil, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
 	}
-	return previousKey.Id, out, nil
+
+	keyId, err := nodeenrollment.KeyIdFromPkix(previousKey.PublicKeyPkix)
+	if err != nil {
+		return "", nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
+	}
+
+	return keyId, out, nil
 }
