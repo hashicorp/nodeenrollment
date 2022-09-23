@@ -3,6 +3,7 @@ package nodeenrollment
 import (
 	"context"
 	"fmt"
+	"github.com/hashicorp/go-multierror"
 
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
 	"github.com/hashicorp/go-kms-wrapping/v2/aead"
@@ -15,6 +16,7 @@ import (
 // unused for either purpose.
 type X25519KeyProducer interface {
 	X25519EncryptionKey() (string, []byte, error)
+	PreviousX25519EncryptionKey() (string, []byte, error)
 }
 
 // EncryptMessage takes any proto.Message and a valid key source that implements
@@ -86,6 +88,10 @@ func EncryptMessage(ctx context.Context, msg proto.Message, keySource X25519KeyP
 // ID should match what was passed into the encryption function. It is also
 // passed as additional authenticated data to the decryption function, if
 // supported.
+//
+// If decryption fails with the current key, and a prior key is present,
+// use that to try and decrypt the message in the case an older key
+// was used to encrypt the incoming message
 func DecryptMessage(ctx context.Context, ct []byte, keySource X25519KeyProducer, result proto.Message, _ ...Option) error {
 	const op = "nodeenrollment.DecryptMessage"
 	switch {
@@ -101,6 +107,27 @@ func DecryptMessage(ctx context.Context, ct []byte, keySource X25519KeyProducer,
 	if err != nil {
 		return fmt.Errorf("(%s) error deriving shared encryption key: %w", op, err)
 	}
+
+	err = decryptWithKey(ctx, keyId, ct, sharedKey, result)
+
+	// If decryption fails with the current key, try with the previous key, if present
+	if err != nil {
+		prevId, previousKey, prevErr := keySource.PreviousX25519EncryptionKey()
+		if prevErr != nil || previousKey == nil {
+			return err
+		}
+		prevErr = decryptWithKey(ctx, prevId, ct, previousKey, result)
+		if prevErr != nil {
+			err = multierror.Append(err, fmt.Errorf("(%s) error decrypting with previous key: %w", op, prevErr))
+			return err
+		}
+	}
+
+	return nil
+}
+
+func decryptWithKey(ctx context.Context, keyId string, ct []byte, sharedKey []byte, result proto.Message) error {
+	const op = "nodeenrollment.decryptWithKey"
 
 	aeadWrapper := aead.NewWrapper()
 	if _, err := aeadWrapper.SetConfig(

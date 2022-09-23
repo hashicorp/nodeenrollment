@@ -231,6 +231,28 @@ func (n *NodeCredentials) X25519EncryptionKey() (string, []byte, error) {
 	return keyId, out, nil
 }
 
+// PreviousX25519EncryptionKey satisfies the X25519Producer and will produce a shared
+// encryption key via X25519 if previous key data is present
+func (n *NodeCredentials) PreviousX25519EncryptionKey() (string, []byte, error) {
+	const op = "nodeenrollment.types.(NodeCredentials).PreviousX25519EncryptionKey"
+
+	if nodeenrollment.IsNil(n) {
+		return "", nil, fmt.Errorf("(%s) node credentials is empty", op)
+	}
+
+	previousKey := n.PreviousEncryptionKey
+	if previousKey == nil {
+		return "", nil, fmt.Errorf("(%s) previous key is empty", op)
+	}
+
+	out, err := X25519EncryptionKey(previousKey.PrivateKeyPkcs8, previousKey.PrivateKeyType, previousKey.PublicKeyPkix, previousKey.PublicKeyType)
+	if err != nil {
+		return "", nil, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
+	}
+
+	return previousKey.KeyId, out, nil
+}
+
 // NewNodeCredentials creates a new node credentials object and populates it
 // with suitable parameters for presenting for registration.
 //
@@ -321,6 +343,30 @@ func NewNodeCredentials(
 	}
 
 	return n, nil
+}
+
+// SetPreviousEncryptionKey will set this NodeCredential's PreviousEncryptionKey field
+// using the passed NodeCredentials
+func (n *NodeCredentials) SetPreviousEncryptionKey(oldNodeCredentials *NodeCredentials) error {
+	const op = "nodeenrollment.types.(NodeCredentials).SetPreviousEncryptionKey"
+	if oldNodeCredentials == nil {
+		return fmt.Errorf("(%s) empty prior credentials passed in", op)
+	}
+
+	keyId, err := nodeenrollment.KeyIdFromPkix(oldNodeCredentials.CertificatePublicKeyPkix)
+	if err != nil {
+		return fmt.Errorf("(%s) error deriving key id: %w", op, err)
+	}
+	previousEncryptionKey := &EncryptionKey{
+		KeyId:           keyId,
+		PrivateKeyPkcs8: oldNodeCredentials.EncryptionPrivateKeyBytes,
+		PrivateKeyType:  oldNodeCredentials.EncryptionPrivateKeyType,
+		PublicKeyPkix:   oldNodeCredentials.ServerEncryptionPublicKeyBytes,
+		PublicKeyType:   oldNodeCredentials.ServerEncryptionPublicKeyType,
+	}
+	n.PreviousEncryptionKey = previousEncryptionKey
+
+	return nil
 }
 
 // CreateFetchNodeCredentialsRequest creates and returns a fetch request based

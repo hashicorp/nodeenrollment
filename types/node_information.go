@@ -120,6 +120,31 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 	return nodeInfo, nil
 }
 
+// SetPreviousEncryptionKey will set this NodeInformation's PreviousEncryptionKey field
+// using the passed NodeInformation
+func (n *NodeInformation) SetPreviousEncryptionKey(oldNodeInformation *NodeInformation) error {
+	const op = "nodeenrollment.types.(NodeInformation).SetPreviousEncryptionKey"
+	if oldNodeInformation == nil {
+		return fmt.Errorf("(%s) empty prior node information passed in", op)
+	}
+
+	keyId, err := nodeenrollment.KeyIdFromPkix(oldNodeInformation.CertificatePublicKeyPkix)
+	if err != nil {
+		return fmt.Errorf("(%s) error deriving key id: %w", op, err)
+	}
+
+	previousEncryptionKey := &EncryptionKey{
+		KeyId:           keyId,
+		PrivateKeyPkcs8: oldNodeInformation.ServerEncryptionPrivateKeyBytes,
+		PrivateKeyType:  oldNodeInformation.ServerEncryptionPrivateKeyType,
+		PublicKeyPkix:   oldNodeInformation.EncryptionPublicKeyBytes,
+		PublicKeyType:   oldNodeInformation.EncryptionPublicKeyType,
+	}
+	n.PreviousEncryptionKey = previousEncryptionKey
+
+	return nil
+}
+
 // X25519EncryptionKey uses the NodeInformation's values to produce a shared
 // encryption key via X25519
 func (n *NodeInformation) X25519EncryptionKey() (string, []byte, error) {
@@ -140,4 +165,26 @@ func (n *NodeInformation) X25519EncryptionKey() (string, []byte, error) {
 	}
 
 	return keyId, out, nil
+}
+
+// PreviousX25519EncryptionKey satisfies the X25519Producer and will produce a shared
+// encryption key via X25519 if previous key data is present
+func (n *NodeInformation) PreviousX25519EncryptionKey() (string, []byte, error) {
+	const op = "nodeenrollment.types.(NodeInformation).PreviousX25519EncryptionKey"
+
+	if nodeenrollment.IsNil(n) {
+		return "", nil, fmt.Errorf("(%s) node information is empty", op)
+	}
+
+	previousKey := n.PreviousEncryptionKey
+	if previousKey == nil {
+		return "", nil, fmt.Errorf("(%s) previous key is empty", op)
+	}
+
+	out, err := X25519EncryptionKey(previousKey.PrivateKeyPkcs8, previousKey.PrivateKeyType, previousKey.PublicKeyPkix, previousKey.PublicKeyType)
+	if err != nil {
+		return "", nil, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
+	}
+
+	return previousKey.KeyId, out, nil
 }

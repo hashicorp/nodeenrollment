@@ -51,6 +51,18 @@ message RootCertificates {
   google.protobuf.Struct state = 50;
 }
 
+// EncryptionKey contains the key information necessary to generate a sharedKey
+// NodeInformation and NodeCredentials will store their previous encryption key
+// using this message type
+message EncryptionKey{
+  string key_id = 1 [json_name="key_id"];
+  bytes private_key_pkcs8 = 2 [json_name="private_key_pkcs8"];
+  KEYTYPE private_key_type = 3 [json_name="private_key_type"];
+
+  bytes public_key_pkix = 4 [json_name="public_key_pkix"];
+  KEYTYPE public_key_type = 5 [json_name="public_key_type"];
+}
+
 // NodeInformation contains server-side information about a node: its
 // certificate public key, any issued certificates (purely for informational
 // purposes), its encryption public key and the corresponding server private
@@ -87,6 +99,8 @@ message NodeInformation {
   // through this library; as an example, a verison number on the resource for
   // implementing transactions.
   google.protobuf.Struct state = 50;
+
+  EncryptionKey previous_encryption_key = 60 [json_name="previous_encryption_key"];
 }
 
 // NodeCredentials is the corresponding struct for NodeInformation on the node
@@ -114,6 +128,8 @@ message NodeCredentials {
   // through this library; as an example, a verison number on the resource for
   // implementing transactions.
   google.protobuf.Struct state = 50;
+
+  EncryptionKey previous_encryption_key = 60 [json_name="previous_encryption_key"];
 }
 
 // FetchNodeCredentialsInfo contains the values bundled and signed into a

@@ -290,4 +290,86 @@ func TestNodeInformation_X25519(t *testing.T) {
 			}
 		})
 	}
+
+	// Generate a suitable root
+	privKey3 := make([]byte, curve25519.ScalarSize)
+	n2, err := rand.Read(privKey3)
+	require.NoError(t, err)
+	require.Equal(t, n2, curve25519.ScalarSize)
+
+	privKey4 := make([]byte, curve25519.ScalarSize)
+	n2, err = rand.Read(privKey)
+	require.NoError(t, err)
+	require.Equal(t, n2, curve25519.ScalarSize)
+	pubKey2, err := curve25519.X25519(privKey4, curve25519.Basepoint)
+	require.NoError(t, err)
+	certPubKey2, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	pubKeyPkix2, err := x509.MarshalPKIXPublicKey(certPubKey2)
+	require.NoError(t, err)
+
+	nodeInfo2 := &types.NodeInformation{
+		ServerEncryptionPrivateKeyBytes: privKey3,
+		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
+		EncryptionPublicKeyBytes:        pubKey2,
+		EncryptionPublicKeyType:         types.KEYTYPE_X25519,
+		CertificatePublicKeyPkix:        pubKeyPkix2,
+	}
+
+	oldKeyId, _, _ := nodeInfo.X25519EncryptionKey()
+	newKeyId, _, _ := nodeInfo2.X25519EncryptionKey()
+
+	nodeInfo2.SetPreviousEncryptionKey(nodeInfo)
+	tests2 := []struct {
+		name         string
+		previousInfo *types.NodeInformation
+		wantErr      bool
+	}{
+		{
+			name:    "empty-previous-creds",
+			wantErr: true,
+		},
+		{
+			name:         "valid",
+			previousInfo: nodeInfo,
+			wantErr:      false,
+		},
+	}
+	for _, tt := range tests2 {
+		t.Run(tt.name, func(t *testing.T) {
+			require, assert := require.New(t), assert.New(t)
+			n := nodeInfo2
+			err := n.SetPreviousEncryptionKey(tt.previousInfo)
+			if tt.wantErr {
+				assert.Error(err)
+				return
+			}
+			require.NoError(err)
+			keyId, xKey, err := n.X25519EncryptionKey()
+			require.NoError(err)
+			require.NotNil(xKey)
+			require.Equal(keyId, newKeyId)
+			require.NotEqual(keyId, oldKeyId)
+
+			priorKeyId, pKey, err := n.PreviousX25519EncryptionKey()
+			require.NoError(err)
+			require.Equal(priorKeyId, oldKeyId)
+			_, oldCredKey, err := tt.previousInfo.X25519EncryptionKey()
+			require.NoError(err)
+			require.NotNil(pKey, oldCredKey)
+
+			// Encrypt a message with prior key and ensure it can be decrypted
+			message := &wrapping.BlobInfo{
+				Ciphertext: []byte("foo"),
+				Iv:         []byte("bar"),
+				Hmac:       []byte("baz"),
+			}
+			encryptedMsg, err := nodeenrollment.EncryptMessage(context.Background(), message, nodeInfo)
+			require.NoError(err)
+			decryptedMsg := new(wrapping.BlobInfo)
+			err = nodeenrollment.DecryptMessage(context.Background(), encryptedMsg, nodeInfo2, decryptedMsg)
+			require.NoError(err)
+			assert.Empty(cmp.Diff(message, decryptedMsg, protocmp.Transform()))
+		})
+	}
 }

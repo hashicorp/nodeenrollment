@@ -26,6 +26,10 @@ func (t testNode) X25519EncryptionKey() (string, []byte, error) {
 	return t.keyId, b, err
 }
 
+func (t testNode) PreviousX25519EncryptionKey() (string, []byte, error) {
+	return "", nil, nil
+}
+
 var _ X25519KeyProducer = (*testNode)(nil)
 
 func Test_EncryptionDecryption(t *testing.T) {
