@@ -250,12 +250,7 @@ func (n *NodeCredentials) PreviousX25519EncryptionKey() (string, []byte, error) 
 		return "", nil, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
 	}
 
-	keyId, err := nodeenrollment.KeyIdFromPkix(previousKey.PublicKeyPkix)
-	if err != nil {
-		return "", nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
-	}
-
-	return keyId, out, nil
+	return previousKey.KeyId, out, nil
 }
 
 // NewNodeCredentials creates a new node credentials object and populates it
@@ -358,7 +353,12 @@ func (n *NodeCredentials) SetPreviousEncryptionKey(oldNodeCredentials *NodeCrede
 		return fmt.Errorf("(%s) empty prior credentials passed in", op)
 	}
 
+	keyId, err := nodeenrollment.KeyIdFromPkix(oldNodeCredentials.CertificatePublicKeyPkix)
+	if err != nil {
+		return fmt.Errorf("(%s) error deriving key id: %w", op, err)
+	}
 	previousEncryptionKey := &EncryptionKey{
+		KeyId:           keyId,
 		PrivateKeyPkcs8: oldNodeCredentials.EncryptionPrivateKeyBytes,
 		PrivateKeyType:  oldNodeCredentials.EncryptionPrivateKeyType,
 		PublicKeyPkix:   oldNodeCredentials.ServerEncryptionPublicKeyBytes,
