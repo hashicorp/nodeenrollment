@@ -18,7 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-var _ nodeenrollment.X25519Producer = (*NodeCredentials)(nil)
+var _ nodeenrollment.X25519KeyProducer = (*NodeCredentials)(nil)
 
 // Store stores node credentials to storage, wrapping values along the way if
 // given a wrapper
@@ -212,17 +212,23 @@ func LoadNodeCredentials(ctx context.Context, storage nodeenrollment.Storage, id
 
 // X25519EncryptionKey uses the NodeCredentials values to produce a shared
 // encryption key via X25519
-func (n *NodeCredentials) X25519EncryptionKey() ([]byte, error) {
+func (n *NodeCredentials) X25519EncryptionKey() (string, []byte, error) {
 	const op = "nodeenrollment.types.(NodeCredentials).X25519EncryptionKey"
 	if nodeenrollment.IsNil(n) {
-		return nil, fmt.Errorf("(%s) node credentials is empty", op)
+		return "", nil, fmt.Errorf("(%s) node credentials is empty", op)
 	}
 
 	out, err := X25519EncryptionKey(n.EncryptionPrivateKeyBytes, n.EncryptionPrivateKeyType, n.ServerEncryptionPublicKeyBytes, n.ServerEncryptionPublicKeyType)
 	if err != nil {
-		return nil, fmt.Errorf("(%s) error deriving encryption key: %w", op, err)
+		return "", nil, fmt.Errorf("(%s) error deriving encryption key: %w", op, err)
 	}
-	return out, nil
+
+	keyId, err := nodeenrollment.KeyIdFromPkix(n.CertificatePublicKeyPkix)
+	if err != nil {
+		return "", nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
+	}
+
+	return keyId, out, nil
 }
 
 // PreviousX25519EncryptionKey satisfies the X25519Producer and will produce a shared
@@ -470,13 +476,8 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 	n.ServerEncryptionPublicKeyType = input.ServerEncryptionPublicKeyType
 
 	newNodeCreds := new(NodeCredentials)
-	keyId, err := nodeenrollment.KeyIdFromPkix(n.CertificatePublicKeyPkix)
-	if err != nil {
-		return nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
-	}
 	if err := nodeenrollment.DecryptMessage(
 		ctx,
-		keyId,
 		input.EncryptedNodeCredentials,
 		n,
 		newNodeCreds,

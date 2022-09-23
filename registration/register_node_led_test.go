@@ -295,7 +295,7 @@ func TestValidateFetchRequest(t *testing.T) {
 			require.NoError(storage.Load(ctx, checkNodeInfo))
 			require.NotNil(checkNodeInfo)
 			var receivedNodeCreds types.NodeCredentials
-			require.NoError(nodeenrollment.DecryptMessage(ctx, checkNodeInfo.Id, resp.EncryptedNodeCredentials, checkNodeInfo, &receivedNodeCreds))
+			require.NoError(nodeenrollment.DecryptMessage(ctx, resp.EncryptedNodeCredentials, checkNodeInfo, &receivedNodeCreds))
 			assert.NotEmpty(receivedNodeCreds.ServerEncryptionPublicKeyBytes)
 			assert.Equal(types.KEYTYPE_X25519, receivedNodeCreds.ServerEncryptionPublicKeyType)
 			assert.Len(receivedNodeCreds.CertificateBundles, 2) // Won't go through them here, have one that in other tests
@@ -391,7 +391,7 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 			require.NoError(storage.Load(ctx, checkNodeInfo))
 			require.NotNil(checkNodeInfo)
 			var receivedNodeCreds types.NodeCredentials
-			require.NoError(nodeenrollment.DecryptMessage(ctx, checkNodeInfo.Id, resp.EncryptedNodeCredentials, checkNodeInfo, &receivedNodeCreds))
+			require.NoError(nodeenrollment.DecryptMessage(ctx, resp.EncryptedNodeCredentials, checkNodeInfo, &receivedNodeCreds))
 			assert.NotEmpty(receivedNodeCreds.ServerEncryptionPublicKeyBytes)
 			assert.Equal(types.KEYTYPE_X25519, receivedNodeCreds.ServerEncryptionPublicKeyType)
 			assert.Equal(ni.RegistrationNonce, receivedNodeCreds.RegistrationNonce)
