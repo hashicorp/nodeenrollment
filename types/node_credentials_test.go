@@ -236,12 +236,17 @@ func TestNodeCredentials_X25519(t *testing.T) {
 	require.Equal(t, n, curve25519.ScalarSize)
 	pubKey, err := curve25519.X25519(privKey2, curve25519.Basepoint)
 	require.NoError(t, err)
+	certPubKey, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	pubKeyPkix, err := x509.MarshalPKIXPublicKey(certPubKey)
+	require.NoError(t, err)
 
 	nodeCreds := &types.NodeCredentials{
 		EncryptionPrivateKeyBytes:      privKey,
 		EncryptionPrivateKeyType:       types.KEYTYPE_X25519,
 		ServerEncryptionPublicKeyBytes: pubKey,
 		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
+		CertificatePublicKeyPkix:       pubKeyPkix,
 	}
 
 	tests := []struct {
@@ -298,13 +303,14 @@ func TestNodeCredentials_X25519(t *testing.T) {
 			if tt.setupFn != nil {
 				n, wantErrContains = tt.setupFn(proto.Clone(n).(*types.NodeCredentials))
 			}
-			out, err := n.X25519EncryptionKey()
+			keyId, out, err := n.X25519EncryptionKey()
 			if wantErrContains != "" {
 				require.Error(err)
 				assert.Contains(err.Error(), wantErrContains)
 			} else {
 				require.NoError(err)
 				assert.NotEmpty(out)
+				assert.NotEmpty(keyId)
 			}
 		})
 	}
@@ -468,8 +474,6 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 	// Generate a suitable root
 	nodeCreds, err := types.NewNodeCredentials(ctx, fileStorage)
 	require.NoError(t, err)
-	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
-	require.NoError(t, err)
 
 	// Create server keys
 	serverPrivKey := make([]byte, curve25519.ScalarSize)
@@ -500,8 +504,9 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
 		EncryptionPublicKeyBytes:        nodePubKey,
 		EncryptionPublicKeyType:         types.KEYTYPE_X25519,
+		CertificatePublicKeyPkix:        nodeCreds.CertificatePublicKeyPkix,
 	}
-	encryptedCreds, err := nodeenrollment.EncryptMessage(ctx, keyId, serverNodeCreds, nodeInfo)
+	encryptedCreds, err := nodeenrollment.EncryptMessage(ctx, serverNodeCreds, nodeInfo)
 	require.NoError(t, err)
 
 	fetchNodeCredsResp := &types.FetchNodeCredentialsResponse{
