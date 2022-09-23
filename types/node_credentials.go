@@ -225,10 +225,10 @@ func (n *NodeCredentials) X25519EncryptionKey() ([]byte, error) {
 	return out, nil
 }
 
-// PreviousKey satisfies the X25519Producer and will produce a shared
+// PreviousX25519EncryptionKey satisfies the X25519Producer and will produce a shared
 // encryption key via X25519 if previous key data is present
-func (n *NodeCredentials) PreviousKey() (string, []byte, error) {
-	const op = "nodeenrollment.types.(NodeCredentials).PreviousKey"
+func (n *NodeCredentials) PreviousX25519EncryptionKey() (string, []byte, error) {
+	const op = "nodeenrollment.types.(NodeCredentials).PreviousX25519EncryptionKey"
 
 	if nodeenrollment.IsNil(n) {
 		return "", nil, fmt.Errorf("(%s) node credentials is empty", op)
@@ -347,7 +347,6 @@ func (n *NodeCredentials) SetPreviousEncryptionKey(oldNodeCredentials *NodeCrede
 	}
 
 	previousEncryptionKey := &EncryptionKey{
-		Id:              oldNodeCredentials.Id,
 		PrivateKeyPkcs8: oldNodeCredentials.EncryptionPrivateKeyBytes,
 		PrivateKeyType:  oldNodeCredentials.EncryptionPrivateKeyType,
 		PublicKeyPkix:   oldNodeCredentials.ServerEncryptionPublicKeyBytes,

@@ -337,7 +337,7 @@ func TestNodeInformation_X25519(t *testing.T) {
 			require.NoError(err)
 			require.NotNil(xKey)
 
-			_, pKey, err := n.PreviousKey()
+			_, pKey, err := n.PreviousX25519EncryptionKey()
 			require.NoError(err)
 			oldCredKey, err := tt.previousInfo.X25519EncryptionKey()
 			require.NoError(err)

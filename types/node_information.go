@@ -122,18 +122,18 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 
 // SetPreviousEncryptionKey will set this NodeInformation's PreviousEncryptionKey field
 // using the passed NodeInformation
-func (n *NodeInformation) SetPreviousEncryptionKey(oldNodeCredentials *NodeInformation) error {
+func (n *NodeInformation) SetPreviousEncryptionKey(oldNodeInformation *NodeInformation) error {
 	const op = "nodeenrollment.types.(NodeInformation).SetPreviousEncryptionKey"
-	if oldNodeCredentials == nil {
+	if oldNodeInformation == nil {
 		return fmt.Errorf("(%s) empty prior node information passed in", op)
 	}
 
 	previousEncryptionKey := &EncryptionKey{
-		Id:              oldNodeCredentials.Id,
-		PrivateKeyPkcs8: oldNodeCredentials.ServerEncryptionPrivateKeyBytes,
-		PrivateKeyType:  oldNodeCredentials.ServerEncryptionPrivateKeyType,
-		PublicKeyPkix:   oldNodeCredentials.EncryptionPublicKeyBytes,
-		PublicKeyType:   oldNodeCredentials.EncryptionPublicKeyType,
+		Id:              oldNodeInformation.Id,
+		PrivateKeyPkcs8: oldNodeInformation.ServerEncryptionPrivateKeyBytes,
+		PrivateKeyType:  oldNodeInformation.ServerEncryptionPrivateKeyType,
+		PublicKeyPkix:   oldNodeInformation.EncryptionPublicKeyBytes,
+		PublicKeyType:   oldNodeInformation.EncryptionPublicKeyType,
 	}
 	n.PreviousEncryptionKey = previousEncryptionKey
 
@@ -156,10 +156,10 @@ func (n *NodeInformation) X25519EncryptionKey() ([]byte, error) {
 	return out, nil
 }
 
-// PreviousKey satisfies the X25519Producer and will produce a shared
+// PreviousX25519EncryptionKey satisfies the X25519Producer and will produce a shared
 // encryption key via X25519 if previous key data is present
-func (n *NodeInformation) PreviousKey() (string, []byte, error) {
-	const op = "nodeenrollment.types.(NodeInformation).PreviousKey"
+func (n *NodeInformation) PreviousX25519EncryptionKey() (string, []byte, error) {
+	const op = "nodeenrollment.types.(NodeInformation).PreviousX25519EncryptionKey"
 
 	if nodeenrollment.IsNil(n) {
 		return "", nil, fmt.Errorf("(%s) node information is empty", op)
