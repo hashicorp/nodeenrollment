@@ -212,12 +212,17 @@ func TestNodeInformation_X25519(t *testing.T) {
 	require.Equal(t, n, curve25519.ScalarSize)
 	pubKey, err := curve25519.X25519(privKey2, curve25519.Basepoint)
 	require.NoError(t, err)
+	certPubKey, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	pubKeyPkix, err := x509.MarshalPKIXPublicKey(certPubKey)
+	require.NoError(t, err)
 
 	nodeInfo := &types.NodeInformation{
 		ServerEncryptionPrivateKeyBytes: privKey,
 		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
 		EncryptionPublicKeyBytes:        pubKey,
 		EncryptionPublicKeyType:         types.KEYTYPE_X25519,
+		CertificatePublicKeyPkix:        pubKeyPkix,
 	}
 
 	tests := []struct {
@@ -274,13 +279,14 @@ func TestNodeInformation_X25519(t *testing.T) {
 			if tt.setupFn != nil {
 				n, wantErrContains = tt.setupFn(proto.Clone(n).(*types.NodeInformation))
 			}
-			out, err := n.X25519EncryptionKey()
+			keyId, out, err := n.X25519EncryptionKey()
 			if wantErrContains != "" {
 				require.Error(err)
 				assert.Contains(err.Error(), wantErrContains)
 			} else {
 				require.NoError(err)
 				assert.NotEmpty(out)
+				assert.NotEmpty(keyId)
 			}
 		})
 	}

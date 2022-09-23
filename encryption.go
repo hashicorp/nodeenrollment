@@ -9,25 +9,23 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// X25519Producer is an interface that can be satisfied by an underlying type
-// that produces an encryption key via X25519.
-type X25519Producer interface {
-	X25519EncryptionKey() ([]byte, error)
+// X25519KeyProducer is an interface that can be satisfied by an underlying type
+// that produces an encryption key via X25519, along with a key identifier used
+// for AAD and embedding in the wrapping data. If the ID is empty, it is simply
+// unused for either purpose.
+type X25519KeyProducer interface {
+	X25519EncryptionKey() (string, []byte, error)
 }
 
 // EncryptMessage takes any proto.Message and a valid key source that implements
-// X25519Producer. Internally it uses an `aead` wrapper from go-kms-wrapping v2.
+// X25519KeyProducer. Internally it uses an `aead` wrapper from go-kms-wrapping v2.
 // No options are currently supported but in the future non-AES-GCM encryption
 // types could be supported by the wrapper and chosen here.
-//
-// ID is embedded into the wrapped message as the key ID. This can be useful to
-// disambiguate either the source or target. It is also passed as additional
-// authenticated data to the encryption function, if supported.
 //
 // The resulting value from the wrapper is marshaled before being returned.
 //
 // Supported options: WithRandomReader
-func EncryptMessage(ctx context.Context, id string, msg proto.Message, keySource X25519Producer, opt ...Option) ([]byte, error) {
+func EncryptMessage(ctx context.Context, msg proto.Message, keySource X25519KeyProducer, opt ...Option) ([]byte, error) {
 	const op = "nodeenrollment.EncryptMessage"
 	switch {
 	case IsNil(msg):
@@ -41,7 +39,7 @@ func EncryptMessage(ctx context.Context, id string, msg proto.Message, keySource
 		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
-	sharedKey, err := keySource.X25519EncryptionKey()
+	keyId, sharedKey, err := keySource.X25519EncryptionKey()
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error deriving shared encryption key: %w", op, err)
 	}
@@ -49,7 +47,7 @@ func EncryptMessage(ctx context.Context, id string, msg proto.Message, keySource
 	aeadWrapper := aead.NewWrapper()
 	if _, err := aeadWrapper.SetConfig(
 		ctx,
-		wrapping.WithKeyId(id),
+		wrapping.WithKeyId(keyId),
 		aead.WithKey(sharedKey),
 		aead.WithRandomReader(opts.WithRandomReader),
 	); err != nil {
@@ -62,8 +60,8 @@ func EncryptMessage(ctx context.Context, id string, msg proto.Message, keySource
 	}
 
 	var aadOpt wrapping.Option
-	if id != "" {
-		aadOpt = wrapping.WithAad([]byte(id))
+	if keyId != "" {
+		aadOpt = wrapping.WithAad([]byte(keyId))
 	}
 	blobInfo, err := aeadWrapper.Encrypt(ctx, marshaledMsg, aadOpt)
 	if err != nil {
@@ -79,7 +77,7 @@ func EncryptMessage(ctx context.Context, id string, msg proto.Message, keySource
 }
 
 // DecryptMessage takes any a value encrypted with EncryptMessage and a valid
-// key source that implements X25519Producer and decrypts the message into the
+// key source that implements X25519KeyProducer and decrypts the message into the
 // given proto.Message. Internally it uses an `aead` wrapper from
 // go-kms-wrapping v2. No options are currently supported but in the future
 // non-AES-GCM decryption types could be supported by the wrapper and chosen
@@ -88,7 +86,7 @@ func EncryptMessage(ctx context.Context, id string, msg proto.Message, keySource
 // ID should match what was passed into the encryption function. It is also
 // passed as additional authenticated data to the decryption function, if
 // supported.
-func DecryptMessage(ctx context.Context, id string, ct []byte, keySource X25519Producer, result proto.Message, _ ...Option) error {
+func DecryptMessage(ctx context.Context, ct []byte, keySource X25519KeyProducer, result proto.Message, _ ...Option) error {
 	const op = "nodeenrollment.DecryptMessage"
 	switch {
 	case len(ct) == 0:
@@ -99,7 +97,7 @@ func DecryptMessage(ctx context.Context, id string, ct []byte, keySource X25519P
 		return fmt.Errorf("(%s) incoming result message is nil", op)
 	}
 
-	sharedKey, err := keySource.X25519EncryptionKey()
+	keyId, sharedKey, err := keySource.X25519EncryptionKey()
 	if err != nil {
 		return fmt.Errorf("(%s) error deriving shared encryption key: %w", op, err)
 	}
@@ -107,7 +105,7 @@ func DecryptMessage(ctx context.Context, id string, ct []byte, keySource X25519P
 	aeadWrapper := aead.NewWrapper()
 	if _, err := aeadWrapper.SetConfig(
 		ctx,
-		wrapping.WithKeyId(id),
+		wrapping.WithKeyId(keyId),
 		aead.WithKey(sharedKey),
 	); err != nil {
 		return fmt.Errorf("(%s) error instantiating aead wrapper: %w", op, err)
@@ -119,8 +117,8 @@ func DecryptMessage(ctx context.Context, id string, ct []byte, keySource X25519P
 	}
 
 	var aadOpt wrapping.Option
-	if id != "" {
-		aadOpt = wrapping.WithAad([]byte(id))
+	if keyId != "" {
+		aadOpt = wrapping.WithAad([]byte(keyId))
 	}
 	pt, err := aeadWrapper.Decrypt(ctx, blobInfo, aadOpt)
 	if err != nil {

@@ -59,7 +59,6 @@ func RotateNodeCredentials(
 	fetchRequest := new(types.FetchNodeCredentialsRequest)
 	if err := nodeenrollment.DecryptMessage(
 		ctx,
-		currentKeyId,
 		req.EncryptedFetchNodeCredentialsRequest,
 		currentNodeInfo,
 		fetchRequest,
@@ -84,7 +83,8 @@ func RotateNodeCredentials(
 		return nil, fmt.Errorf("(%s) error getting new fetch credentials response: %w", op, err)
 	}
 
-	encryptedResp, err := nodeenrollment.EncryptMessage(ctx, currentKeyId, fetchResp, currentNodeInfo, opt...)
+	// Wrap that new message in one encrypted with the current keys
+	encryptedResp, err := nodeenrollment.EncryptMessage(ctx, fetchResp, currentNodeInfo, opt...)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error encrypting fetch credentials response: %w", op, err)
 	}

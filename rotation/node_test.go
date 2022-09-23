@@ -44,8 +44,6 @@ func TestRotateNodeCredentials(t *testing.T) {
 	require.NoError(t, err)
 	currentNodeCreds, err = currentNodeCreds.HandleFetchNodeCredentialsResponse(ctx, storage, fetchResp)
 	require.NoError(t, err)
-	currentKeyId, err := nodeenrollment.KeyIdFromPkix(currentNodeCreds.CertificatePublicKeyPkix)
-	require.NoError(t, err)
 
 	standardRotateFunc := func(t *testing.T, currentNodeCreds *types.NodeCredentials) (*types.NodeCredentials, *types.RotateNodeCredentialsRequest, error) {
 		newNodeCreds, err := types.NewNodeCredentials(
@@ -60,7 +58,7 @@ func TestRotateNodeCredentials(t *testing.T) {
 		require.NoError(t, err)
 
 		// Encrypt the values to the server
-		encFetchReq, err := nodeenrollment.EncryptMessage(ctx, currentKeyId, fetchReq, currentNodeCreds)
+		encFetchReq, err := nodeenrollment.EncryptMessage(ctx, fetchReq, currentNodeCreds)
 		require.NoError(t, err)
 
 		req := &types.RotateNodeCredentialsRequest{
@@ -161,7 +159,6 @@ func TestRotateNodeCredentials(t *testing.T) {
 			fetchResp := new(types.FetchNodeCredentialsResponse)
 			require.NoError(nodeenrollment.DecryptMessage(
 				ctx,
-				currentKeyId,
 				resp.EncryptedFetchNodeCredentialsResponse,
 				currentNodeCreds,
 				fetchResp,

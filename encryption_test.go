@@ -16,15 +16,17 @@ import (
 )
 
 type testNode struct {
+	keyId    string
 	priv     []byte
 	otherPub []byte
 }
 
-func (t testNode) X25519EncryptionKey() ([]byte, error) {
-	return curve25519.X25519(t.priv, t.otherPub)
+func (t testNode) X25519EncryptionKey() (string, []byte, error) {
+	b, err := curve25519.X25519(t.priv, t.otherPub)
+	return t.keyId, b, err
 }
 
-var _ X25519Producer = (*testNode)(nil)
+var _ X25519KeyProducer = (*testNode)(nil)
 
 func Test_EncryptionDecryption(t *testing.T) {
 	t.Parallel()
@@ -66,8 +68,8 @@ func Test_EncryptionDecryption(t *testing.T) {
 		decryptId          string
 		encryptMsg         proto.Message
 		decryptMsg         proto.Message
-		encryptKeySource   X25519Producer
-		decryptKeySource   X25519Producer
+		encryptKeySource   X25519KeyProducer
+		decryptKeySource   X25519KeyProducer
 		encDecWrapper      wrapping.Wrapper
 		wantErrContains    string
 		wantEncErrContains string
@@ -164,25 +166,31 @@ func Test_EncryptionDecryption(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			subtAssert, subtRequire := assert.New(t), require.New(t)
 
-			sharedKeyFromNode, err := tt.node.X25519EncryptionKey()
+			_, sharedKeyFromNode, err := tt.node.X25519EncryptionKey()
 			subtRequire.NoError(err)
 
 			if tt.otherNode != nil {
-				sharedKeyFromOtherNode, err := tt.otherNode.X25519EncryptionKey()
+				_, sharedKeyFromOtherNode, err := tt.otherNode.X25519EncryptionKey()
 				subtRequire.NoError(err)
 
 				subtAssert.Equal(sharedKeyFromNode, sharedKeyFromOtherNode)
 				return
 			}
 
-			ct, err := EncryptMessage(ctx, tt.encryptId, tt.encryptMsg, tt.encryptKeySource, WithWrapper(tt.encDecWrapper))
+			if tt.encryptKeySource != nil {
+				tt.encryptKeySource.(*testNode).keyId = tt.encryptId
+			}
+			ct, err := EncryptMessage(ctx, tt.encryptMsg, tt.encryptKeySource, WithWrapper(tt.encDecWrapper))
 			if tt.wantEncErrContains != "" {
 				subtRequire.Error(err)
 				subtAssert.Contains(err.Error(), tt.wantEncErrContains)
 				return
 			}
 			subtRequire.NoError(err)
-			err = DecryptMessage(ctx, tt.decryptId, ct, tt.decryptKeySource, tt.decryptMsg, WithWrapper(tt.encDecWrapper))
+			if tt.decryptKeySource != nil {
+				tt.decryptKeySource.(*testNode).keyId = tt.decryptId
+			}
+			err = DecryptMessage(ctx, ct, tt.decryptKeySource, tt.decryptMsg, WithWrapper(tt.encDecWrapper))
 			if tt.wantDecErrContains != "" {
 				subtRequire.Error(err)
 				subtAssert.Contains(err.Error(), tt.wantDecErrContains)

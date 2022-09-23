@@ -211,12 +211,7 @@ func FetchNodeCredentials(
 		return new(types.FetchNodeCredentialsResponse), nil
 	}
 
-	keyId, err := nodeenrollment.KeyIdFromPkix(reqInfo.CertificatePublicKeyPkix)
-	if err != nil {
-		return nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
-	}
-
-	// Runs some validations
+	// Run some validations
 	if subtle.ConstantTimeCompare(nodeInfo.RegistrationNonce, reqInfo.Nonce) != 1 {
 		return nil, fmt.Errorf("(%s) mismatched nonces between authorization and incoming fetch request", op)
 	}
@@ -243,7 +238,6 @@ func FetchNodeCredentials(
 
 	encryptedBytes, err := nodeenrollment.EncryptMessage(
 		ctx,
-		keyId,
 		nodeCreds,
 		nodeInfo,
 		opt...,
