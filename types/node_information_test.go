@@ -218,7 +218,6 @@ func TestNodeInformation_X25519(t *testing.T) {
 	require.NoError(t, err)
 
 	nodeInfo := &types.NodeInformation{
-		Id:                              "i'm a node id!",
 		ServerEncryptionPrivateKeyBytes: privKey,
 		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
 		EncryptionPublicKeyBytes:        pubKey,
@@ -310,13 +309,15 @@ func TestNodeInformation_X25519(t *testing.T) {
 	require.NoError(t, err)
 
 	nodeInfo2 := &types.NodeInformation{
-		Id:                              "i'm another node id!",
 		ServerEncryptionPrivateKeyBytes: privKey3,
 		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
 		EncryptionPublicKeyBytes:        pubKey2,
 		EncryptionPublicKeyType:         types.KEYTYPE_X25519,
 		CertificatePublicKeyPkix:        pubKeyPkix2,
 	}
+
+	oldKeyId, _, _ := nodeInfo.X25519EncryptionKey()
+	newKeyId, _, _ := nodeInfo2.X25519EncryptionKey()
 
 	nodeInfo2.SetPreviousEncryptionKey(nodeInfo)
 	tests2 := []struct {
@@ -344,16 +345,31 @@ func TestNodeInformation_X25519(t *testing.T) {
 				return
 			}
 			require.NoError(err)
-			_, xKey, err := n.X25519EncryptionKey()
+			keyId, xKey, err := n.X25519EncryptionKey()
 			require.NoError(err)
 			require.NotNil(xKey)
+			require.Equal(keyId, newKeyId)
+			require.NotEqual(keyId, oldKeyId)
 
-			_, pKey, err := n.PreviousX25519EncryptionKey()
+			priorKeyId, pKey, err := n.PreviousX25519EncryptionKey()
 			require.NoError(err)
+			require.Equal(priorKeyId, oldKeyId)
 			_, oldCredKey, err := tt.previousInfo.X25519EncryptionKey()
 			require.NoError(err)
 			require.NotNil(pKey, oldCredKey)
 
+			// Encrypt a message with prior key and ensure it can be decrypted
+			message := &wrapping.BlobInfo{
+				Ciphertext: []byte("foo"),
+				Iv:         []byte("bar"),
+				Hmac:       []byte("baz"),
+			}
+			encryptedMsg, err := nodeenrollment.EncryptMessage(context.Background(), message, nodeInfo)
+			require.NoError(err)
+			decryptedMsg := new(wrapping.BlobInfo)
+			err = nodeenrollment.DecryptMessage(context.Background(), encryptedMsg, nodeInfo2, decryptedMsg)
+			require.NoError(err)
+			assert.Empty(cmp.Diff(message, decryptedMsg, protocmp.Transform()))
 		})
 	}
 }

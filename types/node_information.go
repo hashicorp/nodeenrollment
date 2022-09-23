@@ -128,7 +128,7 @@ func (n *NodeInformation) SetPreviousEncryptionKey(oldNodeInformation *NodeInfor
 		return fmt.Errorf("(%s) empty prior node information passed in", op)
 	}
 
-	keyId, err := nodeenrollment.KeyIdFromPkix(n.CertificatePublicKeyPkix)
+	keyId, err := nodeenrollment.KeyIdFromPkix(oldNodeInformation.CertificatePublicKeyPkix)
 	if err != nil {
 		return fmt.Errorf("(%s) error deriving key id: %w", op, err)
 	}
