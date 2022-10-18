@@ -145,16 +145,13 @@ func NewInterceptingListener(
 // by seeing if the negotiated protocol was the auth protocol handled by this
 // library:
 //
-// if strings.HasPrefix(
-//
-//	returnedConn.(*protocol.Conn).Conn.ConnectionState().NegotiatedProtocol,
-//	nodeenrollment.AuthenticateNodeNextProtoV1Prefix
-//
+//	if strings.HasPrefix(
+//		returnedConn.(*protocol.Conn).Conn.ConnectionState().NegotiatedProtocol,
+//		nodeenrollment.AuthenticateNodeNextProtoV1Prefix
 //	) {
-//	    // Authenticated by this library
+//		// Authenticated by this library
 //	} else {
-//
-//	    // Not authenticated by this library
+//		// Not authenticated by this library
 //	}
 //
 // There is also some special behavior around the errors that this function
