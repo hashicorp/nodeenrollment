@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestClientConfig(t *testing.T) {
@@ -20,10 +21,16 @@ func TestClientConfig(t *testing.T) {
 
 	ctx, _, nodeCreds := nodetesting.CommonTestParams(t)
 
+	withState, err := structpb.NewStruct(map[string]any{
+		"foo": "bar",
+	})
+	require.NoError(t, err)
+
 	tests := []struct {
 		name string
 		// Return a modified node information and potentially a desired error string
 		setupFn func(*types.NodeCredentials) (*types.NodeCredentials, string)
+		state   *structpb.Struct
 	}{
 		{
 			name: "invalid-nil",
@@ -58,6 +65,13 @@ func TestClientConfig(t *testing.T) {
 				return in, ""
 			},
 		},
+		{
+			name: "valid-with-state",
+			setupFn: func(in *types.NodeCredentials) (*types.NodeCredentials, string) {
+				return in, ""
+			},
+			state: withState,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -69,7 +83,7 @@ func TestClientConfig(t *testing.T) {
 				n, wantErrContains = tt.setupFn(proto.Clone(n).(*types.NodeCredentials))
 			}
 
-			resp, err := ClientConfig(ctx, n, nodeenrollment.WithServerName("foobar"), nodeenrollment.WithExtraAlpnProtos([]string{"foo", "bar"}))
+			resp, err := ClientConfig(ctx, n, nodeenrollment.WithServerName("foobar"), nodeenrollment.WithExtraAlpnProtos([]string{"foo", "bar"}), nodeenrollment.WithState(tt.state))
 			switch wantErrContains {
 			case "":
 				require.NoError(err)
@@ -125,6 +139,12 @@ func TestClientConfig(t *testing.T) {
 			pubKey, err := x509.ParsePKIXPublicKey(req.CertificatePublicKeyPkix)
 			require.NoError(err)
 			require.True(ed25519.Verify(pubKey.(ed25519.PublicKey), req.Nonce, req.NonceSignature))
+
+			if tt.state != nil {
+				require.NotEmpty(req.State)
+				require.NotEmpty(req.StateSignature)
+				require.True(ed25519.Verify(pubKey.(ed25519.PublicKey), req.State, req.StateSignature))
+			}
 		})
 	}
 }

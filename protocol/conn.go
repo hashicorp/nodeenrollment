@@ -1,26 +1,44 @@
 package protocol
 
-import "crypto/tls"
+import (
+	"crypto/tls"
+	"fmt"
+
+	"github.com/hashicorp/nodeenrollment"
+	"google.golang.org/protobuf/types/known/structpb"
+)
 
 // Conn embeds a *tls.Conn and allows us to add extra bits into it
 type Conn struct {
 	*tls.Conn
 	clientNextProtos []string
+	state            *structpb.Struct
 }
 
 // NewConn constructs a conn from a base TLS connection and possibly client next
-// protos
-func NewConn(base *tls.Conn, clientNextProtos []string) *Conn {
-	conn := &Conn{Conn: base}
+// protos.
+//
+// Supported options: WithExtraAlpnProtos (used to set clientNextProtos), WithState
+func NewConn(base *tls.Conn, opt ...nodeenrollment.Option) (*Conn, error) {
+	const op = "nodeenrollment.protocol.NewConn"
+	opts, err := nodeenrollment.GetOpts(opt...)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
+	}
+
+	conn := &Conn{
+		Conn:  base,
+		state: opts.WithState,
+	}
 	switch {
-	case clientNextProtos == nil:
-	case len(clientNextProtos) == 0:
+	case opts.WithExtraAlpnProtos == nil:
+	case len(opts.WithExtraAlpnProtos) == 0:
 		conn.clientNextProtos = make([]string, 0)
 	default:
-		conn.clientNextProtos = make([]string, len(clientNextProtos))
-		copy(conn.clientNextProtos, clientNextProtos)
+		conn.clientNextProtos = make([]string, len(opts.WithExtraAlpnProtos))
+		copy(conn.clientNextProtos, opts.WithExtraAlpnProtos)
 	}
-	return conn
+	return conn, nil
 }
 
 // ClientNextProtos returns the value of NextProtos originally presented by the
@@ -38,4 +56,10 @@ func (c *Conn) ClientNextProtos() []string {
 		copy(ret, c.clientNextProtos)
 		return ret
 	}
+}
+
+// State returns the value of the state embedded into the original client
+// request, which may be nil
+func (c *Conn) State() *structpb.Struct {
+	return c.state
 }
