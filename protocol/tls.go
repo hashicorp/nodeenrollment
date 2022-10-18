@@ -145,6 +145,8 @@ func (l *InterceptingListener) getTlsConfigForClient(clientInfo *ClientInfo) fun
 		if certResp == nil {
 			return nil, fmt.Errorf("(%s) nil response when generating server-side certificate", op)
 		}
+		// Copy state in
+		clientInfo.state = certResp.State
 
 		// Ensure that the key we just verified from the signature is the one
 		// presented by the client when we handshake

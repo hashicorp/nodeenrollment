@@ -8,12 +8,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/nodeenrollment"
 	nodetesting "github.com/hashicorp/nodeenrollment/testing"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestGenerateServerCertificates(t *testing.T) {
@@ -31,10 +34,19 @@ func TestGenerateServerCertificates(t *testing.T) {
 	nonceSigBytes, err := privKey.(crypto.Signer).Sign(rand.Reader, nonceBytes, crypto.Hash(0))
 	require.NoError(t, err)
 
+	state, err := structpb.NewStruct(map[string]any{"foo": "bar"})
+	require.NoError(t, err)
+	stateBytes, err := proto.Marshal(state)
+	require.NoError(t, err)
+	stateSigBytes, err := privKey.(crypto.Signer).Sign(rand.Reader, stateBytes, crypto.Hash(0))
+	require.NoError(t, err)
+
 	genReq := &types.GenerateServerCertificatesRequest{
 		CertificatePublicKeyPkix: nodeCreds.CertificatePublicKeyPkix,
 		Nonce:                    nonceBytes,
 		NonceSignature:           nonceSigBytes,
+		State:                    stateBytes,
+		StateSignature:           stateSigBytes,
 	}
 
 	tests := []struct {
@@ -69,12 +81,28 @@ func TestGenerateServerCertificates(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid-verification-state-no-state-signature",
+			setupFn: func(req *types.GenerateServerCertificatesRequest) (*types.GenerateServerCertificatesRequest, string) {
+				req.StateSignature = nil
+				return req, "state is not empty but state signature is"
+			},
+		},
+		{
 			name: "invalid-verification-bad-nonce-signature",
 			setupFn: func(req *types.GenerateServerCertificatesRequest) (*types.GenerateServerCertificatesRequest, string) {
-				req.NonceSignature[5] = 'w'
+				req.NonceSignature[4] = 'w'
 				req.NonceSignature[5] = 'h'
-				req.NonceSignature[5] = 'y'
+				req.NonceSignature[6] = 'y'
 				return req, "nonce signature verification failed"
+			},
+		},
+		{
+			name: "invalid-verification-bad-state-signature",
+			setupFn: func(req *types.GenerateServerCertificatesRequest) (*types.GenerateServerCertificatesRequest, string) {
+				req.StateSignature[4] = 'w'
+				req.StateSignature[5] = 'h'
+				req.StateSignature[6] = 'y'
+				return req, "state signature verification failed"
 			},
 		},
 		{
@@ -121,6 +149,7 @@ func TestGenerateServerCertificates(t *testing.T) {
 				return
 			}
 
+			assert.Empty(cmp.Diff(resp.State, state, protocmp.Transform()))
 			assert.NotEmpty(resp.CertificatePrivateKeyPkcs8)
 			assert.Equal(types.KEYTYPE_ED25519, resp.CertificatePrivateKeyType)
 			assert.Len(resp.CertificateBundles, 2)

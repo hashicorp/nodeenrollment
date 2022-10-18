@@ -18,7 +18,7 @@ import (
 // NodeCredentials. The values populated here can be used or modified as needed.
 //
 // Supported options: WithRandomReader, WithServerName (passed through to
-// standardTlsConfig), WithExtraAlpnProtos
+// standardTlsConfig), WithExtraAlpnProtos, WithState
 func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenrollment.Option) (*tls.Config, error) {
 	const op = "nodeenrollment.tls.ClientConfig"
 
@@ -65,17 +65,33 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 	if w != nodeenrollment.NonceSize {
 		return nil, fmt.Errorf("(%s) invalid number of nonce bytes read, expected %d, got %d", op, nodeenrollment.NonceSize, w)
 	}
-	sigBytes, err := signer.Sign(opts.WithRandomReader, nonceBytes, crypto.Hash(0))
+	sigNonceBytes, err := signer.Sign(opts.WithRandomReader, nonceBytes, crypto.Hash(0))
 	if err != nil {
-		return nil, fmt.Errorf("(%s) error signing certs request data: %w", op, err)
+		return nil, fmt.Errorf("(%s) error signing certs request nonce: %w", op, err)
 	}
+
+	var stateBytes []byte
+	var sigStateBytes []byte
+	if opts.WithState != nil {
+		stateBytes, err = proto.Marshal(opts.WithState)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error marshaling state: %w", op, err)
+		}
+		sigStateBytes, err = signer.Sign(opts.WithRandomReader, stateBytes, crypto.Hash(0))
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error signing certs request state: %w", op, err)
+		}
+	}
+
 	// This may seem like an unintuitive name given this is a client, but it's
 	// really a request for the other side to present a server cert that is
 	// valid and with the embedded nonce.
 	req := &types.GenerateServerCertificatesRequest{
 		CertificatePublicKeyPkix: n.CertificatePublicKeyPkix,
 		Nonce:                    nonceBytes,
-		NonceSignature:           sigBytes,
+		NonceSignature:           sigNonceBytes,
+		State:                    stateBytes,
+		StateSignature:           sigStateBytes,
 	}
 	reqBytes, err := proto.Marshal(req)
 	if err != nil {

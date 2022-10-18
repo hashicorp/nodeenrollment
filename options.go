@@ -45,6 +45,7 @@ type Options struct {
 	WithReinitializeRoots                       bool
 	WithActivationToken                         string
 	WithMaximumServerLedActivationTokenLifetime time.Duration
+	WithNativeConns                             bool
 }
 
 // Option is a function that takes in an options struct and sets values or
@@ -211,6 +212,15 @@ func WithActivationToken(with string) Option {
 func WithMaximumServerLedActivationTokenLifetime(with time.Duration) Option {
 	return func(o *Options) error {
 		o.WithMaximumServerLedActivationTokenLifetime = with
+		return nil
+	}
+}
+
+// WithNativeConns, if set to true, indicates to use the native protocol package
+// conn type to return from the split listener listeners
+func WithNativeConns(with bool) Option {
+	return func(o *Options) error {
+		o.WithNativeConns = with
 		return nil
 	}
 }

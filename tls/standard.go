@@ -18,7 +18,7 @@ import (
 // of the library that will further customize the configuration and provide
 // appropriate roots.
 //
-// Supported options: WithRandReader, WithNonce, WithVerifyConnectionFunc,
+// Supported options: WithRandomReader, WithNonce, WithVerifyConnectionFunc,
 // WithExpectedPublicKey, WithServerName
 func standardTlsConfig(ctx context.Context, tlsCerts []tls.Certificate, pool *x509.CertPool, opt ...nodeenrollment.Option) (*tls.Config, error) {
 	const op = "nodeenrollment.tls.standardTlsConfig"

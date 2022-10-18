@@ -174,4 +174,13 @@ func Test_GetOpts(t *testing.T) {
 		require.NoError(err)
 		assert.Equal(time.Second, opts.WithMaximumServerLedActivationTokenLifetime)
 	})
+	t.Run("with-native-conns", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.False(opts.WithNativeConns)
+		opts, err = GetOpts(WithNativeConns(true))
+		require.NoError(err)
+		assert.True(opts.WithNativeConns)
+	})
 }

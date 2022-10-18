@@ -13,6 +13,8 @@ import (
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/types"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -73,6 +75,27 @@ func GenerateServerCertificates(
 		if !ed25519.Verify(nodePubKey, req.Nonce, req.NonceSignature) {
 			return nil, fmt.Errorf("(%s) nonce signature verification failed", op)
 		}
+		if len(req.State) != 0 {
+			if len(req.StateSignature) == 0 {
+				return nil, fmt.Errorf("(%s) state is not empty but state signature is", op)
+			}
+			if !ed25519.Verify(nodePubKey, req.State, req.StateSignature) {
+				return nil, fmt.Errorf("(%s) state signature verification failed", op)
+			}
+		}
+	}
+
+	resp := &types.GenerateServerCertificatesResponse{
+		CertificatePrivateKeyType: types.KEYTYPE_ED25519,
+		CertificateBundles:        make([]*types.CertificateBundle, 0, 2),
+	}
+
+	if len(req.State) != 0 {
+		state := new(structpb.Struct)
+		if err := proto.Unmarshal(req.State, state); err != nil {
+			return nil, fmt.Errorf("(%s) error unmarshaling state: %w", op, err)
+		}
+		resp.State = state
 	}
 
 	// Now we're going to load the roots, generate a new key, and create a set
@@ -88,10 +111,6 @@ func GenerateServerCertificates(
 		return nil, fmt.Errorf("(%s) error generating just-in-time cert key: %w", op, err)
 	}
 
-	resp := &types.GenerateServerCertificatesResponse{
-		CertificatePrivateKeyType: types.KEYTYPE_ED25519,
-		CertificateBundles:        make([]*types.CertificateBundle, 0, 2),
-	}
 	resp.CertificatePrivateKeyPkcs8, err = x509.MarshalPKCS8PrivateKey(privKey)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error marshaling just-in-time cert key: %w", op, err)

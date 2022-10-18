@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"math/big"
 	"net"
 	"sync"
@@ -24,14 +25,17 @@ import (
 
 func TestSplitListener(t *testing.T) {
 	t.Run("with-non-specific", func(t *testing.T) {
-		testSplitListener(t, true)
+		testSplitListener(t, true, false)
+	})
+	t.Run("with-non-specific-returning-nativeconn", func(t *testing.T) {
+		testSplitListener(t, true, true)
 	})
 	t.Run("without-non-specific", func(t *testing.T) {
-		testSplitListener(t, false)
+		testSplitListener(t, false, false)
 	})
 }
 
-func testSplitListener(t *testing.T, withNonSpecific bool) {
+func testSplitListener(t *testing.T, withNonSpecific, withNativeConns bool) {
 	t.Parallel()
 	require, assert := require.New(t), assert.New(t)
 
@@ -118,7 +122,7 @@ func testSplitListener(t *testing.T, withNonSpecific bool) {
 	require.Equal(unauthLn, unauthLn2)
 
 	const testClientNextProtoValue = "expected-val"
-	expLn, err := splitListener.GetListener(testClientNextProtoValue)
+	expLn, err := splitListener.GetListener(testClientNextProtoValue, nodeenrollment.WithNativeConns(withNativeConns))
 	require.NoError(err)
 
 	wg := new(sync.WaitGroup)
@@ -161,7 +165,7 @@ func testSplitListener(t *testing.T, withNonSpecific bool) {
 	go func() {
 		defer wg.Done()
 		for {
-			_, err := expLn.Accept()
+			conn, err := expLn.Accept()
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {
 					expListenerReturnedDone.Store(true)
@@ -169,6 +173,18 @@ func testSplitListener(t *testing.T, withNonSpecific bool) {
 				}
 				expListenerReturnedErr.Store(err.Error())
 				return
+			}
+			switch conn.(type) {
+			case *tls.Conn:
+				if withNativeConns {
+					expListenerReturnedErr.Store("expected native conns, got tls conn")
+				}
+			case *protocol.Conn:
+				if !withNativeConns {
+					expListenerReturnedErr.Store("expected tls conns, got native conn")
+				}
+			default:
+				expListenerReturnedErr.Store(fmt.Sprintf("unknown conn type: %T", conn))
 			}
 			expConns.Add(1)
 		}

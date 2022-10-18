@@ -14,11 +14,13 @@ import (
 	nodetls "github.com/hashicorp/nodeenrollment/tls"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/hashicorp/nodeenrollment/util/temperror"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // ClientInfo allows us to pass information back from the TLS handshake
 type ClientInfo struct {
 	nextProtos []string
+	state      *structpb.Struct
 }
 
 // InterceptingListener is a listener that transparently handles fetch
@@ -143,14 +145,14 @@ func NewInterceptingListener(
 // by seeing if the negotiated protocol was the auth protocol handled by this
 // library:
 //
-// if strings.HasPrefix(
-//      returnedConn.(*protocol.Conn).Conn.ConnectionState().NegotiatedProtocol,
-//      nodeenrollment.AuthenticateNodeNextProtoV1Prefix
-// ) {
-//     // Authenticated by this library
-// } else {
-//     // Not authenticated by this library
-// }
+//	if strings.HasPrefix(
+//		returnedConn.(*protocol.Conn).Conn.ConnectionState().NegotiatedProtocol,
+//		nodeenrollment.AuthenticateNodeNextProtoV1Prefix
+//	) {
+//		// Authenticated by this library
+//	} else {
+//		// Not authenticated by this library
+//	}
 //
 // There is also some special behavior around the errors that this function
 // returns. For compatibility with listeners passed into gRPC servers, most
@@ -160,9 +162,9 @@ func NewInterceptingListener(
 // gRPC this should likely just work, but if you need to check if this is a true
 // error in your own code, you can do this:
 //
-//  if tempErr, ok := err.(interface {
-//    Temporary() bool
-//  }); ok && tempErr.Temporary() {
+//	if tempErr, ok := err.(interface {
+//	  Temporary() bool
+//	}); ok && tempErr.Temporary() {
 //
 // If it's temporary, continue on and accept the next connection.
 //
@@ -211,10 +213,10 @@ func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 			return nil, temperror.New(err)
 		}
 
-		return &Conn{
-			Conn:             tlsConn,
-			clientNextProtos: clientInfo.nextProtos,
-		}, nil
+		return NewConn(tlsConn,
+			nodeenrollment.WithExtraAlpnProtos(clientInfo.nextProtos),
+			nodeenrollment.WithState(clientInfo.state),
+		)
 	}
 }
 
