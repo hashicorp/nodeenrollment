@@ -2,6 +2,7 @@ package net
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -143,10 +144,10 @@ func (l *SplitListener) Start() error {
 
 			// If we found a listener send the conn down, otherwise close the
 			// conn
-			if foundListener != nil {
-				foundListener.IngressConn(tlsConn, nil)
-			} else {
+			if foundListener == nil {
 				_ = conn.Close()
+			} else {
+				foundListener.IngressConn(protoConn, nil)
 			}
 			continue
 		}
@@ -156,7 +157,7 @@ func (l *SplitListener) Start() error {
 		if !ok {
 			_ = conn.Close()
 		} else {
-			val.(*MultiplexingListener).IngressConn(tlsConn, nil)
+			val.(*MultiplexingListener).IngressConn(protoConn, nil)
 		}
 	}
 }
@@ -179,14 +180,17 @@ func (l *SplitListener) Start() error {
 // returned on it. This includes connections that did not successfully TLS
 // handshake or that are not TLS connections.
 //
-// The connections returned over the listener will always be *tls.Conn.
+// The connections returned over the listener will always be *tls.Conn unless
+// WithNativeConns is specified.
 //
 // If there was a previous listener for the given value, it is returned,
 // otherwise a new one is created.
 //
 // Don't call GetListener after the underlying listener has been closed; this
 // will result in an unclosed channel if there is a race.
-func (l *SplitListener) GetListener(nextProto string) (net.Listener, error) {
+//
+// Supported options: WithNativeConns
+func (l *SplitListener) GetListener(nextProto string, opt ...nodeenrollment.Option) (net.Listener, error) {
 	const op = "nodeenrollment.net.(SplitListener).GetListener"
 	if nextProto == "" {
 		return nil, fmt.Errorf("(%s): missing next proto value", op)
@@ -195,7 +199,7 @@ func (l *SplitListener) GetListener(nextProto string) (net.Listener, error) {
 		return nil, net.ErrClosed
 	}
 
-	newMultiplexingListener, err := NewMultiplexingListener(l.ctx, l.baseLn.Addr())
+	newMultiplexingListener, err := NewMultiplexingListener(l.ctx, l.baseLn.Addr(), opt...)
 	if err != nil {
 		return nil, fmt.Errorf("(%s): error creating multiplexing listener: %w", op, err)
 	}
@@ -226,9 +230,10 @@ type MultiplexingListener struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	drainSpawned *sync.Once
+	nativeConns  bool
 }
 
-func NewMultiplexingListener(ctx context.Context, addr net.Addr) (*MultiplexingListener, error) {
+func NewMultiplexingListener(ctx context.Context, addr net.Addr, opt ...nodeenrollment.Option) (*MultiplexingListener, error) {
 	const op = "nodeenrollment.net.NewMultiplexingListener"
 	switch {
 	case nodeenrollment.IsNil(ctx):
@@ -237,10 +242,16 @@ func NewMultiplexingListener(ctx context.Context, addr net.Addr) (*MultiplexingL
 		return nil, fmt.Errorf("(%s): nil addr", op)
 	}
 
+	opts, err := nodeenrollment.GetOpts(opt...)
+	if err != nil {
+		return nil, fmt.Errorf("(%s): error parsing opts: %w", op, err)
+	}
+
 	multiplexer := &MultiplexingListener{
 		addr:         addr,
 		incoming:     make(chan splitConn),
 		drainSpawned: new(sync.Once),
+		nativeConns:  opts.WithNativeConns,
 	}
 	multiplexer.ctx, multiplexer.cancel = context.WithCancel(ctx)
 
@@ -288,6 +299,19 @@ func (l *MultiplexingListener) Accept() (net.Conn, error) {
 			return nil, net.ErrClosed
 
 		default:
+			if in.conn == nil {
+				return in.conn, in.err
+			}
+
+			switch t := in.conn.(type) {
+			case *tls.Conn:
+				return in.conn, in.err
+			case *protocol.Conn:
+				if l.nativeConns {
+					return in.conn, in.err
+				}
+				return t.Conn, in.err
+			}
 			return in.conn, in.err
 		}
 	}
