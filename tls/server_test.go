@@ -90,18 +90,18 @@ func TestGenerateServerCertificates(t *testing.T) {
 		{
 			name: "invalid-verification-bad-nonce-signature",
 			setupFn: func(req *types.GenerateServerCertificatesRequest) (*types.GenerateServerCertificatesRequest, string) {
-				req.NonceSignature[5] = 'w'
+				req.NonceSignature[4] = 'w'
 				req.NonceSignature[5] = 'h'
-				req.NonceSignature[5] = 'y'
+				req.NonceSignature[6] = 'y'
 				return req, "nonce signature verification failed"
 			},
 		},
 		{
 			name: "invalid-verification-bad-state-signature",
 			setupFn: func(req *types.GenerateServerCertificatesRequest) (*types.GenerateServerCertificatesRequest, string) {
-				req.StateSignature[5] = 'w'
+				req.StateSignature[4] = 'w'
 				req.StateSignature[5] = 'h'
-				req.StateSignature[5] = 'y'
+				req.StateSignature[6] = 'y'
 				return req, "state signature verification failed"
 			},
 		},
