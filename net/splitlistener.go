@@ -233,6 +233,14 @@ type MultiplexingListener struct {
 	nativeConns  bool
 }
 
+// NewMultiplexingListener creates a new listener with the given context for
+// canceling. It will report the given address when the net.Listener.Addr()
+// function is called.
+//
+// Supported options: WithNativeConns: if set, a connection that comes in via
+// IngressConn or IngressListener is returned as-is, including if a
+// `*protocol.Conn`. Otherwise, it will expect and return a `*tls.Conn` and
+// return an error if the conn is not that type.
 func NewMultiplexingListener(ctx context.Context, addr net.Addr, opt ...nodeenrollment.Option) (*MultiplexingListener, error) {
 	const op = "nodeenrollment.net.NewMultiplexingListener"
 	switch {
