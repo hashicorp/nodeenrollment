@@ -75,12 +75,12 @@ func GenerateServerCertificates(
 		if !ed25519.Verify(nodePubKey, req.Nonce, req.NonceSignature) {
 			return nil, fmt.Errorf("(%s) nonce signature verification failed", op)
 		}
-		if len(req.State) != 0 {
-			if len(req.StateSignature) == 0 {
-				return nil, fmt.Errorf("(%s) state is not empty but state signature is", op)
+		if len(req.ClientState) != 0 {
+			if len(req.ClientStateSignature) == 0 {
+				return nil, fmt.Errorf("(%s) client state is not empty but state signature is", op)
 			}
-			if !ed25519.Verify(nodePubKey, req.State, req.StateSignature) {
-				return nil, fmt.Errorf("(%s) state signature verification failed", op)
+			if !ed25519.Verify(nodePubKey, req.ClientState, req.ClientStateSignature) {
+				return nil, fmt.Errorf("(%s) client state signature verification failed", op)
 			}
 		}
 	}
@@ -90,12 +90,12 @@ func GenerateServerCertificates(
 		CertificateBundles:        make([]*types.CertificateBundle, 0, 2),
 	}
 
-	if len(req.State) != 0 {
-		state := new(structpb.Struct)
-		if err := proto.Unmarshal(req.State, state); err != nil {
-			return nil, fmt.Errorf("(%s) error unmarshaling state: %w", op, err)
+	if len(req.ClientState) != 0 {
+		clientState := new(structpb.Struct)
+		if err := proto.Unmarshal(req.ClientState, clientState); err != nil {
+			return nil, fmt.Errorf("(%s) error unmarshaling client state: %w", op, err)
 		}
-		resp.State = state
+		resp.ClientState = clientState
 	}
 
 	// Now we're going to load the roots, generate a new key, and create a set

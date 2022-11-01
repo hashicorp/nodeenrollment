@@ -12,13 +12,14 @@ import (
 type Conn struct {
 	*tls.Conn
 	clientNextProtos []string
-	state            *structpb.Struct
+	clientState      *structpb.Struct
 }
 
 // NewConn constructs a conn from a base TLS connection and possibly client next
 // protos.
 //
-// Supported options: WithExtraAlpnProtos (used to set clientNextProtos), WithState
+// Supported options: WithExtraAlpnProtos (used to set clientNextProtos),
+// WithState (storing client state information)
 func NewConn(base *tls.Conn, opt ...nodeenrollment.Option) (*Conn, error) {
 	const op = "nodeenrollment.protocol.NewConn"
 	opts, err := nodeenrollment.GetOpts(opt...)
@@ -27,8 +28,8 @@ func NewConn(base *tls.Conn, opt ...nodeenrollment.Option) (*Conn, error) {
 	}
 
 	conn := &Conn{
-		Conn:  base,
-		state: opts.WithState,
+		Conn:        base,
+		clientState: opts.WithState,
 	}
 	switch {
 	case opts.WithExtraAlpnProtos == nil:
@@ -58,8 +59,8 @@ func (c *Conn) ClientNextProtos() []string {
 	}
 }
 
-// State returns the value of the state embedded into the original client
+// ClientState returns the value of the state embedded into the original client
 // request, which may be nil
-func (c *Conn) State() *structpb.Struct {
-	return c.state
+func (c *Conn) ClientState() *structpb.Struct {
+	return c.clientState
 }

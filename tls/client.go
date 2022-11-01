@@ -70,16 +70,16 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 		return nil, fmt.Errorf("(%s) error signing certs request nonce: %w", op, err)
 	}
 
-	var stateBytes []byte
-	var sigStateBytes []byte
+	var clientStateBytes []byte
+	var sigClientStateBytes []byte
 	if opts.WithState != nil {
-		stateBytes, err = proto.Marshal(opts.WithState)
+		clientStateBytes, err = proto.Marshal(opts.WithState)
 		if err != nil {
-			return nil, fmt.Errorf("(%s) error marshaling state: %w", op, err)
+			return nil, fmt.Errorf("(%s) error marshaling client state: %w", op, err)
 		}
-		sigStateBytes, err = signer.Sign(opts.WithRandomReader, stateBytes, crypto.Hash(0))
+		sigClientStateBytes, err = signer.Sign(opts.WithRandomReader, clientStateBytes, crypto.Hash(0))
 		if err != nil {
-			return nil, fmt.Errorf("(%s) error signing certs request state: %w", op, err)
+			return nil, fmt.Errorf("(%s) error signing certs request client state: %w", op, err)
 		}
 	}
 
@@ -90,8 +90,8 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 		CertificatePublicKeyPkix: n.CertificatePublicKeyPkix,
 		Nonce:                    nonceBytes,
 		NonceSignature:           sigNonceBytes,
-		State:                    stateBytes,
-		StateSignature:           sigStateBytes,
+		ClientState:              clientStateBytes,
+		ClientStateSignature:     sigClientStateBytes,
 	}
 	reqBytes, err := proto.Marshal(req)
 	if err != nil {

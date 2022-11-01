@@ -141,9 +141,9 @@ func TestClientConfig(t *testing.T) {
 			require.True(ed25519.Verify(pubKey.(ed25519.PublicKey), req.Nonce, req.NonceSignature))
 
 			if tt.state != nil {
-				require.NotEmpty(req.State)
-				require.NotEmpty(req.StateSignature)
-				require.True(ed25519.Verify(pubKey.(ed25519.PublicKey), req.State, req.StateSignature))
+				require.NotEmpty(req.ClientState)
+				require.NotEmpty(req.ClientStateSignature)
+				require.True(ed25519.Verify(pubKey.(ed25519.PublicKey), req.ClientState, req.ClientStateSignature))
 			}
 		})
 	}
