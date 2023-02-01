@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package temperror
 
 // tempError is an error that satisfies the temporary error interface that is
