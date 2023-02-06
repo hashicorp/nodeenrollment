@@ -121,6 +121,12 @@ func WithTlsVerifyOptionsFunc(with func(*x509.CertPool) x509.VerifyOptions) Opti
 // to unwrap when reading from storage
 func WithWrapper(with wrapping.Wrapper) Option {
 	return func(o *Options) error {
+		const op = "nodeenrollment.WithWrapper"
+
+		if IsNil(with) {
+			return fmt.Errorf("(%s) nil wrapper provided", op)
+		}
+
 		o.WithWrapper = with
 		return nil
 	}
