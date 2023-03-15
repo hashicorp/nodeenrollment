@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 // Protocol provides a listener and dial function that can be used to easily
 // integrate this library into other applications. An application can wrap its
 // incoming listener with an InterceptingListener from this package, which will
