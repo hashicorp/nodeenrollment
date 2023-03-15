@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package file
+package inmem
 
 import (
 	"context"
@@ -24,7 +24,6 @@ func Test_StorageLifecycle(t *testing.T) {
 
 	ts, err := New(ctx)
 	require.NoError(err)
-	t.Cleanup(func() { ts.Cleanup(ctx) })
 
 	// Create three roots and store them. After we store each, expect that the
 	// number of found items in a list is equivalent.
@@ -87,7 +86,6 @@ func Test_StorageMessageType(t *testing.T) {
 
 	ts, err := New(ctx)
 	tRequire.NoError(err)
-	t.Cleanup(func() { ts.Cleanup(ctx) })
 
 	tests := []struct {
 		name            string
