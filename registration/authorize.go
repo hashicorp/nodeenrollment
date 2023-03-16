@@ -44,16 +44,32 @@ func AuthorizeNode(
 
 	// We expect to see the final call in validateFetchRequestCommon to
 	// LoadNodeInformation to return here with nil nodeInfo and ErrNotFound
-	reqInfo, nodeInfo, err := validateFetchRequestCommon(ctx, storage, req, opt...)
+	reqInfo, err := validateFetchRequestCommon(ctx, storage, req, opt...)
 	switch {
-	case err == nil, nodeInfo != nil:
-		return nil, fmt.Errorf("(%s) authorize node cannot be called on an existing node", op)
-	case !errors.Is(err, nodeenrollment.ErrNotFound):
-		return nil, fmt.Errorf("(%s) error looking up node information from storage: %w", op, err)
+	case err != nil:
+		return nil, fmt.Errorf("(%s) error during fetch request validation: %w", op, err)
+
 	case len(reqInfo.Nonce) != nodeenrollment.NonceSize:
 		// Not a normal request, possibly one containing server-led activation
 		// token, which should not use this path
 		return nil, fmt.Errorf("(%s) server-led activation tokens cannot be used with node-led authorize call", op)
+
+	default:
+		// Check for existing node information
+		keyId, err := nodeenrollment.KeyIdFromPkix(reqInfo.CertificatePublicKeyPkix)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
+		}
+
+		nodeInfo, err := types.LoadNodeInformation(ctx, storage, keyId, opt...)
+		switch {
+		case err == nil || nodeInfo != nil:
+			return nil, fmt.Errorf("(%s) authorize node cannot be called on an existing node", op)
+		case !errors.Is(err, nodeenrollment.ErrNotFound):
+			return nil, fmt.Errorf("(%s) error checking for node information from storage: %w", op, err)
+		default:
+			// We got not found, which is what we want
+		}
 	}
 
 	return authorizeNodeCommon(ctx, storage, reqInfo, opt...)
