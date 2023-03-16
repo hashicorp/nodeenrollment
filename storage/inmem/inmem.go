@@ -229,12 +229,6 @@ func (ts *Storage) listValues(ctx context.Context, subPath string) ([]string, er
 	default:
 	}
 
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-	}
-
 	allEntries := ts.root.ToMap()
 	paths := make([]string, 0, len(allEntries))
 	for k := range allEntries {

@@ -47,7 +47,7 @@ func Test_StorageLifecycle(t *testing.T) {
 
 	// Now ensure that the listed items actually match! We know the length is
 	// correct, so if any aren't found then it's an issue. Load each and ensure
-	// the ID matches.
+	// the ID matches. Also ensure that bogus info doesn't load.
 	rootIds, err := ts.List(ctx, (*types.RootCertificates)(nil))
 	require.NoError(err)
 	assert.Len(rootIds, numRoots)
@@ -55,9 +55,13 @@ func Test_StorageLifecycle(t *testing.T) {
 		_, found := roots[rootId]
 		require.True(found) // matches something we created above
 
-		roots := &types.RootCertificates{Id: rootId}
+		roots := &types.RootCertificates{Id: rootId + "foo"}
+		require.Error(ts.Load(ctx, roots))
+
+		roots = &types.RootCertificates{Id: rootId}
 		require.NoError(ts.Load(ctx, roots))
 		require.NoError(err)
+
 		assert.Equal(string(roots.Current.PrivateKeyPkcs8), rootId)
 	}
 

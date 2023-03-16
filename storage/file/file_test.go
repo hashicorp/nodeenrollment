@@ -56,7 +56,10 @@ func Test_StorageLifecycle(t *testing.T) {
 		_, found := roots[rootId]
 		require.True(found) // matches something we created above
 
-		roots := &types.RootCertificates{Id: rootId}
+		roots := &types.RootCertificates{Id: rootId + "foo"}
+		require.Error(ts.Load(ctx, roots))
+
+		roots = &types.RootCertificates{Id: rootId}
 		require.NoError(ts.Load(ctx, roots))
 		require.NoError(err)
 		assert.Equal(string(roots.Current.PrivateKeyPkcs8), rootId)
