@@ -35,73 +35,61 @@ func validateFetchRequestCommon(
 	storage nodeenrollment.Storage,
 	req *types.FetchNodeCredentialsRequest,
 	opt ...nodeenrollment.Option,
-) (*types.FetchNodeCredentialsInfo, *types.NodeInformation, error) {
+) (*types.FetchNodeCredentialsInfo, error) {
 	const op = "nodeenrollment.registration.validateFetchRequest"
 
 	switch {
 	case nodeenrollment.IsNil(storage):
-		return nil, nil, fmt.Errorf("(%s) nil storage", op)
+		return nil, fmt.Errorf("(%s) nil storage", op)
 	case req == nil:
-		return nil, nil, fmt.Errorf("(%s) nil request", op)
+		return nil, fmt.Errorf("(%s) nil request", op)
 	case len(req.Bundle) == 0:
-		return nil, nil, fmt.Errorf("(%s) empty bundle", op)
+		return nil, fmt.Errorf("(%s) empty bundle", op)
 	case len(req.BundleSignature) == 0:
-		return nil, nil, fmt.Errorf("(%s) empty bundle signature", op)
+		return nil, fmt.Errorf("(%s) empty bundle signature", op)
 	}
 
 	opts, err := nodeenrollment.GetOpts(opt...)
 	if err != nil {
-		return nil, nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
+		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
 	reqInfo := new(types.FetchNodeCredentialsInfo)
 	if err := proto.Unmarshal(req.Bundle, reqInfo); err != nil {
-		return nil, nil, fmt.Errorf("(%s) cannot unmarshal request info: %w", op, err)
+		return nil, fmt.Errorf("(%s) cannot unmarshal request info: %w", op, err)
 	}
 
 	now := time.Now()
 	switch {
 	case len(reqInfo.CertificatePublicKeyPkix) == 0:
-		return nil, nil, fmt.Errorf("(%s) empty node certificate public key", op)
+		return nil, fmt.Errorf("(%s) empty node certificate public key", op)
 	case reqInfo.CertificatePublicKeyType != types.KEYTYPE_ED25519:
-		return nil, nil, fmt.Errorf("(%s) unsupported node certificate public key type %v", op, reqInfo.CertificatePublicKeyType.String())
+		return nil, fmt.Errorf("(%s) unsupported node certificate public key type %v", op, reqInfo.CertificatePublicKeyType.String())
 	case len(reqInfo.Nonce) == 0:
-		return nil, nil, fmt.Errorf("(%s) empty nonce", op)
+		return nil, fmt.Errorf("(%s) empty nonce", op)
 	case len(reqInfo.EncryptionPublicKeyBytes) == 0:
-		return nil, nil, fmt.Errorf("(%s) empty node encryption public key", op)
+		return nil, fmt.Errorf("(%s) empty node encryption public key", op)
 	case reqInfo.EncryptionPublicKeyType != types.KEYTYPE_X25519:
-		return nil, nil, fmt.Errorf("(%s) unsupported node encryption public key type %v", op, reqInfo.EncryptionPublicKeyType.String())
+		return nil, fmt.Errorf("(%s) unsupported node encryption public key type %v", op, reqInfo.EncryptionPublicKeyType.String())
 	case reqInfo.NotBefore.AsTime().Add(opts.WithNotBeforeClockSkew).After(now):
-		return nil, nil, fmt.Errorf("(%s) validity period is after current time", op)
+		return nil, fmt.Errorf("(%s) validity period is after current time", op)
 	case reqInfo.NotAfter.AsTime().Add(opts.WithNotAfterClockSkew).Before(now):
-		return nil, nil, fmt.Errorf("(%s) validity period is before current time", op)
+		return nil, fmt.Errorf("(%s) validity period is before current time", op)
 	}
 
 	pubKeyRaw, err := x509.ParsePKIXPublicKey(reqInfo.CertificatePublicKeyPkix)
 	if err != nil {
-		return nil, nil, fmt.Errorf("(%s) error parsing public key: %w", op, err)
+		return nil, fmt.Errorf("(%s) error parsing public key: %w", op, err)
 	}
 	pubKey, ok := pubKeyRaw.(ed25519.PublicKey)
 	if !ok {
-		return nil, nil, fmt.Errorf("(%s) error considering public key as ed25519: %w", op, err)
+		return nil, fmt.Errorf("(%s) error considering public key as ed25519: %w", op, err)
 	}
 	if !ed25519.Verify(pubKey, req.Bundle, req.BundleSignature) {
-		return nil, nil, fmt.Errorf("(%s) request bytes signature verification failed", op)
+		return nil, fmt.Errorf("(%s) request bytes signature verification failed", op)
 	}
 
-	keyId, err := nodeenrollment.KeyIdFromPkix(reqInfo.CertificatePublicKeyPkix)
-	if err != nil {
-		return nil, nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
-	}
-
-	// If it's our expected nonce-size it's a normal fetch, not a
-	// server-generated activation token
-	if len(reqInfo.Nonce) == nodeenrollment.NonceSize {
-		nodeInfo, err := types.LoadNodeInformation(ctx, storage, keyId, opt...)
-		return reqInfo, nodeInfo, err
-	}
-
-	return reqInfo, nil, nodeenrollment.ErrNotFound
+	return reqInfo, nil
 }
 
 // FetchNodeCredentials fetches node credentials based on the submitted
@@ -129,22 +117,31 @@ func FetchNodeCredentials(
 		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
-	reqInfo, nodeInfo, err := validateFetchRequestCommon(ctx, storage, req, opt...)
+	var nodeInfo *types.NodeInformation
+	reqInfo, err := validateFetchRequestCommon(ctx, storage, req, opt...)
 	switch {
-	case err == nil && nodeInfo == nil:
-		// Unauthorized, so return empty
-		return new(types.FetchNodeCredentialsResponse), nil
+	case err != nil:
+		return nil, fmt.Errorf("(%s) error during fetch request validation: %w", op, err)
 
-	case err == nil:
-		// All is good, continue after this switch
+	case len(reqInfo.Nonce) == nodeenrollment.NonceSize:
+		// This is our normal fetch case with node-led activation
+		keyId, err := nodeenrollment.KeyIdFromPkix(reqInfo.CertificatePublicKeyPkix)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
+		}
 
-	case !errors.Is(err, nodeenrollment.ErrNotFound):
-		return nil, fmt.Errorf("(%s) error looking up node information from storage: %w", op, err)
+		nodeInfo, err = types.LoadNodeInformation(ctx, storage, keyId, opt...)
+		switch {
+		case err != nil && !errors.Is(err, nodeenrollment.ErrNotFound):
+			return nil, fmt.Errorf("(%s) error looking up node information from storage: %w", op, err)
+		case err != nil, nodeInfo == nil:
+			// Unauthorized, so return empty
+			return new(types.FetchNodeCredentialsResponse), nil
+		}
 
-	case errors.Is(err, nodeenrollment.ErrNotFound) && len(reqInfo.Nonce) != 0:
-		// We expect to get this error if the node doesn't exist yet due to
-		// having a server-led activation token included, so check for that and
-		// authorize it
+	case len(reqInfo.Nonce) != 0:
+		// In this case where we have a non-standard nonce size it is containing
+		// a server-led activation token, so expect that
 		tokenNonce := new(types.ServerLedActivationTokenNonce)
 		if err := proto.Unmarshal(reqInfo.Nonce, tokenNonce); err != nil {
 			if strings.Contains(err.Error(), "cannot parse invalid wire-format data") {
@@ -162,6 +159,10 @@ func FetchNodeCredentials(
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error validating server-led activation token: %w", op, err)
 		}
+
+	default:
+		// No error but we don't know what to do in this condition
+		return nil, fmt.Errorf("(%s) unexpected case after validating fetch request", op)
 	}
 
 	// Run some validations
