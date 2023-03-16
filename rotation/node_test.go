@@ -9,7 +9,7 @@ import (
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/registration"
-	"github.com/hashicorp/nodeenrollment/storage/file"
+	"github.com/hashicorp/nodeenrollment/storage/inmem"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,9 +26,8 @@ func TestRotateNodeCredentials(t *testing.T) {
 
 	ctx := context.Background()
 
-	storage, err := file.New(ctx)
+	storage, err := inmem.New(ctx)
 	require.NoError(t, err)
-	t.Cleanup(storage.Cleanup)
 
 	// Ensure nil storage fails
 	roots, err := RotateRootCertificates(ctx, storage)

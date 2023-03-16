@@ -14,7 +14,7 @@ import (
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/rotation"
-	"github.com/hashicorp/nodeenrollment/storage/file"
+	"github.com/hashicorp/nodeenrollment/storage/inmem"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,15 +28,14 @@ func TestValidateFetchRequest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	fileStorage, err := file.New(ctx)
+	storage, err := inmem.New(ctx)
 	require.NoError(t, err)
-	t.Cleanup(fileStorage.Cleanup)
 
-	roots, err := rotation.RotateRootCertificates(ctx, fileStorage)
+	roots, err := rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
 	// This happens on the node
-	nodeCreds, err := types.NewNodeCredentials(ctx, fileStorage)
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
 	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
 	require.NoError(t, err)
@@ -46,9 +45,9 @@ func TestValidateFetchRequest(t *testing.T) {
 	require.NoError(t, err)
 
 	// Also create a server-led value for that path
-	_, activationToken, err := registration.CreateServerLedActivationToken(ctx, fileStorage, &types.ServerLedRegistrationRequest{})
+	_, activationToken, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{})
 	require.NoError(t, err)
-	serverLedNodeCreds, err := types.NewNodeCredentials(ctx, fileStorage, nodeenrollment.WithActivationToken(activationToken))
+	serverLedNodeCreds, err := types.NewNodeCredentials(ctx, storage, nodeenrollment.WithActivationToken(activationToken))
 	require.NoError(t, err)
 	serverLedFetchReq, err := serverLedNodeCreds.CreateFetchNodeCredentialsRequest(ctx)
 	require.NoError(t, err)
@@ -238,10 +237,10 @@ func TestValidateFetchRequest(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			require, assert := require.New(t), assert.New(t)
 
-			storage := fileStorage
-
 			// Remove anything left from previous tests
 			_ = storage.Remove(ctx, baseNodeInfo)
+
+			localStorage := storage
 
 			var wantErrContains string
 			fetch := fetchReq
@@ -250,13 +249,13 @@ func TestValidateFetchRequest(t *testing.T) {
 			}
 
 			if tt.storageNil {
-				storage = nil
+				localStorage = nil
 				wantErrContains = "nil storage" // this doesn't overlap in test cases
 			}
 
 			if tt.runAuthorization {
 				// We have to _actually_ authorize the node here to populate things we need
-				_, err := registration.AuthorizeNode(ctx, storage, fetch)
+				_, err := registration.AuthorizeNode(ctx, localStorage, fetch)
 				switch tt.wantAuthzErrContains {
 				case "":
 					require.NoError(err)
@@ -267,7 +266,7 @@ func TestValidateFetchRequest(t *testing.T) {
 				}
 			}
 
-			resp, err := registration.FetchNodeCredentials(ctx, storage, fetch)
+			resp, err := registration.FetchNodeCredentials(ctx, localStorage, fetch)
 			switch wantErrContains {
 			case "":
 				require.NoError(err)
@@ -295,7 +294,7 @@ func TestValidateFetchRequest(t *testing.T) {
 			require.True(ed25519.Verify(caKey.(ed25519.PublicKey), resp.EncryptedNodeCredentials, resp.EncryptedNodeCredentialsSignature))
 
 			// Now decrypt
-			require.NoError(storage.Load(ctx, checkNodeInfo))
+			require.NoError(localStorage.Load(ctx, checkNodeInfo))
 			require.NotNil(checkNodeInfo)
 			var receivedNodeCreds types.NodeCredentials
 			require.NoError(nodeenrollment.DecryptMessage(ctx, resp.EncryptedNodeCredentials, checkNodeInfo, &receivedNodeCreds))
@@ -313,15 +312,14 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	fileStorage, err := file.New(ctx)
+	storage, err := inmem.New(ctx)
 	require.NoError(t, err)
-	t.Cleanup(fileStorage.Cleanup)
 
-	roots, err := rotation.RotateRootCertificates(ctx, fileStorage)
+	roots, err := rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
 	// This happens on the node
-	nodeCreds, err := types.NewNodeCredentials(ctx, fileStorage)
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
 	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
 	require.NoError(t, err)
@@ -358,8 +356,6 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require, assert := require.New(t), assert.New(t)
-
-			storage := fileStorage
 
 			var ni *types.NodeInformation
 			if tt.nodeInfoSetupFn != nil {
@@ -407,9 +403,8 @@ func TestNodeLedRegistration_AuthorizeNode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	fileStorage, err := file.New(ctx)
+	fileStorage, err := inmem.New(ctx)
 	require.NoError(t, err)
-	t.Cleanup(fileStorage.Cleanup)
 
 	_, err = rotation.RotateRootCertificates(ctx, fileStorage)
 	require.NoError(t, err)

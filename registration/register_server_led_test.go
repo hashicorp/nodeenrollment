@@ -14,7 +14,7 @@ import (
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/rotation"
-	"github.com/hashicorp/nodeenrollment/storage/file"
+	"github.com/hashicorp/nodeenrollment/storage/inmem"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/assert"
@@ -27,9 +27,8 @@ func TestServerLedRegistration(t *testing.T) {
 	require, assert := require.New(t), assert.New(t)
 	ctx := context.Background()
 
-	storage, err := file.New(ctx)
+	storage, err := inmem.New(ctx)
 	require.NoError(err)
-	t.Cleanup(storage.Cleanup)
 
 	_, err = rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(err)

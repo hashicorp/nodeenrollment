@@ -10,7 +10,7 @@ import (
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/rotation"
-	"github.com/hashicorp/nodeenrollment/storage/file"
+	"github.com/hashicorp/nodeenrollment/storage/inmem"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/require"
 )
@@ -21,9 +21,8 @@ func CommonTestParams(t *testing.T) (context.Context, nodeenrollment.Storage, *t
 	t.Helper()
 	ctx := context.Background()
 
-	storage, err := file.New(ctx)
+	storage, err := inmem.New(ctx)
 	require.NoError(t, err)
-	t.Cleanup(storage.Cleanup)
 
 	_, err = rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)

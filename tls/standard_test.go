@@ -17,7 +17,7 @@ import (
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/rotation"
-	"github.com/hashicorp/nodeenrollment/storage/file"
+	"github.com/hashicorp/nodeenrollment/storage/inmem"
 	nodetesting "github.com/hashicorp/nodeenrollment/testing"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
@@ -92,9 +92,8 @@ func TestStandardTls(t *testing.T) {
 	t.Log("invalid-wrong-cert-in-pool")
 	// Create a new root set (on new storage since rotating won't do anything
 	// right now due to validity windows)
-	wrongStorage, err := file.New(ctx)
+	wrongStorage, err := inmem.New(ctx)
 	require.NoError(t, err)
-	t.Cleanup(wrongStorage.Cleanup)
 	wrongRoots, err := rotation.RotateRootCertificates(ctx, wrongStorage, nodeenrollment.WithSkipStorage(true))
 	require.NoError(t, err)
 	wrongRootPool := x509.NewCertPool()

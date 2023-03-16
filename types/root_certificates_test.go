@@ -14,7 +14,7 @@ import (
 	"github.com/hashicorp/go-kms-wrapping/v2/aead"
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/rotation"
-	"github.com/hashicorp/nodeenrollment/storage/file"
+	"github.com/hashicorp/nodeenrollment/storage/inmem"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,9 +26,8 @@ import (
 func TestRootCertificates_StoreLoad(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	storage, err := file.New(ctx)
+	storage, err := inmem.New(ctx)
 	require.NoError(t, err)
-	t.Cleanup(storage.Cleanup)
 
 	// Generate a suitable root
 	_, privKey, err := ed25519.GenerateKey(nil)
@@ -215,9 +214,8 @@ func TestRootCertificates_StoreLoad(t *testing.T) {
 func TestRootCertificate_SigningParams(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	storage, err := file.New(ctx)
+	storage, err := inmem.New(ctx)
 	require.NoError(t, err)
-	t.Cleanup(storage.Cleanup)
 
 	roots, err := rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)

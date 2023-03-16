@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/go-kms-wrapping/v2/aead"
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/storage/file"
+	"github.com/hashicorp/nodeenrollment/storage/inmem"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,9 +29,8 @@ import (
 func TestNodeCredentials_StoreLoad(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	storage, err := file.New(ctx)
+	storage, err := inmem.New(ctx)
 	require.NoError(t, err)
-	t.Cleanup(storage.Cleanup)
 
 	// Generate a suitable root
 	privKey := make([]byte, curve25519.ScalarSize)
@@ -406,9 +406,8 @@ func TestNodeCredentials_New(t *testing.T) {
 
 	ctx := context.Background()
 
-	fileStorage, err := file.New(ctx)
+	storage, err := inmem.New(ctx)
 	require.NoError(t, err)
-	t.Cleanup(fileStorage.Cleanup)
 
 	tests := []struct {
 		name            string
@@ -417,7 +416,7 @@ func TestNodeCredentials_New(t *testing.T) {
 	}{
 		{
 			name:    "valid",
-			storage: fileStorage,
+			storage: storage,
 		},
 		{
 			name:            "nil-storage",
@@ -453,12 +452,11 @@ func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
 
 	ctx := context.Background()
 
-	fileStorage, err := file.New(ctx)
+	storage, err := inmem.New(ctx)
 	require.NoError(t, err)
-	t.Cleanup(fileStorage.Cleanup)
 
 	// Generate a suitable root
-	nodeCreds, err := types.NewNodeCredentials(ctx, fileStorage)
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -552,12 +550,11 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 
 	ctx := context.Background()
 
-	fileStorage, err := file.New(ctx)
+	storage, err := file.New(ctx)
 	require.NoError(t, err)
-	t.Cleanup(fileStorage.Cleanup)
 
 	// Generate a suitable root
-	nodeCreds, err := types.NewNodeCredentials(ctx, fileStorage)
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
 
 	// Create server keys
@@ -612,14 +609,14 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 			nodeCredsSetupFn: func(in *types.NodeCredentials) (*types.NodeCredentials, string) {
 				return nil, "node credentials is nil"
 			},
-			storage: fileStorage,
+			storage: storage,
 		},
 		{
 			name: "invalid-resp-nil",
 			respSetupFn: func(in *types.FetchNodeCredentialsResponse) (*types.FetchNodeCredentialsResponse, string) {
 				return nil, "input is nil"
 			},
-			storage: fileStorage,
+			storage: storage,
 		},
 		{
 			name: "invalid-resp-nil-creds",
@@ -627,7 +624,7 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 				in.EncryptedNodeCredentials = nil
 				return in, "input encrypted node credentials"
 			},
-			storage: fileStorage,
+			storage: storage,
 		},
 		{
 			name: "invalid-resp-nil-server-pubkey-bytes",
@@ -635,7 +632,7 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 				in.ServerEncryptionPublicKeyBytes = nil
 				return in, "encryption public key bytes"
 			},
-			storage: fileStorage,
+			storage: storage,
 		},
 		{
 			name: "invalid-resp-nil-server-pubkey-type",
@@ -643,7 +640,7 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 				in.ServerEncryptionPublicKeyType = types.KEYTYPE_ED25519
 				return in, "encryption public key type"
 			},
-			storage: fileStorage,
+			storage: storage,
 		},
 		{
 			name:            "invalid-nil storage",
@@ -657,11 +654,11 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 				in.EncryptedNodeCredentials[30] = 'y'
 				return in, "message authentication failed"
 			},
-			storage: fileStorage,
+			storage: storage,
 		},
 		{
 			name:    "valid",
-			storage: fileStorage,
+			storage: storage,
 		},
 	}
 	for _, tt := range tests {

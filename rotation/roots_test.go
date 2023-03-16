@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/nodeenrollment"
-	"github.com/hashicorp/nodeenrollment/storage/file"
+	"github.com/hashicorp/nodeenrollment/storage/inmem"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,9 +24,8 @@ func TestRotateRootCertificates(t *testing.T) {
 	require, assert := require.New(t), assert.New(t)
 	ctx := context.Background()
 
-	storage, err := file.New(ctx)
+	storage, err := inmem.New(ctx)
 	require.NoError(err)
-	t.Cleanup(storage.Cleanup)
 
 	// Ensure nil storage fails
 	roots, err := RotateRootCertificates(ctx, nil)
@@ -119,9 +118,8 @@ func TestReinitializeRootCertificates(t *testing.T) {
 	require, assert := require.New(t), assert.New(t)
 	ctx := context.Background()
 
-	storage, err := file.New(ctx)
+	storage, err := inmem.New(ctx)
 	require.NoError(err)
-	t.Cleanup(storage.Cleanup)
 
 	const lifetime time.Duration = 30 * time.Second
 	const skew time.Duration = 5 * time.Second
@@ -174,9 +172,8 @@ func TestReinitializeRootCertificates(t *testing.T) {
 func TestDecideWhatToMake(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	storage, err := file.New(ctx)
+	storage, err := inmem.New(ctx)
 	require.NoError(t, err)
-	t.Cleanup(storage.Cleanup)
 
 	// Get some to modify
 	roots, err := RotateRootCertificates(ctx, storage)
