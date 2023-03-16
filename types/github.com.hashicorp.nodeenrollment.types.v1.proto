@@ -57,7 +57,7 @@ message RootCertificates {
 // EncryptionKey contains the key information necessary to generate a sharedKey
 // NodeInformation and NodeCredentials will store their previous encryption key
 // using this message type
-message EncryptionKey{
+message EncryptionKey {
   string key_id = 1 [json_name="key_id"];
   bytes private_key_pkcs8 = 2 [json_name="private_key_pkcs8"];
   KEYTYPE private_key_type = 3 [json_name="private_key_type"];
@@ -93,6 +93,9 @@ message NodeInformation {
   KEYTYPE server_encryption_private_key_type = 13 [json_name="server_encryption_private_key_type"];
 
   bytes registration_nonce = 20 [json_name="registration_nonce"];
+  // This will be populated with with any decrypted values that came in as a
+  // result of this flow
+  WrappingRegistrationFlowInfo wrapping_registration_flow_info = 22 [json_name="wrapping_registration_flow_info"];
 
   // If set, the key ID of the wrapping key used to encrypt the private key and
   // the nonce
@@ -135,6 +138,22 @@ message NodeCredentials {
   EncryptionKey previous_encryption_key = 60 [json_name="previous_encryption_key"];
 }
 
+// WrappingRegistrationFlowInfo is a message that can be encrypted via a shared
+// encryption wrapper and supplied to perform just-in-time registration. The
+// public key contained in this bundle must match that within
+// FetchNodeCredentialsInfo, as must the nonce. Forgeries by other users with
+// access to the wrapper are prevented due to the signature on the
+// FetchNodeCredentialsRequest including this; replays are prevented because the
+// returned credentials are still encrypted to the derived shared key. State can
+// be used to pass extra registration information to the consuming application.
+message WrappingRegistrationFlowInfo {
+  bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
+
+  bytes nonce = 20;
+
+  google.protobuf.Struct application_specific_params = 50;
+}
+
 // FetchNodeCredentialsInfo contains the values bundled and signed into a
 // FetchNodeCredentialsRequest. These values contain the ID (for identification,
 // although the server should always re-derive this itself), the claimed
@@ -156,6 +175,12 @@ message FetchNodeCredentialsInfo {
 
   bytes nonce = 20;
 
+  // If provided, a wrapped (encrypted) registration bundle that can be used for
+  // just-in-time authorization
+  bytes wrapped_registration_info = 21 [json_name="wrapped_registration_info"];
+  // This will be populated with decrypted values if the above field is populated
+  WrappingRegistrationFlowInfo wrapping_registration_flow_info = 22 [json_name="wrapping_registration_flow_info"];
+
   google.protobuf.Timestamp not_before = 7 [json_name="not_before"];
   google.protobuf.Timestamp not_after = 8 [json_name="not_after"];
 }
@@ -166,6 +191,13 @@ message FetchNodeCredentialsInfo {
 message FetchNodeCredentialsRequest {
   bytes bundle = 28;
   bytes bundle_signature = 29 [json_name="bundle_signature"];
+
+  // If an intermediate node is decrypting the wrapped registration info with a
+  // wrapper not available on the server, it can't cache the decrypted value in
+  // the original bundle because it's signed. In that case, it can cache the
+  // value here and encrypt it to the server.
+  bytes rewrapped_wrapping_registration_flow_info = 32 [json_name="rewrapped_wrapping_registration_flow_info"];
+  string rewrapping_key_id = 33 [json_name="rewrapping_key_id"];
 }
 
 // FetchNodeCredentialsResponse contains a response to a fetch request. If

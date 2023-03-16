@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/armon/go-radix v1.0.0
 	github.com/google/go-cmp v0.5.8
+	github.com/hashicorp/go-hclog v1.4.0
 	github.com/hashicorp/go-kms-wrapping/v2 v2.0.7
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/mr-tron/base58 v1.2.0
@@ -18,10 +19,13 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/fatih/color v1.13.0 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-uuid v1.0.2 // indirect
 	github.com/kr/text v0.2.0 // indirect
+	github.com/mattn/go-colorable v0.1.12 // indirect
+	github.com/mattn/go-isatty v0.0.14 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
 	golang.org/x/net v0.5.0 // indirect

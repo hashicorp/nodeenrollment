@@ -68,7 +68,7 @@ type InterceptingListenerConfiguration struct {
 	GenerateServerCertificatesFunc GenerateServerCertificatesFn
 
 	// If provided, options to pass into various storage functions, e.g.
-	// WithRandomReader and WithWrapper
+	// WithRandomReader, WithWrapper, WithLogger
 	Options []nodeenrollment.Option
 }
 

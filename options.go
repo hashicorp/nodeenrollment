@@ -10,6 +10,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -32,23 +33,26 @@ func GetOpts(opt ...Option) (*Options, error) {
 // Options contains various options. The values are exported since the options
 // are parsed in various other packages.
 type Options struct {
-	WithCertificateLifetime                     time.Duration
-	WithNotBeforeClockSkew                      time.Duration
-	WithNotAfterClockSkew                       time.Duration
-	WithRandomReader                            io.Reader
-	WithNonce                                   string
-	WithTlsVerifyOptionsFunc                    func(*x509.CertPool) x509.VerifyOptions
-	WithWrapper                                 wrapping.Wrapper
-	WithSkipStorage                             bool
-	WithExpectedPublicKey                       []byte
-	WithState                                   *structpb.Struct
-	WithAlpnProtoPrefix                         string
-	WithServerName                              string
-	WithExtraAlpnProtos                         []string
-	WithReinitializeRoots                       bool
-	WithActivationToken                         string
-	WithMaximumServerLedActivationTokenLifetime time.Duration
-	WithNativeConns                             bool
+	WithCertificateLifetime                               time.Duration
+	WithNotBeforeClockSkew                                time.Duration
+	WithNotAfterClockSkew                                 time.Duration
+	WithRandomReader                                      io.Reader
+	WithNonce                                             string
+	WithTlsVerifyOptionsFunc                              func(*x509.CertPool) x509.VerifyOptions
+	WithWrapper                                           wrapping.Wrapper
+	WithRegistrationWrapper                               wrapping.Wrapper
+	WithSkipStorage                                       bool
+	WithExpectedPublicKey                                 []byte
+	WithState                                             *structpb.Struct
+	WithWrappingRegistrationFlowApplicationSpecificParams *structpb.Struct
+	WithAlpnProtoPrefix                                   string
+	WithServerName                                        string
+	WithExtraAlpnProtos                                   []string
+	WithReinitializeRoots                                 bool
+	WithActivationToken                                   string
+	WithMaximumServerLedActivationTokenLifetime           time.Duration
+	WithNativeConns                                       bool
+	WithLogger                                            hclog.Logger
 }
 
 // Option is a function that takes in an options struct and sets values or
@@ -62,6 +66,7 @@ func getDefaultOptions() *Options {
 		WithNotAfterClockSkew:                       DefaultNotAfterClockSkewDuration,
 		WithMaximumServerLedActivationTokenLifetime: DefaultMaximumServerLedActivationTokenLifetime,
 		WithRandomReader:                            rand.Reader,
+		WithLogger:                                  hclog.NewNullLogger(),
 	}
 }
 
@@ -129,6 +134,17 @@ func WithWrapper(with wrapping.Wrapper) Option {
 	}
 }
 
+// WithRegistrationWrapper can be used when fetching node credentials to provide
+// registration information. If you want to support more than one, use a pooled
+// wrapper
+// (https://pkg.go.dev/github.com/hashicorp/go-kms-wrapping/v2/extras/multi)
+func WithRegistrationWrapper(with wrapping.Wrapper) Option {
+	return func(o *Options) error {
+		o.WithRegistrationWrapper = with
+		return nil
+	}
+}
+
 // WithSkipStorage allows indicating that the newly generated resource should
 // not be stored in storage, but simply returned in-memory only, useful for
 // tests or cases where the storage implementation wants to manage storage
@@ -154,6 +170,15 @@ func WithExpectedPublicKey(with []byte) Option {
 func WithState(with *structpb.Struct) Option {
 	return func(o *Options) error {
 		o.WithState = with
+		return nil
+	}
+}
+
+// WithWrappingRegistrationFlowApplicationSpecificParams allows passing extra application
+// specific parameters when using the wrapping registration flow
+func WithWrappingRegistrationFlowApplicationSpecificParams(with *structpb.Struct) Option {
+	return func(o *Options) error {
+		o.WithWrappingRegistrationFlowApplicationSpecificParams = with
 		return nil
 	}
 }
@@ -224,6 +249,14 @@ func WithMaximumServerLedActivationTokenLifetime(with time.Duration) Option {
 func WithNativeConns(with bool) Option {
 	return func(o *Options) error {
 		o.WithNativeConns = with
+		return nil
+	}
+}
+
+// WithLogger allows passing in a logger to use for debugging purposes
+func WithLogger(with hclog.Logger) Option {
+	return func(o *Options) error {
+		o.WithLogger = with
 		return nil
 	}
 }

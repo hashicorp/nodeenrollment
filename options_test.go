@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -88,6 +89,16 @@ func Test_GetOpts(t *testing.T) {
 		require.NoError(err)
 		assert.Equal(wrapper, opts.WithWrapper)
 	})
+	t.Run("with-registration-wrapper", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.Nil(opts.WithRegistrationWrapper)
+		wrapper := new(wrapping.TestWrapper)
+		opts, err = GetOpts(WithRegistrationWrapper(wrapper))
+		require.NoError(err)
+		assert.Equal(wrapper, opts.WithRegistrationWrapper)
+	})
 	t.Run("with-skip-storage", func(t *testing.T) {
 		assert, require := assert.New(t), require.New(t)
 		opts, err := GetOpts()
@@ -117,6 +128,18 @@ func Test_GetOpts(t *testing.T) {
 		opts, err = GetOpts(WithState(state))
 		require.NoError(err)
 		assert.Equal(structMap, opts.WithState.AsMap())
+	})
+	t.Run("with-wrapping-registration-flow-application-specific-params", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.Empty(opts.WithWrappingRegistrationFlowApplicationSpecificParams)
+		structMap := map[string]interface{}{"foo": "bar"}
+		state, err := structpb.NewStruct(structMap)
+		require.NoError(err)
+		opts, err = GetOpts(WithWrappingRegistrationFlowApplicationSpecificParams(state))
+		require.NoError(err)
+		assert.Equal(structMap, opts.WithWrappingRegistrationFlowApplicationSpecificParams.AsMap())
 	})
 	t.Run("with-alpn-proto-prefix", func(t *testing.T) {
 		assert, require := assert.New(t), require.New(t)
@@ -185,5 +208,17 @@ func Test_GetOpts(t *testing.T) {
 		opts, err = GetOpts(WithNativeConns(true))
 		require.NoError(err)
 		assert.True(opts.WithNativeConns)
+	})
+	t.Run("with-logger", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		require.NotNil(opts.WithLogger)
+		currLogger := opts.WithLogger
+		logger := hclog.Default()
+		opts, err = GetOpts(WithLogger(logger))
+		require.NoError(err)
+		require.NotNil(opts.WithLogger)
+		assert.NotEqual(currLogger, opts.WithLogger)
 	})
 }

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/types"
 	"golang.org/x/crypto/curve25519"
@@ -95,10 +96,10 @@ func validateFetchRequestCommon(
 // FetchNodeCredentials fetches node credentials based on the submitted
 // information.
 //
-// Supported options: WithRandomReader, WithWrapper (passed through to
-// LoadNodeInformation, NodeInformation.Store, and LoadRootCertificates),
-// WithNotBeforeClockSkew/WithNotAfterClockSkew/WithState (passed through to
-// validateFetchRequest)
+// Supported options: WithRandomReader, WithRegistrationWrapper, WithWrapper
+// (passed through to LoadNodeInformation, NodeInformation.Store, and
+// LoadRootCertificates), WithNotBeforeClockSkew/WithNotAfterClockSkew/WithState
+// (passed through to validateFetchRequest)
 //
 // Note: If the request nonce is a server-led activation token and it contains
 // state, this will overwrite any state passed in via options to this function;
@@ -121,7 +122,60 @@ func FetchNodeCredentials(
 	reqInfo, err := validateFetchRequestCommon(ctx, storage, req, opt...)
 	switch {
 	case err != nil:
-		return nil, fmt.Errorf("(%s) error during fetch request validation: %w", op, err)
+		err := fmt.Errorf("(%s) error during fetch request validation: %w", op, err)
+		return nil, err
+
+	case len(reqInfo.WrappedRegistrationInfo) > 0 || len(req.RewrappedWrappingRegistrationFlowInfo) > 0:
+		var registrationInfo *types.WrappingRegistrationFlowInfo
+		if len(req.RewrappedWrappingRegistrationFlowInfo) > 0 {
+			encryptingNodeInfo, err := types.LoadNodeInformation(ctx, storage, req.RewrappingKeyId, opt...)
+			if err != nil {
+				err := fmt.Errorf("(%s) error looking up node information for rewrapping key id: %w", op, err)
+				opts.WithLogger.Error(err.Error())
+				return nil, err
+			}
+			registrationInfo = new(types.WrappingRegistrationFlowInfo)
+			if err := nodeenrollment.DecryptMessage(ctx, req.RewrappedWrappingRegistrationFlowInfo, encryptingNodeInfo, registrationInfo); err != nil {
+				err := fmt.Errorf("(%s) error decrypting rewrapped registration info: %w", op, err)
+				opts.WithLogger.Error(err.Error())
+				return nil, err
+			}
+		} else {
+			registrationInfo, err = DecryptWrappedRegistrationInfo(ctx, reqInfo, opt...)
+			if err != nil {
+				opts.WithLogger.Error(err.Error())
+				return nil, err
+			}
+		}
+		if registrationInfo == nil {
+			err := fmt.Errorf("(%s) registration info nil after decryption", op)
+			opts.WithLogger.Error(err.Error())
+			return nil, err
+		}
+
+		// Regardless of how we got the decrypted data, perform validation here
+		// since here is where we validated the signature on the bundle and the
+		// overall validity of the bundle
+		if subtle.ConstantTimeCompare(registrationInfo.Nonce, reqInfo.Nonce) != 1 {
+			err := fmt.Errorf("(%s) mismatched nonce in unwrapped registration info", op)
+			opts.WithLogger.Error(err.Error())
+			return nil, err
+		}
+		if subtle.ConstantTimeCompare(registrationInfo.CertificatePublicKeyPkix, reqInfo.CertificatePublicKeyPkix) != 1 {
+			err := fmt.Errorf("(%s) mismatched public key in unwrapped registration info", op)
+			opts.WithLogger.Error(err.Error())
+			return nil, err
+		}
+		// Cache the decrypted registration information so that it's usable when
+		// authorizing the node
+		reqInfo.WrappingRegistrationFlowInfo = registrationInfo
+
+		nodeInfo, err = authorizeNodeCommon(ctx, storage, reqInfo, opt...)
+		if err != nil {
+			err := fmt.Errorf("(%s) error authorizing node after validating wrapping-flow registration: %w", op, err)
+			opts.WithLogger.Error(err.Error())
+			return nil, err
+		}
 
 	case len(reqInfo.Nonce) == nodeenrollment.NonceSize:
 		// This is our normal fetch case with node-led activation
@@ -139,9 +193,10 @@ func FetchNodeCredentials(
 			return new(types.FetchNodeCredentialsResponse), nil
 		}
 
-	case len(reqInfo.Nonce) != 0:
+	case len(reqInfo.Nonce) > 0:
 		// In this case where we have a non-standard nonce size it is containing
-		// a server-led activation token, so expect that
+		// a server-led activation token, which is a proto marshal and may vary
+		// in size, so expect that
 		tokenNonce := new(types.ServerLedActivationTokenNonce)
 		if err := proto.Unmarshal(reqInfo.Nonce, tokenNonce); err != nil {
 			if strings.Contains(err.Error(), "cannot parse invalid wire-format data") {
@@ -162,7 +217,7 @@ func FetchNodeCredentials(
 
 	default:
 		// No error but we don't know what to do in this condition
-		return nil, fmt.Errorf("(%s) unexpected case after validating fetch request", op)
+		return nil, fmt.Errorf("(%s) bad registration information during fetch", op)
 	}
 
 	// Run some validations
@@ -221,4 +276,44 @@ func FetchNodeCredentials(
 		ServerEncryptionPublicKeyBytes:    serverEncryptionPublicKey,
 		ServerEncryptionPublicKeyType:     nodeInfo.ServerEncryptionPrivateKeyType,
 	}, nil
+}
+
+// DecryptWrappedRegistrationInfo is shared functionality for decrypting wrapped
+// registration information that can be used both within registration and during
+// multi-hop contexts
+func DecryptWrappedRegistrationInfo(ctx context.Context, reqInfo *types.FetchNodeCredentialsInfo, opt ...nodeenrollment.Option) (*types.WrappingRegistrationFlowInfo, error) {
+	const op = "nodeenrollment.registration.DecryptWrappedRegistrationInfo"
+	opts, err := nodeenrollment.GetOpts(opt...)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
+	}
+
+	if nodeenrollment.IsNil(opts.WithRegistrationWrapper) {
+		err := fmt.Errorf("(%s) wrapped registration information in fetch request but no registration wrapper provided", op)
+		opts.WithLogger.Error(err.Error())
+		return nil, err
+	}
+
+	blobInfo := new(wrapping.BlobInfo)
+	if err := proto.Unmarshal(reqInfo.WrappedRegistrationInfo, blobInfo); err != nil {
+		err := fmt.Errorf("(%s) error unmarshaling encrypted wrapped registration info: %w", op, err)
+		opts.WithLogger.Error(err.Error())
+		return nil, err
+	}
+
+	registrationInfoBytes, err := opts.WithRegistrationWrapper.Decrypt(ctx, blobInfo)
+	if err != nil {
+		err := fmt.Errorf("(%s) error decrypting encrypted wrapped registration info: %w", op, err)
+		opts.WithLogger.Error(err.Error())
+		return nil, err
+	}
+
+	registrationInfo := new(types.WrappingRegistrationFlowInfo)
+	if err := proto.Unmarshal(registrationInfoBytes, registrationInfo); err != nil {
+		err := fmt.Errorf("(%s) error unmarshaling decrypted wrapped registration info: %w", op, err)
+		opts.WithLogger.Error(err.Error())
+		return nil, err
+	}
+
+	return registrationInfo, nil
 }
