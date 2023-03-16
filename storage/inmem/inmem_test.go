@@ -1,7 +1,7 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package file
+package inmem
 
 import (
 	"context"
@@ -24,7 +24,6 @@ func Test_StorageLifecycle(t *testing.T) {
 
 	ts, err := New(ctx)
 	require.NoError(err)
-	t.Cleanup(func() { ts.Cleanup(ctx) })
 
 	// Create three roots and store them. After we store each, expect that the
 	// number of found items in a list is equivalent.
@@ -48,7 +47,7 @@ func Test_StorageLifecycle(t *testing.T) {
 
 	// Now ensure that the listed items actually match! We know the length is
 	// correct, so if any aren't found then it's an issue. Load each and ensure
-	// the ID matches.
+	// the ID matches. Also ensure that bogus info doesn't load.
 	rootIds, err := ts.List(ctx, (*types.RootCertificates)(nil))
 	require.NoError(err)
 	assert.Len(rootIds, numRoots)
@@ -62,6 +61,7 @@ func Test_StorageLifecycle(t *testing.T) {
 		roots = &types.RootCertificates{Id: rootId}
 		require.NoError(ts.Load(ctx, roots))
 		require.NoError(err)
+
 		assert.Equal(string(roots.Current.PrivateKeyPkcs8), rootId)
 	}
 
@@ -90,7 +90,6 @@ func Test_StorageMessageType(t *testing.T) {
 
 	ts, err := New(ctx)
 	tRequire.NoError(err)
-	t.Cleanup(func() { ts.Cleanup(ctx) })
 
 	tests := []struct {
 		name            string

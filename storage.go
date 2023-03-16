@@ -42,3 +42,11 @@ type Storage interface {
 	// disambiguate what to list, and can be a nil pointer to the type.
 	List(context.Context, proto.Message) ([]string, error)
 }
+
+// CleanableStorage is an interface that can optionally be implemented by storage
+// implementations to indicate that there is a cleanup function that can be run
+// when storage usage is complete.
+type CleanableStorage interface {
+	// Cleanup is a cleanup function
+	Cleanup(context.Context) error
+}
