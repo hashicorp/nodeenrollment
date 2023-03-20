@@ -285,7 +285,9 @@ func DecryptWrappedRegistrationInfo(ctx context.Context, reqInfo *types.FetchNod
 	const op = "nodeenrollment.registration.DecryptWrappedRegistrationInfo"
 	opts, err := nodeenrollment.GetOpts(opt...)
 	if err != nil {
-		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
+		err := fmt.Errorf("(%s) error parsing options: %w", op, err)
+		opts.WithLogger.Error(err.Error())
+		return nil, err
 	}
 
 	if nodeenrollment.IsNil(reqInfo) {
