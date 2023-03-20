@@ -288,6 +288,12 @@ func DecryptWrappedRegistrationInfo(ctx context.Context, reqInfo *types.FetchNod
 		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
+	if nodeenrollment.IsNil(reqInfo) {
+		err := fmt.Errorf("(%s) fetch request is nil", op)
+		opts.WithLogger.Error(err.Error())
+		return nil, err
+	}
+
 	if nodeenrollment.IsNil(opts.WithRegistrationWrapper) {
 		err := fmt.Errorf("(%s) wrapped registration information in fetch request but no registration wrapper provided", op)
 		opts.WithLogger.Error(err.Error())
