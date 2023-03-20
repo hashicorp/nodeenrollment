@@ -377,7 +377,8 @@ func (n *NodeCredentials) SetPreviousEncryptionKey(oldNodeCredentials *NodeCrede
 //
 // Supported options: WithRandomReader, WithActivationToken (used in place of
 // the node's nonce value if provided, for the server-led flow; note that this
-// should be the full string token, it will be decoded by this function)
+// should be the full string token, it will be decoded by this function),
+// WithRegistrationWrapper/WithWrappingRegistrationFlowApplicationSpecificParams
 func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 	ctx context.Context,
 	opt ...nodeenrollment.Option,
@@ -417,7 +418,29 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		NotAfter:                 timestamppb.New(now.Add(nodeenrollment.DefaultFetchCredentialsLifetime)),
 	}
 
-	if opts.WithActivationToken != "" {
+	switch {
+	case !nodeenrollment.IsNil(opts.WithRegistrationWrapper):
+		// Create an encrypted registration request
+		regInfo := &WrappingRegistrationFlowInfo{
+			CertificatePublicKeyPkix:  n.CertificatePublicKeyPkix,
+			Nonce:                     n.RegistrationNonce,
+			ApplicationSpecificParams: opts.WithWrappingRegistrationFlowApplicationSpecificParams,
+		}
+		regInfoBytes, err := proto.Marshal(regInfo)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error marshaling wrapping flow registration info: %w", op, err)
+		}
+		blobInfo, err := opts.WithRegistrationWrapper.Encrypt(ctx, regInfoBytes)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error encrypting wrapping flow registration info: %w", op, err)
+		}
+		encryptedRegInfo, err := proto.Marshal(blobInfo)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error marshaling encrypted wrapping flow registration info: %w", op, err)
+		}
+		reqInfo.WrappedRegistrationInfo = encryptedRegInfo
+
+	case opts.WithActivationToken != "":
 		nonce, err := base58.FastBase58Decoding(strings.TrimPrefix(opts.WithActivationToken, nodeenrollment.ServerLedActivationTokenPrefix))
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error base58-decoding activation token: %w", op, err)

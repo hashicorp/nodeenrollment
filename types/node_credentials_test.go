@@ -8,6 +8,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
+	"fmt"
 	"testing"
 	"time"
 
@@ -15,9 +16,11 @@ import (
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
 	"github.com/hashicorp/go-kms-wrapping/v2/aead"
 	"github.com/hashicorp/nodeenrollment"
+	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/storage/file"
 	"github.com/hashicorp/nodeenrollment/storage/inmem"
 	"github.com/hashicorp/nodeenrollment/types"
+	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/curve25519"
@@ -459,10 +462,23 @@ func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
 	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
 
+	wrapper := wrapping.NewTestWrapper([]byte("foobar"))
+	applicationSpecificParamsMap := map[string]any{"foo": "bar"}
+	mapOpt, err := structpb.NewStruct(applicationSpecificParamsMap)
+	require.NoError(t, err)
+
+	_, serverLedActivationToken, err := registration.CreateServerLedActivationToken(
+		ctx,
+		storage,
+		&types.ServerLedRegistrationRequest{},
+	)
+
 	tests := []struct {
 		name string
 		// Return a modified node information and a "want err contains" string
 		setupFn func(*types.NodeCredentials) (*types.NodeCredentials, string)
+		// Contains any options to pass into the function
+		opts []nodeenrollment.Option
 	}{
 		{
 			name: "invalid-nil",
@@ -504,6 +520,34 @@ func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
 				return nodeCreds, ""
 			},
 		},
+		{
+			name: "valid-bad-activation-token",
+			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+				return nodeCreds, "error base58-decoding"
+			},
+			opts: []nodeenrollment.Option{
+				nodeenrollment.WithActivationToken(serverLedActivationToken[6 : len(serverLedActivationToken)-5]),
+			},
+		},
+		{
+			name: "valid-good-activation-token",
+			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+				return nodeCreds, ""
+			},
+			opts: []nodeenrollment.Option{
+				nodeenrollment.WithActivationToken(serverLedActivationToken),
+			},
+		},
+		{
+			name: "valid-with-wrapper",
+			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+				return nodeCreds, ""
+			},
+			opts: []nodeenrollment.Option{
+				nodeenrollment.WithRegistrationWrapper(wrapper),
+				nodeenrollment.WithWrappingRegistrationFlowApplicationSpecificParams(mapOpt),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -513,7 +557,11 @@ func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
 			if tt.setupFn != nil {
 				n, wantErrContains = tt.setupFn(proto.Clone(n).(*types.NodeCredentials))
 			}
-			out, err := n.CreateFetchNodeCredentialsRequest(ctx)
+
+			opts, err := nodeenrollment.GetOpts(tt.opts...)
+			require.NoError(err)
+
+			out, err := n.CreateFetchNodeCredentialsRequest(ctx, tt.opts...)
 			if wantErrContains != "" {
 				require.Error(err)
 				assert.Contains(err.Error(), wantErrContains)
@@ -521,7 +569,7 @@ func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
 			}
 
 			require.NoError(err)
-			assert.NotEmpty(out)
+			require.NotEmpty(out)
 
 			// Now test the output
 			require.NotEmpty(out.Bundle)
@@ -532,7 +580,6 @@ func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
 
 			require.NotEmpty(fetchInfo.CertificatePublicKeyPkix)
 			assert.Equal(types.KEYTYPE_ED25519, fetchInfo.CertificatePublicKeyType)
-			assert.Equal(nodeCreds.RegistrationNonce, fetchInfo.Nonce)
 			assert.NotEmpty(fetchInfo.EncryptionPublicKeyBytes)
 			assert.Equal(types.KEYTYPE_X25519, fetchInfo.EncryptionPublicKeyType)
 			assert.Negative(time.Until(fetchInfo.NotBefore.AsTime()))
@@ -541,6 +588,26 @@ func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
 			pubKey, err := x509.ParsePKIXPublicKey(fetchInfo.CertificatePublicKeyPkix)
 			require.NoError(err)
 			assert.True(ed25519.Verify(pubKey.(ed25519.PublicKey), out.Bundle, out.BundleSignature))
+
+			if opts.WithActivationToken != "" {
+				assert.Equal(serverLedActivationToken, fmt.Sprintf("%s%s", nodeenrollment.ServerLedActivationTokenPrefix, base58.FastBase58Encoding(fetchInfo.Nonce)))
+			} else {
+				assert.Equal(nodeCreds.RegistrationNonce, fetchInfo.Nonce)
+			}
+
+			if !nodeenrollment.IsNil(opts.WithRegistrationWrapper) {
+				require.NotEmpty(fetchInfo.WrappedRegistrationInfo)
+				encryptedRegInfo := new(wrapping.BlobInfo)
+				require.NoError(proto.Unmarshal(fetchInfo.WrappedRegistrationInfo, encryptedRegInfo))
+				regInfoBytes, err := opts.WithRegistrationWrapper.Decrypt(ctx, encryptedRegInfo)
+				require.NoError(err)
+				require.NotEmpty(regInfoBytes)
+				regInfo := new(types.WrappingRegistrationFlowInfo)
+				require.NoError(proto.Unmarshal(regInfoBytes, regInfo))
+				assert.EqualValues(fetchInfo.CertificatePublicKeyPkix, regInfo.CertificatePublicKeyPkix)
+				assert.Equal(n.RegistrationNonce, regInfo.Nonce)
+				assert.EqualValues(applicationSpecificParamsMap, regInfo.ApplicationSpecificParams.AsMap())
+			}
 		})
 	}
 }
