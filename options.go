@@ -39,7 +39,7 @@ type Options struct {
 	WithRandomReader                                      io.Reader
 	WithNonce                                             string
 	WithTlsVerifyOptionsFunc                              func(*x509.CertPool) x509.VerifyOptions
-	WithWrapper                                           wrapping.Wrapper
+	WithStorageWrapper                                    wrapping.Wrapper
 	WithRegistrationWrapper                               wrapping.Wrapper
 	WithSkipStorage                                       bool
 	WithExpectedPublicKey                                 []byte
@@ -124,12 +124,12 @@ func WithTlsVerifyOptionsFunc(with func(*x509.CertPool) x509.VerifyOptions) Opti
 	}
 }
 
-// WithWrapper will cause the library to wrap any sensitive information (private
-// keys, nonces, etc.) with the given wrapper prior to writing to storage, and
-// to unwrap when reading from storage
-func WithWrapper(with wrapping.Wrapper) Option {
+// WithStorageWrapper will cause the library to wrap any sensitive information
+// (private keys, nonces, etc.) with the given wrapper prior to writing to
+// storage, and to unwrap when reading from storage
+func WithStorageWrapper(with wrapping.Wrapper) Option {
 	return func(o *Options) error {
-		o.WithWrapper = with
+		o.WithStorageWrapper = with
 		return nil
 	}
 }

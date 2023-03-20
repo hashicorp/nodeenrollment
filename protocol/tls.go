@@ -23,8 +23,8 @@ import (
 // If there is no ALPN proto handled by this library, the listener's base TLS
 // configuration will be chained to.
 //
-// Supported options: WithWrapper (passed through to LoadRootCertificate),
-// WithRandReader (passed through to ServerConfig and
+// Supported options: WithStorageWrapper (passed through to
+// LoadRootCertificate), WithRandReader (passed through to ServerConfig and
 // GenerateServerCertificates)
 func (l *InterceptingListener) getTlsConfigForClient(clientInfo *ClientInfo) func(*tls.ClientHelloInfo) (*tls.Config, error) {
 	const op = "nodeenrollment.protocol.(InterceptingListener).getTlsConfigForClient"

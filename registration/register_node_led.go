@@ -28,9 +28,9 @@ import (
 // nodeenrollment.ErrNotFound and customize logic appropriately. It is possible
 // for this function to return request info and also ErrNotFound to enable this.
 //
-// Supported options: WithWrapper (passed through to LoadNodeInformation),
-// WithNotBeforeClockSkew/WithNotAfterClockSkew, WithState (passed through to
-// authorizeNodeCommon.
+// Supported options: WithStorageWrapper (passed through to
+// LoadNodeInformation), WithNotBeforeClockSkew/WithNotAfterClockSkew, WithState
+// (passed through to authorizeNodeCommon.
 func validateFetchRequestCommon(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -96,10 +96,11 @@ func validateFetchRequestCommon(
 // FetchNodeCredentials fetches node credentials based on the submitted
 // information.
 //
-// Supported options: WithRandomReader, WithRegistrationWrapper, WithWrapper
-// (passed through to LoadNodeInformation, NodeInformation.Store, and
-// LoadRootCertificates), WithNotBeforeClockSkew/WithNotAfterClockSkew/WithState
-// (passed through to validateFetchRequest)
+// Supported options: WithRandomReader, WithRegistrationWrapper,
+// WithStorageWrapper (passed through to LoadNodeInformation,
+// NodeInformation.Store, and LoadRootCertificates),
+// WithNotBeforeClockSkew/WithNotAfterClockSkew/WithState (passed through to
+// validateFetchRequest)
 //
 // Note: If the request nonce is a server-led activation token and it contains
 // state, this will overwrite any state passed in via options to this function;

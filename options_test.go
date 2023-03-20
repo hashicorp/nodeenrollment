@@ -79,15 +79,15 @@ func Test_GetOpts(t *testing.T) {
 		require.NoError(err)
 		assert.NotNil(opts.WithTlsVerifyOptionsFunc)
 	})
-	t.Run("with-wrapper", func(t *testing.T) {
+	t.Run("with-storage-wrapper", func(t *testing.T) {
 		assert, require := assert.New(t), require.New(t)
 		opts, err := GetOpts()
 		require.NoError(err)
-		assert.Nil(opts.WithWrapper)
+		assert.Nil(opts.WithStorageWrapper)
 		wrapper := new(wrapping.TestWrapper)
-		opts, err = GetOpts(WithWrapper(wrapper))
+		opts, err = GetOpts(WithStorageWrapper(wrapper))
 		require.NoError(err)
-		assert.Equal(wrapper, opts.WithWrapper)
+		assert.Equal(wrapper, opts.WithStorageWrapper)
 	})
 	t.Run("with-registration-wrapper", func(t *testing.T) {
 		assert, require := assert.New(t), require.New(t)

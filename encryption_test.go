@@ -187,7 +187,7 @@ func Test_EncryptionDecryption(t *testing.T) {
 			if tt.encryptKeySource != nil {
 				tt.encryptKeySource.(*testNode).keyId = tt.encryptId
 			}
-			ct, err := EncryptMessage(ctx, tt.encryptMsg, tt.encryptKeySource, WithWrapper(tt.encDecWrapper))
+			ct, err := EncryptMessage(ctx, tt.encryptMsg, tt.encryptKeySource, WithStorageWrapper(tt.encDecWrapper))
 			if tt.wantEncErrContains != "" {
 				subtRequire.Error(err)
 				subtAssert.Contains(err.Error(), tt.wantEncErrContains)
@@ -197,7 +197,7 @@ func Test_EncryptionDecryption(t *testing.T) {
 			if tt.decryptKeySource != nil {
 				tt.decryptKeySource.(*testNode).keyId = tt.decryptId
 			}
-			err = DecryptMessage(ctx, ct, tt.decryptKeySource, tt.decryptMsg, WithWrapper(tt.encDecWrapper))
+			err = DecryptMessage(ctx, ct, tt.decryptKeySource, tt.decryptMsg, WithStorageWrapper(tt.encDecWrapper))
 			if tt.wantDecErrContains != "" {
 				subtRequire.Error(err)
 				subtAssert.Contains(err.Error(), tt.wantDecErrContains)

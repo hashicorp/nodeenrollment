@@ -30,9 +30,10 @@ import (
 // It is safe to call this periodically; if the current root is still valid and
 // no issues are detected with next, nothing will change.
 //
-// Supported options: WithRandomReader, WithCertificateLifetime, WithWrapper
-// (passed through to LoadRootCertificates and RootCertificates.Store),
-// WithSkipStorage, WithNotBeforeClockSkew, WithReinitializeRoots
+// Supported options: WithRandomReader, WithCertificateLifetime,
+// WithStorageWrapper (passed through to LoadRootCertificates and
+// RootCertificates.Store), WithSkipStorage, WithNotBeforeClockSkew,
+// WithReinitializeRoots
 func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) (*types.RootCertificates, error) {
 	const op = "nodeenrollment.rotation.RotateRootCertificates"
 	opts, err := nodeenrollment.GetOpts(opt...)

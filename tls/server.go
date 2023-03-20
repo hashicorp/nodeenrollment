@@ -24,7 +24,7 @@ import (
 // GenerateServerCertificates issues contemporaneous certificates for TLS
 // connections from one or more root certificates.
 //
-// Valid options: WithRandomReader, WithWrapper (passed through to
+// Valid options: WithRandomReader, WithStorageWrapper (passed through to
 // LoadNodeInformation and LoadRootCertificates)
 func GenerateServerCertificates(
 	ctx context.Context,

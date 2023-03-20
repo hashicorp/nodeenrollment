@@ -175,7 +175,7 @@ func TestNodeCredentials_StoreLoad(t *testing.T) {
 				if tt.storeSetupFn != nil {
 					n, wantErrContains = tt.storeSetupFn(proto.Clone(n).(*types.NodeCredentials))
 				}
-				err := n.Store(ctx, storeStorage, nodeenrollment.WithWrapper(tt.storeWrapper))
+				err := n.Store(ctx, storeStorage, nodeenrollment.WithStorageWrapper(tt.storeWrapper))
 				switch wantErrContains {
 				case "":
 					require.NoError(err)
@@ -212,7 +212,7 @@ func TestNodeCredentials_StoreLoad(t *testing.T) {
 			if !tt.loadStorageNil {
 				loadStorage = storage
 			}
-			loaded, err := types.LoadNodeCredentials(ctx, loadStorage, nodeenrollment.KnownId(loadId), nodeenrollment.WithWrapper(tt.loadWrapper))
+			loaded, err := types.LoadNodeCredentials(ctx, loadStorage, nodeenrollment.KnownId(loadId), nodeenrollment.WithStorageWrapper(tt.loadWrapper))
 			switch tt.loadWantErrContains {
 			case "":
 				require.NoError(err)
