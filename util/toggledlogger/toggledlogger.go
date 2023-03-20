@@ -16,7 +16,7 @@ import (
 // you may only want internal authentication logging to happen in specific
 // debugging scenarios.
 //
-// When using With and Named and friends, the returned logger will share the
+// When using With and Named and such, the returned logger will share the
 // enabled state of this logger. If this is not what you want, create a new
 // ToggledLogger with the result of With or Name directly called on the
 // underlying logger.
