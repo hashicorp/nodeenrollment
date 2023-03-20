@@ -45,7 +45,7 @@ func TestServerLedRegistration(t *testing.T) {
 
 	wrapper := aead.TestWrapper(t)
 
-	tokenId, token, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{}, nodeenrollment.WithWrapper(wrapper))
+	tokenId, token, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{}, nodeenrollment.WithStorageWrapper(wrapper))
 	require.NoError(err)
 	assert.NotEmpty(token)
 	assert.True(strings.HasPrefix(token, nodeenrollment.ServerLedActivationTokenPrefix))
@@ -59,7 +59,7 @@ func TestServerLedRegistration(t *testing.T) {
 	hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
 	idBytes := hm.Sum(tokenNonce.Nonce)
 	assert.Equal(tokenId, base58.FastBase58Encoding(idBytes))
-	tokenEntry, err := types.LoadServerLedActivationToken(ctx, storage, base58.FastBase58Encoding(idBytes), nodeenrollment.WithWrapper(wrapper))
+	tokenEntry, err := types.LoadServerLedActivationToken(ctx, storage, base58.FastBase58Encoding(idBytes), nodeenrollment.WithStorageWrapper(wrapper))
 	require.NoError(err)
 	require.NotNil(tokenEntry)
 	assert.NotEmpty(tokenEntry.Id)

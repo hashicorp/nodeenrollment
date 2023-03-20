@@ -158,7 +158,7 @@ func TestServerLedActivationToken_StoreLoad(t *testing.T) {
 				if tt.storeSetupFn != nil {
 					s, wantErrContains = tt.storeSetupFn(proto.Clone(s).(*types.ServerLedActivationToken))
 				}
-				err := s.Store(ctx, storeStorage, nodeenrollment.WithWrapper(tt.storeWrapper))
+				err := s.Store(ctx, storeStorage, nodeenrollment.WithStorageWrapper(tt.storeWrapper))
 				switch wantErrContains {
 				case "":
 					require.NoError(err)
@@ -192,7 +192,7 @@ func TestServerLedActivationToken_StoreLoad(t *testing.T) {
 			if !tt.loadStorageNil {
 				loadStorage = storage
 			}
-			loaded, err := types.LoadServerLedActivationToken(ctx, loadStorage, loadId, nodeenrollment.WithWrapper(tt.loadWrapper))
+			loaded, err := types.LoadServerLedActivationToken(ctx, loadStorage, loadId, nodeenrollment.WithStorageWrapper(tt.loadWrapper))
 			switch tt.loadWantErrContains {
 			case "":
 				require.NoError(err)

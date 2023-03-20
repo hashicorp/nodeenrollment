@@ -16,7 +16,7 @@ import (
 // Store stores an activation token to storage, wrapping values along the way if
 // given a wrapper
 //
-// Supported options: WithWrapper
+// Supported options: WithStorageWrapper
 func (s *ServerLedActivationToken) Store(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) error {
 	const op = "nodeenrollment.types.(ServerLedActivationToken).Store"
 
@@ -49,16 +49,16 @@ func (s *ServerLedActivationToken) Store(ctx context.Context, storage nodeenroll
 	}
 
 	tokenToStore := s
-	if opts.WithWrapper != nil {
+	if opts.WithStorageWrapper != nil {
 		tokenToStore = proto.Clone(s).(*ServerLedActivationToken)
 
-		keyId, err := opts.WithWrapper.KeyId(ctx)
+		keyId, err := opts.WithStorageWrapper.KeyId(ctx)
 		if err != nil {
 			return fmt.Errorf("(%s) error reading wrapper key id: %w", op, err)
 		}
 		tokenToStore.WrappingKeyId = keyId
 
-		blobInfo, err := opts.WithWrapper.Encrypt(
+		blobInfo, err := opts.WithStorageWrapper.Encrypt(
 			ctx,
 			tokenToStore.CreationTimeMarshaled,
 			wrapping.WithAad([]byte(tokenToStore.Id)),
@@ -82,7 +82,7 @@ func (s *ServerLedActivationToken) Store(ctx context.Context, storage nodeenroll
 // LoadServerLedActivationToken loads the node credentials from storage, unwrapping
 // encrypted values if needed
 //
-// Supported options: WithWrapper
+// Supported options: WithStorageWrapper
 func LoadServerLedActivationToken(ctx context.Context, storage nodeenrollment.Storage, id string, opt ...nodeenrollment.Option) (*ServerLedActivationToken, error) {
 	const op = "nodeenrollment.types.LoadServerLedActivationToken"
 
@@ -110,7 +110,7 @@ func LoadServerLedActivationToken(ctx context.Context, storage nodeenrollment.St
 	}
 
 	switch {
-	case opts.WithWrapper == nil && token.WrappingKeyId != "":
+	case opts.WithStorageWrapper == nil && token.WrappingKeyId != "":
 		return nil, fmt.Errorf("(%s) server-led activation token has encrypted parts with wrapper key id %q but wrapper not provided", op, token.WrappingKeyId)
 	case token.WrappingKeyId != "":
 		// Note: not checking the wrapper key IDs against each other because if
@@ -121,7 +121,7 @@ func LoadServerLedActivationToken(ctx context.Context, storage nodeenrollment.St
 		if err := proto.Unmarshal(token.CreationTimeMarshaled, blobInfo); err != nil {
 			return nil, fmt.Errorf("(%s) error unmarshaling creation time blob info: %w", op, err)
 		}
-		pt, err := opts.WithWrapper.Decrypt(
+		pt, err := opts.WithStorageWrapper.Decrypt(
 			ctx,
 			blobInfo,
 			wrapping.WithAad([]byte(id)),

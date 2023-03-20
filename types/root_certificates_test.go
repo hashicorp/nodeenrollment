@@ -153,7 +153,7 @@ func TestRootCertificates_StoreLoad(t *testing.T) {
 				if tt.storeSetupFn != nil {
 					r, wantErrContains = tt.storeSetupFn(proto.Clone(r).(*types.RootCertificates))
 				}
-				err := r.Store(ctx, storeStorage, nodeenrollment.WithWrapper(tt.storeWrapper))
+				err := r.Store(ctx, storeStorage, nodeenrollment.WithStorageWrapper(tt.storeWrapper))
 				switch wantErrContains {
 				case "":
 					require.NoError(err)
@@ -182,7 +182,7 @@ func TestRootCertificates_StoreLoad(t *testing.T) {
 			if !tt.loadStorageNil {
 				loadStorage = storage
 			}
-			loaded, err := types.LoadRootCertificates(ctx, loadStorage, nodeenrollment.WithWrapper(tt.loadWrapper))
+			loaded, err := types.LoadRootCertificates(ctx, loadStorage, nodeenrollment.WithStorageWrapper(tt.loadWrapper))
 			switch tt.loadWantErrContains {
 			case "":
 				require.NoError(err)
@@ -195,7 +195,7 @@ func TestRootCertificates_StoreLoad(t *testing.T) {
 			assert.Empty(cmp.Diff(r, loaded, protocmp.Transform()))
 
 			// Now test the multi-load function
-			certs, err := types.LoadRootCertificates(ctx, loadStorage, nodeenrollment.WithWrapper(tt.loadWrapper))
+			certs, err := types.LoadRootCertificates(ctx, loadStorage, nodeenrollment.WithStorageWrapper(tt.loadWrapper))
 			switch nodeenrollment.KnownId(r.Id) {
 			case nodeenrollment.CurrentId:
 				require.Error(err)

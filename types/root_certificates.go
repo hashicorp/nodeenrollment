@@ -18,7 +18,7 @@ import (
 // Store stores the certificates to the given storage, possibly encrypting
 // secret values along the way if a wrapper is passed
 //
-// Supported options: WithWrapper
+// Supported options: WithStorageWrapper
 func (r *RootCertificates) Store(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) error {
 	const op = "nodeenrollment.types.(RootCertificates).Store"
 
@@ -63,17 +63,17 @@ func (r *RootCertificates) Store(ctx context.Context, storage nodeenrollment.Sto
 
 	// Now do the actual saving
 	rootsToStore := r
-	if opts.WithWrapper != nil {
+	if opts.WithStorageWrapper != nil {
 		rootsToStore = proto.Clone(r).(*RootCertificates)
 
-		keyId, err := opts.WithWrapper.KeyId(ctx)
+		keyId, err := opts.WithStorageWrapper.KeyId(ctx)
 		if err != nil {
 			return fmt.Errorf("(%s) error reading wrapper key id: %w", op, err)
 		}
 		rootsToStore.WrappingKeyId = keyId
 
 		for _, root := range []*RootCertificate{rootsToStore.Current, rootsToStore.Next} {
-			blobInfo, err := opts.WithWrapper.Encrypt(
+			blobInfo, err := opts.WithStorageWrapper.Encrypt(
 				ctx,
 				root.PrivateKeyPkcs8,
 				wrapping.WithAad(root.PublicKeyPkix),
@@ -102,7 +102,7 @@ func (r *RootCertificates) Store(ctx context.Context, storage nodeenrollment.Sto
 // LoadRootCertificates loads the RootCertificates from storage, unwrapping
 // encrypted values if needed
 //
-// Supported options: WithWrapper
+// Supported options: WithStorageWrapper
 func LoadRootCertificates(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) (*RootCertificates, error) {
 	const op = "nodeenrollment.types.LoadRootCertificates"
 
@@ -129,7 +129,7 @@ func LoadRootCertificates(ctx context.Context, storage nodeenrollment.Storage, o
 	case roots.Next == nil:
 		return nil, fmt.Errorf("(%s) next root is nil", op)
 
-	case opts.WithWrapper == nil && roots.WrappingKeyId != "":
+	case opts.WithStorageWrapper == nil && roots.WrappingKeyId != "":
 		return nil, fmt.Errorf("(%s) roots has encrypted parts with wrapper key id %q but wrapper not provided", op, roots.WrappingKeyId)
 
 	case roots.WrappingKeyId != "":
@@ -141,7 +141,7 @@ func LoadRootCertificates(ctx context.Context, storage nodeenrollment.Storage, o
 			if err := proto.Unmarshal(root.PrivateKeyPkcs8, blobInfo); err != nil {
 				return nil, fmt.Errorf("(%s) error unmarshaling private key blob info for %s root: %w", op, root, err)
 			}
-			pt, err := opts.WithWrapper.Decrypt(
+			pt, err := opts.WithStorageWrapper.Decrypt(
 				ctx,
 				blobInfo,
 				wrapping.WithAad(root.PublicKeyPkix),

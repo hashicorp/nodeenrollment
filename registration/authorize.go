@@ -30,7 +30,7 @@ import (
 // certificate/encryption parameters being saved on the server vs. sent to the
 // node.
 //
-// Supported options: WithWrapper (passed through to LoadNodeInformation,
+// Supported options: WithStorageWrapper (passed through to LoadNodeInformation,
 // LoadRootCertificates, and NodeInformation.Store), WithState (set into the
 // stored NodeInformation), WithNotBeforeClockSkew/WithNotAfterClockSkew (passed
 // through to validateFetchRequest), WithSkipStorage, WithRandomReader

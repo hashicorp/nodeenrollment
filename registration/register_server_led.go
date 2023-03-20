@@ -25,9 +25,9 @@ import (
 // The returned values are the activation token ID (used as the ID for storage)
 // and the token itself.
 //
-// Supported options: WithRandomReader, WithWrapper (passed through to
-// NodeInformation.Store), WithSkipStorage, WithState (to
-// encode state in the activation token)
+// Supported options: WithRandomReader, WithStorageWrapper (passed through to
+// NodeInformation.Store), WithSkipStorage, WithState (to encode state in the
+// activation token)
 func CreateServerLedActivationToken(
 	ctx context.Context,
 	storage nodeenrollment.Storage,

@@ -26,7 +26,7 @@ import (
 // Dial returns a function suitable for dialing a connection to an
 // InterceptingListener. It takes in storage, an address, and options.
 //
-// Supported options: WithRandomReader, WithWrapper (passed through to
+// Supported options: WithRandomReader, WithStorageWrapper (passed through to
 // LoadNodeCredentials and NodeCredentials.Store),
 // WithNotBeforeClockSkew/WithNotAfterClockSkew (these are used as
 // NotBefore/NotAfter lifetimes for the generated cert used for client side

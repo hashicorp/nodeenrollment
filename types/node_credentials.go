@@ -26,7 +26,7 @@ var _ nodeenrollment.X25519KeyProducer = (*NodeCredentials)(nil)
 // Store stores node credentials to storage, wrapping values along the way if
 // given a wrapper
 //
-// Supported options: WithWrapper
+// Supported options: WithStorageWrapper
 func (n *NodeCredentials) Store(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) error {
 	const op = "nodeenrollment.types.(NodeCredentials).Store"
 
@@ -66,16 +66,16 @@ func (n *NodeCredentials) Store(ctx context.Context, storage nodeenrollment.Stor
 	}
 
 	credsToStore := n
-	if opts.WithWrapper != nil {
+	if opts.WithStorageWrapper != nil {
 		credsToStore = proto.Clone(n).(*NodeCredentials)
 
-		keyId, err := opts.WithWrapper.KeyId(ctx)
+		keyId, err := opts.WithStorageWrapper.KeyId(ctx)
 		if err != nil {
 			return fmt.Errorf("(%s) error reading wrapper key id: %w", op, err)
 		}
 		credsToStore.WrappingKeyId = keyId
 
-		blobInfo, err := opts.WithWrapper.Encrypt(
+		blobInfo, err := opts.WithStorageWrapper.Encrypt(
 			ctx,
 			credsToStore.CertificatePrivateKeyPkcs8,
 			wrapping.WithAad(credsToStore.CertificatePublicKeyPkix),
@@ -88,7 +88,7 @@ func (n *NodeCredentials) Store(ctx context.Context, storage nodeenrollment.Stor
 			return fmt.Errorf("(%s) error marshaling wrapped certificate private key: %w", op, err)
 		}
 
-		blobInfo, err = opts.WithWrapper.Encrypt(
+		blobInfo, err = opts.WithStorageWrapper.Encrypt(
 			ctx,
 			credsToStore.EncryptionPrivateKeyBytes,
 			wrapping.WithAad(credsToStore.CertificatePublicKeyPkix),
@@ -102,7 +102,7 @@ func (n *NodeCredentials) Store(ctx context.Context, storage nodeenrollment.Stor
 		}
 
 		if len(credsToStore.RegistrationNonce) != 0 {
-			blobInfo, err = opts.WithWrapper.Encrypt(
+			blobInfo, err = opts.WithStorageWrapper.Encrypt(
 				ctx,
 				credsToStore.RegistrationNonce,
 				wrapping.WithAad(credsToStore.CertificatePublicKeyPkix),
@@ -127,7 +127,7 @@ func (n *NodeCredentials) Store(ctx context.Context, storage nodeenrollment.Stor
 // LoadNodeCredentials loads the node credentials from storage, unwrapping
 // encrypted values if needed
 //
-// Supported options: WithWrapper
+// Supported options: WithStorageWrapper
 func LoadNodeCredentials(ctx context.Context, storage nodeenrollment.Storage, id nodeenrollment.KnownId, opt ...nodeenrollment.Option) (*NodeCredentials, error) {
 	const op = "nodeenrollment.types.LoadNodeCredentials"
 
@@ -156,7 +156,7 @@ func LoadNodeCredentials(ctx context.Context, storage nodeenrollment.Storage, id
 	}
 
 	switch {
-	case opts.WithWrapper == nil && nodeCreds.WrappingKeyId != "":
+	case opts.WithStorageWrapper == nil && nodeCreds.WrappingKeyId != "":
 		return nil, fmt.Errorf("(%s) node credentials has encrypted parts with wrapper key id %q but wrapper not provided", op, nodeCreds.WrappingKeyId)
 	case nodeCreds.WrappingKeyId != "":
 		// Note: not checking the wrapper key IDs against each other because if
@@ -167,7 +167,7 @@ func LoadNodeCredentials(ctx context.Context, storage nodeenrollment.Storage, id
 		if err := proto.Unmarshal(nodeCreds.CertificatePrivateKeyPkcs8, blobInfo); err != nil {
 			return nil, fmt.Errorf("(%s) error unmarshaling certificate private key blob info: %w", op, err)
 		}
-		pt, err := opts.WithWrapper.Decrypt(
+		pt, err := opts.WithStorageWrapper.Decrypt(
 			ctx,
 			blobInfo,
 			wrapping.WithAad(nodeCreds.CertificatePublicKeyPkix),
@@ -181,7 +181,7 @@ func LoadNodeCredentials(ctx context.Context, storage nodeenrollment.Storage, id
 		if err := proto.Unmarshal(nodeCreds.EncryptionPrivateKeyBytes, blobInfo); err != nil {
 			return nil, fmt.Errorf("(%s) error unmarshaling encryption private key blob info: %w", op, err)
 		}
-		pt, err = opts.WithWrapper.Decrypt(
+		pt, err = opts.WithStorageWrapper.Decrypt(
 			ctx,
 			blobInfo,
 			wrapping.WithAad(nodeCreds.CertificatePublicKeyPkix),
@@ -196,7 +196,7 @@ func LoadNodeCredentials(ctx context.Context, storage nodeenrollment.Storage, id
 			if err := proto.Unmarshal(nodeCreds.RegistrationNonce, blobInfo); err != nil {
 				return nil, fmt.Errorf("(%s) error unmarshaling registration nonce blob info: %w", op, err)
 			}
-			pt, err := opts.WithWrapper.Decrypt(
+			pt, err := opts.WithStorageWrapper.Decrypt(
 				ctx,
 				blobInfo,
 				wrapping.WithAad(nodeCreds.CertificatePublicKeyPkix),
@@ -263,7 +263,7 @@ func (n *NodeCredentials) PreviousX25519EncryptionKey() (string, []byte, error) 
 // decrypt the incoming bundle with the server's view of the node credentials,
 // which can then be merged; this happens in a different function.
 //
-// Supported options: WithRandomReader, WithWrapper (passed through to
+// Supported options: WithRandomReader, WithStorageWrapper (passed through to
 // NodeCredentials.Store), WithSkipStorage, WithActivationToken
 func NewNodeCredentials(
 	ctx context.Context,

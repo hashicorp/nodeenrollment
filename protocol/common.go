@@ -16,8 +16,8 @@ import (
 //
 // Note that options do not carry across gRPC; in practice this means they do
 // not carry across multiple nodes. Only options meant for local use
-// (WithRandomReader, WithWrapper) etc. should be used, via the direct
-// functions.
+// (WithRandomReader, WithStorageWrapper, WithLogger) etc. should be used, via
+// the direct functions.
 type FetchCredsFn = func(
 	context.Context,
 	nodeenrollment.Storage,
@@ -32,8 +32,8 @@ type FetchCredsFn = func(
 //
 // Note that options do not carry across gRPC; in practice this means they do
 // not carry across multiple nodes. Only options meant for local use
-// (WithRandomReader, WithWrapper) etc. should be used, via the direct
-// functions.
+// (WithRandomReader, WithStorageWrapper, WithLogger) etc. should be used, via
+// the direct functions.
 type GenerateServerCertificatesFn = func(
 	context.Context,
 	nodeenrollment.Storage,

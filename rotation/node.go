@@ -27,7 +27,7 @@ import (
 // new credentials to an external ID corresponding to the current credentials.
 //
 // Supported options:
-// WithWrapper/WithRandomReader/WithNotBeforeClockSkew/WithNotAfterClockSkew
+// WithStorageWrapper/WithRandomReader/WithNotBeforeClockSkew/WithNotAfterClockSkew
 // (passed through to AuthorizeNode and others)
 func RotateNodeCredentials(
 	ctx context.Context,

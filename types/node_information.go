@@ -17,7 +17,7 @@ var _ nodeenrollment.X25519KeyProducer = (*NodeInformation)(nil)
 // Store stores node information to server storage, wrapping values along the
 // way if given a wrapper
 //
-// Supported options: WithWrapper
+// Supported options: WithStorageWrapper
 func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) error {
 	const op = "nodeenrollment.types.(NodeInformation).Store"
 
@@ -38,17 +38,17 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 	}
 
 	infoToStore := n
-	if opts.WithWrapper != nil {
+	if opts.WithStorageWrapper != nil {
 		infoToStore = proto.Clone(n).(*NodeInformation)
 
-		keyId, err := opts.WithWrapper.KeyId(ctx)
+		keyId, err := opts.WithStorageWrapper.KeyId(ctx)
 		if err != nil {
 			return fmt.Errorf("(%s) error reading wrapper key id: %w", op, err)
 		}
 		infoToStore.WrappingKeyId = keyId
 
 		if len(infoToStore.ServerEncryptionPrivateKeyBytes) > 0 {
-			blobInfo, err := opts.WithWrapper.Encrypt(
+			blobInfo, err := opts.WithStorageWrapper.Encrypt(
 				ctx,
 				infoToStore.ServerEncryptionPrivateKeyBytes,
 				wrapping.WithAad(infoToStore.CertificatePublicKeyPkix),
@@ -73,7 +73,7 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 // LoadNodeInformation loads the node information from storage, unwrapping encrypted
 // values if needed.
 //
-// Supported options: WithWrapper, WithState
+// Supported options: WithStorageWrapper, WithState
 func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id string, opt ...nodeenrollment.Option) (*NodeInformation, error) {
 	const op = "nodeenrollment.types.LoadNodeInformation"
 
@@ -98,7 +98,7 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 	}
 
 	switch {
-	case opts.WithWrapper == nil && nodeInfo.WrappingKeyId != "":
+	case opts.WithStorageWrapper == nil && nodeInfo.WrappingKeyId != "":
 		return nil, fmt.Errorf("(%s) node information has encrypted parts with wrapper key id %q but wrapper not provided", op, nodeInfo.WrappingKeyId)
 	case nodeInfo.WrappingKeyId != "":
 		// Note: not checking the wrapper key IDs against each other because if
@@ -110,7 +110,7 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 			if err := proto.Unmarshal(nodeInfo.ServerEncryptionPrivateKeyBytes, blobInfo); err != nil {
 				return nil, fmt.Errorf("(%s) error unmarshaling private key blob info: %w", op, err)
 			}
-			pt, err := opts.WithWrapper.Decrypt(ctx, blobInfo, wrapping.WithAad(nodeInfo.CertificatePublicKeyPkix))
+			pt, err := opts.WithStorageWrapper.Decrypt(ctx, blobInfo, wrapping.WithAad(nodeInfo.CertificatePublicKeyPkix))
 			if err != nil {
 				return nil, fmt.Errorf("(%s) error decrypting private key: %w", op, err)
 			}
