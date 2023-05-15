@@ -100,7 +100,7 @@ func validateFetchRequestCommon(
 // WithStorageWrapper (passed through to LoadNodeInformation,
 // NodeInformation.Store, and LoadRootCertificates),
 // WithNotBeforeClockSkew/WithNotAfterClockSkew/WithState (passed through to
-// validateFetchRequest)
+// validateFetchRequest), WithLogger
 //
 // Note: If the request nonce is a server-led activation token and it contains
 // state, this will overwrite any state passed in via options to this function;

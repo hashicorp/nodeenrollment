@@ -33,7 +33,7 @@ import (
 // Supported options: WithRandomReader, WithCertificateLifetime,
 // WithStorageWrapper (passed through to LoadRootCertificates and
 // RootCertificates.Store), WithSkipStorage, WithNotBeforeClockSkew,
-// WithReinitializeRoots
+// WithReinitializeRoots, WithLogger
 func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) (*types.RootCertificates, error) {
 	const op = "nodeenrollment.rotation.RotateRootCertificates"
 	opts, err := nodeenrollment.GetOpts(opt...)
@@ -52,12 +52,14 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 		}
 		err = storage.Remove(ctx, roots)
 		if err != nil {
+			opts.WithLogger.Error(err.Error())
 			return nil, fmt.Errorf("(%s) error removing existing roots: %w", op, err)
 		}
 	}
 
 	currentRoots, err := types.LoadRootCertificates(ctx, storage, opt...)
 	if err != nil && !errors.Is(err, nodeenrollment.ErrNotFound) {
+		opts.WithLogger.Error(err.Error())
 		return nil, fmt.Errorf("(%s) error checking for existing roots: %w", op, err)
 	}
 
@@ -69,6 +71,7 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 		return currentRoots, nil
 
 	case len(toMake) == 1 && nextCurrent == nil:
+		opts.WithLogger.Error(err.Error())
 		return nil, fmt.Errorf("(%s) only one certificate to make but next current certificate not determined", op)
 	}
 
@@ -157,6 +160,7 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 
 	if !opts.WithSkipStorage {
 		if err := ret.Store(ctx, storage, opt...); err != nil {
+			opts.WithLogger.Error(err.Error())
 			return nil, fmt.Errorf("(%s) error persisting current root certificates: %w", op, err)
 		}
 	}

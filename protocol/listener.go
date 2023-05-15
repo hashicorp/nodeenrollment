@@ -175,12 +175,18 @@ func NewInterceptingListener(
 // Conn variable, if needed.
 func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 	const op = "nodeenrollment.protocol.(InterceptingListener).Accept"
+	opts, err := nodeenrollment.GetOpts(l.options...)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
+	}
+
 	for {
 		conn, err := l.baseLn.Accept()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				return nil, net.ErrClosed
 			}
+			opts.WithLogger.Error(err.Error())
 			return nil, fmt.Errorf("(%s) error accepting connection: %w", op, err)
 		}
 		if conn == nil {
@@ -200,6 +206,7 @@ func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 				err = multierror.Append(err, fmt.Errorf("error closing connection: %w", closeErr))
 			}
 			// Return a temp error so we don't close the listener
+			opts.WithLogger.Error(err.Error())
 			return nil, temperror.New(fmt.Errorf("(%s) error tls handshaking connection: %w", op, err))
 		}
 
@@ -213,6 +220,7 @@ func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 			if closeErr := tlsConn.Close(); closeErr != nil {
 				err = multierror.Append(err, fmt.Errorf("error closing connection: %w", closeErr))
 			}
+			opts.WithLogger.Error(err.Error())
 			return nil, temperror.New(err)
 		}
 
