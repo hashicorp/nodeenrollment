@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/types"
@@ -102,8 +103,14 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 	rootPool := x509.NewCertPool()
 	var tlsCerts []tls.Certificate
 
+	var foundCert bool
+	now := time.Now()
+	var leafX509 *x509.Certificate
 	for _, certBundle := range n.CertificateBundles {
-		var leafX509 *x509.Certificate
+		if foundCert {
+			break
+		}
+
 		// Parse node certificate
 		{
 			var err error
@@ -111,9 +118,16 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 			if err != nil {
 				return nil, fmt.Errorf("(%s) error parsing node certificate bytes: %w", op, err)
 			}
-
 			if leafX509 == nil {
 				return nil, fmt.Errorf("(%s) after parsing node cert found empty value", op)
+			}
+			// It's expired
+			if leafX509.NotAfter.Before(now) {
+				continue
+			}
+			// It's not yet valid
+			if leafX509.NotBefore.After(now) {
+				continue
 			}
 		}
 
@@ -126,7 +140,14 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 			if serverCert == nil {
 				return nil, fmt.Errorf("(%s) after parsing server cert found empty value", op)
 			}
-			// log.Println(op, "adding client CA serial", serverCert.SerialNumber.String())
+			// It's expired
+			if serverCert.NotAfter.Before(now) {
+				continue
+			}
+			// It's not yet valid
+			if serverCert.NotBefore.After(now) {
+				continue
+			}
 			rootPool.AddCert(serverCert)
 		}
 
@@ -138,6 +159,12 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 			PrivateKey: signer,
 			Leaf:       leafX509,
 		})
+
+		foundCert = true
+	}
+
+	if len(tlsCerts) == 0 {
+		return nil, fmt.Errorf("(%s) no valid client certificates found", op)
 	}
 
 	// Require nonce in DNS names in verification function

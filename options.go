@@ -46,6 +46,7 @@ type Options struct {
 	WithActivationToken                         string
 	WithMaximumServerLedActivationTokenLifetime time.Duration
 	WithNativeConns                             bool
+	WithTestErrorContains                       string
 }
 
 // Option is a function that takes in an options struct and sets values or
@@ -221,6 +222,14 @@ func WithMaximumServerLedActivationTokenLifetime(with time.Duration) Option {
 func WithNativeConns(with bool) Option {
 	return func(o *Options) error {
 		o.WithNativeConns = with
+		return nil
+	}
+}
+
+// WithTestErrorContains is used in some tests to pass expected error values
+func WithTestErrorContains(with string) Option {
+	return func(o *Options) error {
+		o.WithTestErrorContains = with
 		return nil
 	}
 }
