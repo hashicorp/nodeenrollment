@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"math/big"
 	mathrand "math/rand"
+	"time"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/types"
@@ -196,15 +197,37 @@ func ServerConfig(
 	var tlsCerts []tls.Certificate
 	rootPool := x509.NewCertPool()
 
+	var foundCert bool
+	now := time.Now()
 	for _, certBundle := range in.CertificateBundles {
+		if foundCert {
+			break
+		}
+
 		leafCert, err := x509.ParseCertificate(certBundle.CertificateDer)
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error parsing leaf certificate: %w", op, err)
+		}
+		// It's expired
+		if leafCert.NotAfter.Before(now) {
+			continue
+		}
+		// It's not yet valid
+		if leafCert.NotBefore.After(now) {
+			continue
 		}
 
 		serverCert, err := x509.ParseCertificate(certBundle.CaCertificateDer)
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error parsing server certificate: %w", op, err)
+		}
+		// It's expired
+		if serverCert.NotAfter.Before(now) {
+			continue
+		}
+		// It's not yet valid
+		if serverCert.NotBefore.After(now) {
+			continue
 		}
 
 		rootPool.AddCert(serverCert)
@@ -217,6 +240,12 @@ func ServerConfig(
 			PrivateKey: privKey,
 			Leaf:       leafCert,
 		})
+
+		foundCert = true
+	}
+
+	if len(tlsCerts) == 0 {
+		return nil, fmt.Errorf("(%s) no valid server certificates found", op)
 	}
 
 	tlsConf, err := standardTlsConfig(ctx, tlsCerts, rootPool, opt...)
