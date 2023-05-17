@@ -183,4 +183,13 @@ func Test_GetOpts(t *testing.T) {
 		require.NoError(err)
 		assert.True(opts.WithNativeConns)
 	})
+	t.Run("with-test-error-contains", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.Empty(opts.WithTestErrorContains)
+		opts, err = GetOpts(WithTestErrorContains("foobar"))
+		require.NoError(err)
+		assert.Equal("foobar", opts.WithTestErrorContains)
+	})
 }

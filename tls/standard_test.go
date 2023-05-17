@@ -117,6 +117,16 @@ func TestStandardTls(t *testing.T) {
 			},
 		),
 	)
+
+	// This tests that we are not sending expired certs for the handshake
+	t.Log("expired-cert")
+	ctx, storage, node = nodetesting.CommonTestParams(t,
+		nodeenrollment.WithCertificateLifetime(10*time.Second),
+		nodeenrollment.WithNotBeforeClockSkew(0),
+		nodeenrollment.WithNotAfterClockSkew(0),
+	)
+	time.Sleep(10 * time.Second)
+	runTest(t, ctx, storage, node, false)
 }
 
 func runTest(t *testing.T, ctx context.Context, storage nodeenrollment.Storage, nodeCreds *types.NodeCredentials, shouldFailHandshake bool, opt ...nodeenrollment.Option) {
@@ -209,7 +219,11 @@ func runTest(t *testing.T, ctx context.Context, storage nodeenrollment.Storage, 
 	// Dial on the client side and also check for errors (expected or not)
 	tlsConn, err := tls.Dial("tcp4", dialAddr, clientTlsConfig)
 	if shouldFailHandshake {
-		assert.Error(err)
+		if opts.WithTestErrorContains != "" {
+			assert.ErrorContains(err, opts.WithTestErrorContains)
+		} else {
+			assert.Error(err)
+		}
 		cancel()
 		return
 	}

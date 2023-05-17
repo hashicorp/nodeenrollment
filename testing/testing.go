@@ -14,7 +14,7 @@ import (
 
 // CommonTestParams is a one-stop shop returning a context, valid storage with
 // root certificates, and pre-registered node credentials for testing
-func CommonTestParams(t *testing.T) (context.Context, nodeenrollment.Storage, *types.NodeCredentials) {
+func CommonTestParams(t *testing.T, opt ...nodeenrollment.Option) (context.Context, nodeenrollment.Storage, *types.NodeCredentials) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -22,7 +22,7 @@ func CommonTestParams(t *testing.T) (context.Context, nodeenrollment.Storage, *t
 	require.NoError(t, err)
 	t.Cleanup(storage.Cleanup)
 
-	_, err = rotation.RotateRootCertificates(ctx, storage)
+	_, err = rotation.RotateRootCertificates(ctx, storage, opt...)
 	require.NoError(t, err)
 
 	_, activationToken, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{})

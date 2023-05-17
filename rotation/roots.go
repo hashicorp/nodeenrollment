@@ -29,7 +29,9 @@ import (
 //
 // Supported options: WithRandomReader, WithCertificateLifetime, WithWrapper
 // (passed through to LoadRootCertificates and RootCertificates.Store),
-// WithSkipStorage, WithNotBeforeClockSkew, WithReinitializeRoots
+// WithSkipStorage, WithNotBeforeClockSkew, WithNotAfterClockSkew, WithReinitializeRoots
+//
+// Note that WithNotAfterClockSkew is cumulative with WithCertificatLifetime
 func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) (*types.RootCertificates, error) {
 	const op = "nodeenrollment.rotation.RotateRootCertificates"
 	opts, err := nodeenrollment.GetOpts(opt...)
@@ -107,7 +109,7 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 				KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement | x509.KeyUsageCertSign,
 				SerialNumber:          big.NewInt(mathrand.Int63()),
 				NotBefore:             now.Add(opts.WithNotBeforeClockSkew),
-				NotAfter:              now.Add(opts.WithCertificateLifetime),
+				NotAfter:              now.Add(opts.WithCertificateLifetime).Add(opts.WithNotAfterClockSkew),
 				BasicConstraintsValid: true,
 				IsCA:                  true,
 			}
