@@ -104,13 +104,13 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 	var tlsCerts []tls.Certificate
 
 	var foundCert bool
+	now := time.Now()
+	var leafX509 *x509.Certificate
 	for _, certBundle := range n.CertificateBundles {
 		if foundCert {
 			break
 		}
 
-		var leafX509 *x509.Certificate
-		now := time.Now()
 		// Parse node certificate
 		{
 			var err error
