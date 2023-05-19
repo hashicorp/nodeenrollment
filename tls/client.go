@@ -18,7 +18,7 @@ import (
 
 // ClientConfigs creates client-side tls.Config by from the given
 // NodeCredentials. The values populated here can be used or modified as needed.
-// There are two to represent using current and next as tje certificate selector
+// There are two to represent using current and next as the certificate selector
 // passed via ALPN, so dials can be attempted with either.
 //
 // Supported options: WithRandomReader, WithServerName (passed through to
