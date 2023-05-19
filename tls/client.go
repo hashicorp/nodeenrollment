@@ -24,7 +24,7 @@ import (
 // Supported options: WithRandomReader, WithServerName (passed through to
 // standardTlsConfig), WithExtraAlpnProtos, WithState
 func ClientConfigs(ctx context.Context, n *types.NodeCredentials, opt ...nodeenrollment.Option) ([]*tls.Config, error) {
-	const op = "nodeenrollment.tls.ClientConfig"
+	const op = "nodeenrollment.tls.ClientConfigs"
 
 	switch {
 	case n == nil:
