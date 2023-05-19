@@ -184,12 +184,6 @@ func attemptFetch(ctx context.Context, nonTlsConn net.Conn, creds *types.NodeCre
 		return nil, fmt.Errorf("(%s) error splitting request into next protos: %w", op, err)
 	}
 
-	// Add the common dns name certificate selector. We don't have anything
-	// better to use here because we don't have certs, and on the other side
-	// this is an indicator that it's a fetch request.
-	// splitNextProtos = append(splitNextProtos,
-	//	fmt.Sprintf("%s%s", nodeenrollment.CertificatePreferenceV1Prefix, nodeenrollment.CommonDnsName))
-
 	// We need to use TLS for the connection but we aren't relying on its
 	// security. Create a self-signed cert and embed our info into it.
 	template := &x509.Certificate{
