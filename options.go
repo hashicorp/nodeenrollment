@@ -190,7 +190,7 @@ func WithAlpnProtoPrefix(with string) Option {
 	const op = "nodeenrollment.WithAlpnProtoPrefix"
 	return func(o *Options) error {
 		switch with {
-		case FetchNodeCredsNextProtoV1Prefix, AuthenticateNodeNextProtoV1Prefix:
+		case FetchNodeCredsNextProtoV1Prefix, AuthenticateNodeNextProtoV1Prefix, CertificatePreferenceV1Prefix:
 			o.WithAlpnProtoPrefix = with
 			return nil
 		default:

@@ -30,14 +30,25 @@ func (l *InterceptingListener) getTlsConfigForClient(clientInfo *ClientInfo) fun
 	const op = "nodeenrollment.protocol.(InterceptingListener).getTlsConfigForClient"
 
 	return func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+		var trimmedProtos []string
 		// Copy client next proto information to returned value
 		if len(hello.SupportedProtos) > 0 {
-			clientInfo.nextProtos = make([]string, len(hello.SupportedProtos))
-			copy(clientInfo.nextProtos, hello.SupportedProtos)
+			trimmedProtos = make([]string, len(hello.SupportedProtos))
+			// If we have a certificate selector in NextProtos, pull it out and remove it from the list
+			// of protos, as it's only for internal routing use
+			for _, proto := range hello.SupportedProtos {
+				if strings.HasPrefix(proto, nodeenrollment.CertificatePreferenceV1Prefix) {
+					continue
+				}
+				trimmedProtos = append(trimmedProtos, proto)
+			}
+			clientInfo.nextProtos = trimmedProtos
 		}
 
+		// log.Println("incoming server name", hello.ServerName)
+
 		// If they aren't announcing support, return the base configuration
-		if !nodeenrollment.ContainsKnownAlpnProto(hello.SupportedProtos...) {
+		if !nodeenrollment.ContainsKnownAlpnProto(trimmedProtos...) {
 			if l.baseTlsConf == nil {
 				return nil, fmt.Errorf("(%s) no base tls configuration and no library next proto", op)
 			}
@@ -51,7 +62,7 @@ func (l *InterceptingListener) getTlsConfigForClient(clientInfo *ClientInfo) fun
 		var protoToReturn string
 		opt := l.options
 
-		for _, p := range hello.SupportedProtos {
+		for _, p := range trimmedProtos {
 			switch {
 			// In either scenario, we will present a carefully curated server
 			// certificate with information the node can use. How that certificate
@@ -74,8 +85,10 @@ func (l *InterceptingListener) getTlsConfigForClient(clientInfo *ClientInfo) fun
 				}
 				// This will return a response either with Authorized false and no
 				// other data or Authorized true and encrypted values
+				// log.Println("fetching creds")
 				fetchResp, err := l.fetchCredsFn(l.ctx, l.storage, req, l.options...)
 				if err != nil {
+					// log.Println("error fetching creds", err)
 					return nil, fmt.Errorf("(%s) error handling fetch creds: %w", op, err)
 				}
 
@@ -87,21 +100,30 @@ func (l *InterceptingListener) getTlsConfigForClient(clientInfo *ClientInfo) fun
 				}
 
 				switch {
-				case fetchResp == nil:
-					// In this case we're not authorized, use the standard common
-					// name and we'll detect this on the fetch side. If we try to
-					// marshal the empty value we end up with a zero length message,
-					// a zero-length base-64 message, and hit an error later if we
-					// don't remember this when decoding. So just use a canary.
+				case fetchResp == nil || fetchResp.EncryptedNodeCredentials == nil:
+					// In this case we're not authorized, use the standard
+					// common name and we'll detect this on the fetch side. If
+					// we try to marshal a nil value value we end up with a zero
+					// length message, a zero-length base-64 message, and hit an
+					// error later if we don't remember this when decoding. So
+					// create an empty message as a canary.
+					// log.Println("fetchResp was nil")
+					fetchResp = new(types.FetchNodeCredentialsResponse)
 					serverCertsReq.CommonName = nodeenrollment.CommonDnsName
+					// Ensure that our server TLS will serve the cert with the common name
+					opt = append(opt, nodeenrollment.WithServerName(nodeenrollment.CommonDnsName))
 
 				default:
+					// log.Println("fetchResp was not nil")
 					fetchRespBytes, err := proto.Marshal(fetchResp)
 					if err != nil {
 						return nil, fmt.Errorf("(%s) error marshaling fetch response: %w", op, err)
 					}
 					// Have the response put into the common name
 					serverCertsReq.CommonName = base64.RawStdEncoding.EncodeToString(fetchRespBytes)
+					// log.Println("common name just after marshaling", serverCertsReq.CommonName)
+					// Ensure that our server TLS will serve the cert with the common name
+					opt = append(opt, nodeenrollment.WithServerName(nodeenrollment.CommonDnsName))
 				}
 
 				// We are returning either unauthorized or encrypted creds so we
@@ -141,6 +163,7 @@ func (l *InterceptingListener) getTlsConfigForClient(clientInfo *ClientInfo) fun
 		}
 
 		// Generate a server-side certificate
+		// log.Println("before fn, common name in req", serverCertsReq.CommonName)
 		certResp, err := l.generateServerCertificatesFn(l.ctx, l.storage, serverCertsReq, opt...)
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error generating server-side certificate: %w", op, err)

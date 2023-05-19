@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/ed25519"
+	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -18,13 +19,15 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// ClientConfig creates a client-side tls.Config by from the given
+// ClientConfigs creates client-side tls.Config by from the given
 // NodeCredentials. The values populated here can be used or modified as needed.
+// There are two to represent using current and next as the certificate selector
+// passed via ALPN, so dials can be attempted with either.
 //
 // Supported options: WithRandomReader, WithServerName (passed through to
 // standardTlsConfig), WithExtraAlpnProtos, WithState
-func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenrollment.Option) (*tls.Config, error) {
-	const op = "nodeenrollment.tls.ClientConfig"
+func ClientConfigs(ctx context.Context, n *types.NodeCredentials, opt ...nodeenrollment.Option) ([]*tls.Config, error) {
+	const op = "nodeenrollment.tls.ClientConfigs"
 
 	switch {
 	case n == nil:
@@ -104,84 +107,116 @@ func ClientConfig(ctx context.Context, n *types.NodeCredentials, opt ...nodeenro
 	reqStr := base64.RawStdEncoding.EncodeToString(reqBytes)
 
 	rootPool := x509.NewCertPool()
-	var tlsCerts []tls.Certificate
 
-	var foundCert bool
-	now := time.Now()
-	var leafX509 *x509.Certificate
-	for _, certBundle := range n.CertificateBundles {
-		if foundCert {
-			break
-		}
-
-		// Parse node certificate
-		{
-			var err error
-			leafX509, err = x509.ParseCertificate(certBundle.CertificateDer)
-			if err != nil {
-				return nil, fmt.Errorf("(%s) error parsing node certificate bytes: %w", op, err)
-			}
-			if leafX509 == nil {
-				return nil, fmt.Errorf("(%s) after parsing node cert found empty value", op)
-			}
-			// It's expired
-			if leafX509.NotAfter.Before(now) {
-				continue
-			}
-			// It's not yet valid
-			if leafX509.NotBefore.After(now) {
-				continue
-			}
-		}
-
-		// Parse CA certificate
-		{
-			serverCert, err := x509.ParseCertificate(certBundle.CaCertificateDer)
-			if err != nil {
-				return nil, fmt.Errorf("(%s) error parsing server certificate bytes: %w", op, err)
-			}
-			if serverCert == nil {
-				return nil, fmt.Errorf("(%s) after parsing server cert found empty value", op)
-			}
-			// It's expired
-			if serverCert.NotAfter.Before(now) {
-				continue
-			}
-			// It's not yet valid
-			if serverCert.NotBefore.After(now) {
-				continue
-			}
-			rootPool.AddCert(serverCert)
-		}
-
-		tlsCerts = append(tlsCerts, tls.Certificate{
-			Certificate: [][]byte{
-				certBundle.CertificateDer,
-				certBundle.CaCertificateDer,
-			},
-			PrivateKey: signer,
-			Leaf:       leafX509,
-		})
-
-		foundCert = true
+	type certBundle struct {
+		leaf *x509.Certificate
+		ca   *x509.Certificate
 	}
+	certMap := map[string]*certBundle{}
 
-	if len(tlsCerts) == 0 {
-		return nil, fmt.Errorf("(%s) no valid client certificates found", op)
+	now := time.Now()
+	for _, bundle := range n.CertificateBundles {
+		//
+		// Parse node certificate
+		//
+		var err error
+		leafCert, err := x509.ParseCertificate(bundle.CertificateDer)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error parsing node certificate bytes: %w", op, err)
+		}
+		if leafCert == nil {
+			return nil, fmt.Errorf("(%s) after parsing node cert found empty value", op)
+		}
+		// It's expired
+		if leafCert.NotAfter.Before(now) {
+			continue
+		}
+		// It's not yet valid
+		if leafCert.NotBefore.After(now) {
+			continue
+		}
+
+		//
+		// Parse CA certificate
+		//
+		caCert, err := x509.ParseCertificate(bundle.CaCertificateDer)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error parsing ca certificate bytes: %w", op, err)
+		}
+		if caCert == nil {
+			return nil, fmt.Errorf("(%s) after parsing ca cert found empty value", op)
+		}
+		// It's expired
+		if caCert.NotAfter.Before(now) {
+			continue
+		}
+		// It's not yet valid
+		if caCert.NotBefore.After(now) {
+			continue
+		}
+		rootPool.AddCert(caCert)
+
+		caCertKkixPubKey, err := x509.MarshalPKIXPublicKey(caCert.PublicKey)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error marshaling ca cert pub key: %w", op, err)
+		}
+		caCertKeyId, err := nodeenrollment.KeyIdFromPkix(caCertKkixPubKey)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error deriving key id from ca cert pub key: %w", op, err)
+		}
+
+		certMap[caCertKeyId] = &certBundle{
+			leaf: leafCert,
+			ca:   caCert,
+		}
+		// log.Println("client side adding", keyId, "to certMap")
 	}
 
 	// Require nonce in DNS names in verification function
 	opt = append(opt, nodeenrollment.WithNonce(base64.RawStdEncoding.EncodeToString(nonceBytes)))
 
-	tlsConfig, err := standardTlsConfig(ctx, tlsCerts, rootPool, opt...)
-	if err != nil {
-		return nil, fmt.Errorf("(%s) error fetching standard tls config: %w", op, err)
+	// Get a config for each valid client cert, identified using SNI to pick the
+	// chain on the other end
+	var tlsConfigs []*tls.Config
+	for caCertKeyId := range certMap {
+		tlsConfig, err := standardTlsConfig(ctx, rootPool, opt...)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error fetching standard tls config: %w", op, err)
+		}
+
+		tlsConfig.NextProtos, err = BreakIntoNextProtos(nodeenrollment.AuthenticateNodeNextProtoV1Prefix, reqStr)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error breaking request into next protos: %w", op, err)
+		}
+		tlsConfig.NextProtos = append(tlsConfig.NextProtos, opts.WithExtraAlpnProtos...)
+		// Add the certificate selector
+		tlsConfig.NextProtos = append(tlsConfig.NextProtos,
+			fmt.Sprintf("%s%s", nodeenrollment.CertificatePreferenceV1Prefix, caCertKeyId))
+
+		// This function will look at the incoming CAs, identified by their
+		// subject key, and look for a known cert chain we have that is from
+		// that key
+		tlsConfig.GetClientCertificate = func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			for _, acceptableCa := range cri.AcceptableCAs {
+				// log.Println("GetClientCertificate", base64.RawStdEncoding.EncodeToString(acceptableCa))
+				for _, bundle := range certMap {
+					if subtle.ConstantTimeCompare(bundle.ca.RawSubject, acceptableCa) == 1 {
+						return &tls.Certificate{
+							Certificate: [][]byte{
+								bundle.leaf.Raw,
+								bundle.ca.Raw,
+							},
+							PrivateKey: signer,
+							Leaf:       bundle.leaf,
+						}, nil
+					}
+				}
+			}
+			return nil, fmt.Errorf("(%s) did not find a certificate acceptable to server roots", op)
+		}
+
+		tlsConfigs = append(tlsConfigs, tlsConfig)
 	}
 
-	tlsConfig.NextProtos, err = BreakIntoNextProtos(nodeenrollment.AuthenticateNodeNextProtoV1Prefix, reqStr)
-	if err != nil {
-		return nil, fmt.Errorf("(%s) error breaking request into next protos: %w", op, err)
-	}
-	tlsConfig.NextProtos = append(tlsConfig.NextProtos, opts.WithExtraAlpnProtos...)
-	return tlsConfig, nil
+	return tlsConfigs, nil
 }

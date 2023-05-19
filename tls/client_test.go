@@ -5,6 +5,7 @@ package tls
 
 import (
 	"crypto/ed25519"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"testing"
@@ -19,7 +20,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-func TestClientConfig(t *testing.T) {
+func TestClientConfigs(t *testing.T) {
 	t.Parallel()
 
 	ctx, _, nodeCreds := nodetesting.CommonTestParams(t)
@@ -86,16 +87,20 @@ func TestClientConfig(t *testing.T) {
 				n, wantErrContains = tt.setupFn(proto.Clone(n).(*types.NodeCredentials))
 			}
 
-			resp, err := ClientConfig(ctx, n, nodeenrollment.WithServerName("foobar"), nodeenrollment.WithExtraAlpnProtos([]string{"foo", "bar"}), nodeenrollment.WithState(tt.state))
+			tlsConfigs, err := ClientConfigs(ctx, n, nodeenrollment.WithServerName("foobar"), nodeenrollment.WithExtraAlpnProtos([]string{"foo", "bar"}), nodeenrollment.WithState(tt.state))
 			switch wantErrContains {
 			case "":
 				require.NoError(err)
-				require.NotNil(resp)
+				// We'll only have one because the second won't be valid yet
+				require.Len(tlsConfigs, 1)
 			default:
 				require.Error(err)
 				assert.Contains(err.Error(), wantErrContains)
 				return
 			}
+
+			// Pull out the key identifier
+			tlsConfig := tlsConfigs[0]
 
 			// Check out the TLS parameters. Note that this doesn't re-check
 			// parameters already tested via the tests on standardTlsConfig.
@@ -105,30 +110,33 @@ func TestClientConfig(t *testing.T) {
 			// them or iterate over them so we have to just try manually
 			// validating certs, boo. We simply validate that the generated cert
 			// validates against the returned roots.
-			assert.Equal("foobar", resp.ServerName)
-			assert.Contains(resp.NextProtos, "foo")
-			assert.Contains(resp.NextProtos, "bar")
-			assert.Len(resp.Certificates, 2)
-			for _, tlsCert := range resp.Certificates {
-				assert.Len(tlsCert.Certificate, 2)
-				assert.Equal(tlsCert.Certificate[0], tlsCert.Leaf.Raw)
-				assert.NotEmpty(tlsCert.PrivateKey)
-				assert.NotEmpty(tlsCert.Certificate[1])
+			assert.Equal("foobar", tlsConfig.ServerName)
+			assert.Contains(tlsConfig.NextProtos, "foo")
+			assert.Contains(tlsConfig.NextProtos, "bar")
 
-				verifyOpts := x509.VerifyOptions{
-					Roots:     resp.RootCAs,
-					KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-				}
+			expCaCert, err := x509.ParseCertificate(n.CertificateBundles[0].CaCertificateDer)
+			require.NoError(err)
+			tlsCert, err := tlsConfig.GetClientCertificate(&tls.CertificateRequestInfo{
+				AcceptableCAs: [][]byte{expCaCert.RawSubject},
+			})
+			require.NoError(err)
+			require.NotNil(tlsCert)
+			assert.NotEmpty(tlsCert.PrivateKey)
+			assert.NotEmpty(tlsCert.Certificate[1])
 
-				if tlsCert.Leaf.NotBefore.Before(time.Now()) && tlsCert.Leaf.NotAfter.After(time.Now()) {
-					chains, err := tlsCert.Leaf.Verify(verifyOpts)
-					require.NoError(err)
-					assert.Less(0, len(chains))
-				}
+			verifyOpts := x509.VerifyOptions{
+				Roots:     tlsConfig.RootCAs,
+				KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+			}
+
+			if tlsCert.Leaf.NotBefore.Before(time.Now()) && tlsCert.Leaf.NotAfter.After(time.Now()) {
+				chains, err := tlsCert.Leaf.Verify(verifyOpts)
+				require.NoError(err)
+				assert.Less(0, len(chains))
 			}
 
 			// Break up NextProtos and check the request
-			reqStr, err := CombineFromNextProtos(nodeenrollment.AuthenticateNodeNextProtoV1Prefix, resp.NextProtos)
+			reqStr, err := CombineFromNextProtos(nodeenrollment.AuthenticateNodeNextProtoV1Prefix, tlsConfig.NextProtos)
 			require.NoError(err)
 			reqBytes, err := base64.RawStdEncoding.DecodeString(reqStr)
 			require.NoError(err)

@@ -190,7 +190,10 @@ func FetchNodeCredentials(
 		case err != nil && !errors.Is(err, nodeenrollment.ErrNotFound):
 			return nil, fmt.Errorf("(%s) error looking up node information from storage: %w", op, err)
 		case err != nil, nodeInfo == nil:
-			// Unauthorized, so return empty
+			// Unauthorized, so return empty. We cannot return nil because this
+			// will
+			// cause a marshal error if this function is via RPC since gRPC does not
+			// allow nil responses.
 			return new(types.FetchNodeCredentialsResponse), nil
 		}
 

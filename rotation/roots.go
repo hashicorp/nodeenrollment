@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"errors"
 	"fmt"
 	"math/big"
@@ -83,6 +84,7 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 			newRoot = new(types.RootCertificate)
 			pubKey  ed25519.PublicKey
 			privKey ed25519.PrivateKey
+			keyId   string
 		)
 		// Create certificate key
 		{
@@ -97,7 +99,7 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 			}
 			newRoot.PrivateKeyType = types.KEYTYPE_ED25519
 
-			newRoot.PublicKeyPkix, _, err = nodeenrollment.SubjectKeyInfoAndKeyIdFromPubKey(pubKey)
+			newRoot.PublicKeyPkix, keyId, err = nodeenrollment.SubjectKeyInfoAndKeyIdFromPubKey(pubKey)
 			if err != nil {
 				return nil, fmt.Errorf("(%s) error fetching public key id: %w", op, err)
 			}
@@ -107,9 +109,12 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 		{
 			now := time.Now()
 			template := &x509.Certificate{
-				AuthorityKeyId:        newRoot.PublicKeyPkix,
-				SubjectKeyId:          newRoot.PublicKeyPkix,
-				DNSNames:              []string{nodeenrollment.CommonDnsName},
+				AuthorityKeyId: newRoot.PublicKeyPkix,
+				SubjectKeyId:   newRoot.PublicKeyPkix,
+				Subject: pkix.Name{
+					CommonName: keyId,
+				},
+				DNSNames:              []string{keyId},
 				KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement | x509.KeyUsageCertSign,
 				SerialNumber:          big.NewInt(mathrand.Int63()),
 				NotBefore:             now.Add(opts.WithNotBeforeClockSkew),
@@ -117,6 +122,11 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 				BasicConstraintsValid: true,
 				IsCA:                  true,
 			}
+
+			// TODO: After enough time, remove this; it's here because
+			// verification code used to expect it, but these days we want to
+			// only use it in the context of fetching
+			template.DNSNames = append(template.DNSNames, nodeenrollment.CommonDnsName)
 
 			if kind == nodeenrollment.NextId {
 				newRoot.Id = string(nodeenrollment.NextId)

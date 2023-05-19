@@ -65,6 +65,7 @@ func Dial(
 		return nonTlsConn, nil
 	}
 
+	// Fetch credentials for the node
 	creds, err := types.LoadNodeCredentials(ctx, storage, nodeenrollment.CurrentId, opt...)
 	if err != nil && !errors.Is(err, nodeenrollment.ErrNotFound) {
 		return nil, fmt.Errorf("(%s) unable to load node credentials: %w", op, err)
@@ -73,7 +74,8 @@ func Dial(
 		return nil, fmt.Errorf("(%s) loaded node credentials are nil", op)
 	}
 
-	// Add in the address to SNI, but first ensure we're only adding the host
+	// Add in the address to SNI for LB routing, but first ensure we're only
+	// adding the host
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		if strings.Contains(err.Error(), "missing port") {
@@ -85,7 +87,7 @@ func Dial(
 	opt = append(opt, nodeenrollment.WithServerName(host))
 
 	if len(creds.CertificateBundles) == 0 {
-		// We haven't fetched creds yet, so attempt it
+		// We don't have creds yet, so attempt fetching them
 		nonTlsConn, err := nonTlsConnFn()
 		if err != nil {
 			return nil, fmt.Errorf("(%s) unable to dial to server: %w", op, err)
@@ -110,26 +112,38 @@ func Dial(
 		// creds, and can proceed connecting
 	}
 
-	nonTlsConn, err := nonTlsConnFn()
-	if err != nil {
-		return nil, fmt.Errorf("(%s) unable to dial to server: %w", op, err)
-	}
-
-	tlsConfig, err := nodetls.ClientConfig(ctx, creds, opt...)
+	tlsConfigs, err := nodetls.ClientConfigs(ctx, creds, opt...)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) unable to get tls config from node creds: %w", op, err)
 	}
-	tlsConn := tls.Client(nonTlsConn, tlsConfig)
-
-	if err := tlsConn.HandshakeContext(ctx); err != nil {
-		return nil, fmt.Errorf("(%s) error handshaking tls connection: %w", op, err)
+	if len(tlsConfigs) == 0 {
+		return nil, fmt.Errorf("(%s) no valid tls client configs could be generated", op)
 	}
 
-	return tlsConn, nil
+	// We have two configs: one will ask for a chain with the current CA cert,
+	// and one with the next one (at least from the perspective of this client).
+	// We could return one along with the IDs to use and have this code embed
+	// one or the other but that seems more of a hassle than just ranging
+	// through this and trying to connect.
+	var tlsErrors *multierror.Error
+	for _, tlsConfig := range tlsConfigs {
+		nonTlsConn, err := nonTlsConnFn()
+		if err != nil {
+			return nil, fmt.Errorf("(%s) unable to dial to server: %w", op, err)
+		}
+		tlsConn := tls.Client(nonTlsConn, tlsConfig)
+		if err := tlsConn.HandshakeContext(ctx); err != nil {
+			tlsErrors = multierror.Append(tlsErrors, fmt.Errorf("(%s) error handshaking tls connection: %w", op, err))
+			continue
+		}
+		return tlsConn, nil
+	}
+
+	return nil, fmt.Errorf("(%s) errors encountered attempting to create client TLS connection: %w", op, tlsErrors)
 }
 
 // attemptFetch creates a signed fetch request and tries to perform a TLS
-// handshake, reading the resulting certificate
+// handshake, reading the resulting response
 //
 // If not authorized, returns nodeenrollment.ErrNotAuthorized
 func attemptFetch(ctx context.Context, nonTlsConn net.Conn, creds *types.NodeCredentials, opt ...nodeenrollment.Option) (*types.FetchNodeCredentialsResponse, error) {
@@ -206,7 +220,7 @@ func attemptFetch(ctx context.Context, nonTlsConn net.Conn, creds *types.NodeCre
 	tlsConf := &tls.Config{
 		Rand: opts.WithRandomReader,
 		GetClientCertificate: func(
-			cri *tls.CertificateRequestInfo,
+			_ *tls.CertificateRequestInfo,
 		) (*tls.Certificate, error) {
 			return tlsCert, nil
 		},
@@ -228,9 +242,11 @@ func attemptFetch(ctx context.Context, nonTlsConn net.Conn, creds *types.NodeCre
 	switch commonName {
 	case nodeenrollment.CommonDnsName:
 		// We're unauthorized
+		// log.Println("got common name")
 		return nil, nodeenrollment.ErrNotAuthorized
 
 	default:
+		// log.Println("common name was", commonName)
 		respBytes, err := base64.RawStdEncoding.DecodeString(tlsConn.ConnectionState().PeerCertificates[0].Subject.CommonName)
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error base64 decoding fetch response: %w", op, err)
