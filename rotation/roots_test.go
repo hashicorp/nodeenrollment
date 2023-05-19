@@ -2,6 +2,7 @@ package rotation
 
 import (
 	"context"
+	"crypto/x509"
 	"testing"
 	"time"
 
@@ -62,6 +63,13 @@ func TestRotateRootCertificates(t *testing.T) {
 		} else {
 			next = root
 		}
+		keyId, err := nodeenrollment.KeyIdFromPkix(root.PublicKeyPkix)
+		require.NoError(err)
+		cert, err := x509.ParseCertificate(root.CertificateDer)
+		require.NoError(err)
+		assert.Contains(cert.DNSNames, nodeenrollment.CommonDnsName)
+		assert.Contains(cert.DNSNames, keyId)
+		assert.Equal(cert.Subject.CommonName, keyId)
 	}
 
 	// Sleep until after the skew period or the logic might think something was

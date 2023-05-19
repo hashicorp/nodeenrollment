@@ -3,8 +3,10 @@ package tls
 import (
 	"crypto"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"fmt"
 	"testing"
 	"time"
 
@@ -163,9 +165,15 @@ func TestGenerateServerCertificates(t *testing.T) {
 
 				cert, err := x509.ParseCertificate(bundle.CertificateDer)
 				require.NoError(err)
+				caCert, err := x509.ParseCertificate(bundle.CaCertificateDer)
+				require.NoError(err)
+				pkixKey, err := x509.MarshalPKIXPublicKey(caCert.PublicKey)
+				require.NoError(err)
+				keyId, err := nodeenrollment.KeyIdFromPkix(pkixKey)
+				require.NoError(err)
 				switch req.CommonName {
 				case "":
-					assert.Equal(nodeenrollment.CommonDnsName, cert.Subject.CommonName)
+					assert.Equal(keyId, cert.Subject.CommonName)
 				default:
 					assert.Equal(req.CommonName, cert.Subject.CommonName)
 				}
@@ -202,6 +210,12 @@ func TestServerConfig(t *testing.T) {
 	}
 
 	resp, err := GenerateServerCertificates(ctx, fileStorage, req)
+	require.NoError(t, err)
+	caCert, err := x509.ParseCertificate(nodeCreds.CertificateBundles[0].CaCertificateDer)
+	require.NoError(t, err)
+	pkixPubKey, err := x509.MarshalPKIXPublicKey(caCert.PublicKey)
+	require.NoError(t, err)
+	keyId, err := nodeenrollment.KeyIdFromPkix(pkixPubKey)
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -253,11 +267,11 @@ func TestServerConfig(t *testing.T) {
 				in, wantErrContains = tt.setupFn(proto.Clone(in).(*types.GenerateServerCertificatesResponse))
 			}
 
-			resp, err := ServerConfig(ctx, in)
+			tlsConfig, err := ServerConfig(ctx, in)
 			switch wantErrContains {
 			case "":
 				require.NoError(err)
-				require.NotNil(resp)
+				require.NotNil(tlsConfig)
 			default:
 				require.Error(err)
 				assert.Contains(err.Error(), wantErrContains)
@@ -272,23 +286,25 @@ func TestServerConfig(t *testing.T) {
 			// them or iterate over them so we have to just try manually
 			// validating certs, boo. We simply validate that the generated cert
 			// validates against the returned roots.
-			assert.Len(resp.Certificates, 2)
-			for _, tlsCert := range resp.Certificates {
-				assert.Len(tlsCert.Certificate, 2)
-				assert.Equal(tlsCert.Certificate[0], tlsCert.Leaf.Raw)
-				assert.NotEmpty(tlsCert.PrivateKey)
-				assert.NotEmpty(tlsCert.Certificate[1])
+			tlsCert, err := tlsConfig.GetCertificate(&tls.ClientHelloInfo{
+				SupportedProtos: []string{fmt.Sprintf("%s%s", nodeenrollment.CertificatePreferenceV1Prefix, keyId)},
+			})
+			require.NoError(err)
+			require.NotNil(tlsCert)
+			assert.Len(tlsCert.Certificate, 2)
+			assert.Equal(tlsCert.Certificate[0], tlsCert.Leaf.Raw)
+			assert.NotEmpty(tlsCert.PrivateKey)
+			assert.NotEmpty(tlsCert.Certificate[1])
 
-				verifyOpts := x509.VerifyOptions{
-					Roots:     resp.RootCAs,
-					KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-				}
+			verifyOpts := x509.VerifyOptions{
+				Roots:     tlsConfig.RootCAs,
+				KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			}
 
-				if tlsCert.Leaf.NotBefore.Before(time.Now()) && tlsCert.Leaf.NotAfter.After(time.Now()) {
-					chains, err := tlsCert.Leaf.Verify(verifyOpts)
-					require.NoError(err)
-					assert.Less(0, len(chains))
-				}
+			if tlsCert.Leaf.NotBefore.Before(time.Now()) && tlsCert.Leaf.NotAfter.After(time.Now()) {
+				chains, err := tlsCert.Leaf.Verify(verifyOpts)
+				require.NoError(err)
+				assert.Less(0, len(chains))
 			}
 		})
 	}

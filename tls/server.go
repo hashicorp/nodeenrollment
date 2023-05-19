@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	mathrand "math/rand"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/nodeenrollment"
@@ -124,6 +125,11 @@ func GenerateServerCertificates(
 			return nil, fmt.Errorf("(%s) error getting signing params: %w", op, err)
 		}
 
+		keyId, err := nodeenrollment.KeyIdFromPkix(rootCert.PublicKeyPkix)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error deriving key id for root cert: %w", op, err)
+		}
+
 		template := &x509.Certificate{
 			AuthorityKeyId: serverCert.SubjectKeyId,
 			SubjectKeyId:   req.CertificatePublicKeyPkix,
@@ -131,9 +137,9 @@ func GenerateServerCertificates(
 				x509.ExtKeyUsageServerAuth,
 			},
 			Subject: pkix.Name{
-				CommonName: nodeenrollment.CommonDnsName,
+				CommonName: keyId,
 			},
-			DNSNames:     []string{nodeenrollment.CommonDnsName},
+			DNSNames:     []string{keyId},
 			KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement,
 			SerialNumber: big.NewInt(mathrand.Int63()),
 			NotBefore:    serverCert.NotBefore,
@@ -142,8 +148,10 @@ func GenerateServerCertificates(
 		if len(req.Nonce) > 0 {
 			template.DNSNames = append(template.DNSNames, base64.RawStdEncoding.EncodeToString(req.Nonce))
 		}
+		// log.Println("req common name", req.CommonName)
 		if req.CommonName != "" {
 			template.Subject.CommonName = req.CommonName
+			template.DNSNames = append(template.DNSNames, req.CommonName)
 		}
 
 		leafCert, err := x509.CreateCertificate(opts.WithRandomReader, template, serverCert, pubKey, signer)
@@ -165,9 +173,9 @@ func GenerateServerCertificates(
 // ServerConfig takes in a generate response and turns it into a server-side TLS
 // configuration
 //
-// Supported options: none, although options passed in here will be passed
-// through to the standard TLS configuration function (useful for tests,
-// mainly)
+// Supported options: WithServerName, which will be the value used in the
+// cert map for lookup; also, options passed in here will be passed through to
+// the standard TLS configuration function (useful for tests, mainly)
 func ServerConfig(
 	ctx context.Context,
 	in *types.GenerateServerCertificatesResponse,
@@ -186,22 +194,31 @@ func ServerConfig(
 		return nil, fmt.Errorf("(%s) invalid input certificate bundles, wanted 2 bundles, got %d", op, len(in.CertificateBundles))
 	}
 
+	opts, err := nodeenrollment.GetOpts(opt...)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
+	}
+
 	privKey, err := x509.ParsePKCS8PrivateKey(in.CertificatePrivateKeyPkcs8)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error parsing private key: %w", op, err)
 	}
 
-	var tlsCerts []tls.Certificate
 	rootPool := x509.NewCertPool()
 
-	var foundCert bool
-	now := time.Now()
-	for _, certBundle := range in.CertificateBundles {
-		if foundCert {
-			break
-		}
+	type certBundle struct {
+		leaf *x509.Certificate
+		ca   *x509.Certificate
+	}
+	certMap := map[string]*certBundle{}
 
-		leafCert, err := x509.ParseCertificate(certBundle.CertificateDer)
+	now := time.Now()
+
+	for _, bundle := range in.CertificateBundles {
+		//
+		// Parse server certificate
+		//
+		leafCert, err := x509.ParseCertificate(bundle.CertificateDer)
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error parsing leaf certificate: %w", op, err)
 		}
@@ -214,40 +231,91 @@ func ServerConfig(
 			continue
 		}
 
-		serverCert, err := x509.ParseCertificate(certBundle.CaCertificateDer)
+		//
+		// Parse CA certificate
+		//
+		caCert, err := x509.ParseCertificate(bundle.CaCertificateDer)
 		if err != nil {
-			return nil, fmt.Errorf("(%s) error parsing server certificate: %w", op, err)
+			return nil, fmt.Errorf("(%s) error parsing ca certificate: %w", op, err)
 		}
 		// It's expired
-		if serverCert.NotAfter.Before(now) {
+		if caCert.NotAfter.Before(now) {
 			continue
 		}
 		// It's not yet valid
-		if serverCert.NotBefore.After(now) {
+		if caCert.NotBefore.After(now) {
 			continue
 		}
+		rootPool.AddCert(caCert)
 
-		rootPool.AddCert(serverCert)
+		caCertPkixPubKey, err := x509.MarshalPKIXPublicKey(caCert.PublicKey)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error marshaling ca cert pub key: %w", op, err)
+		}
+		caCertKeyId, err := nodeenrollment.KeyIdFromPkix(caCertPkixPubKey)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error deriving key id from ca cert pub key: %w", op, err)
+		}
 
-		tlsCerts = append(tlsCerts, tls.Certificate{
-			Certificate: [][]byte{
-				leafCert.Raw,
-				serverCert.Raw,
-			},
-			PrivateKey: privKey,
-			Leaf:       leafCert,
-		})
+		certMap[caCertKeyId] = &certBundle{
+			leaf: leafCert,
+			ca:   caCert,
+		}
 
-		foundCert = true
+		// log.Println("server side adding", caCertKeyId, "to certMap")
+
+		// If a server name is given, add it to the map. One of the ways this is
+		// used is during fetching, where we don't have a key ID; we pass in the
+		// standard name here, and the fetch attempt on the other side will use
+		// it during the handshake.
+		if opts.WithServerName != "" && certMap[opts.WithServerName] == nil {
+			// log.Println("server side adding", opts.WithServerName, "to certMap via opts.WithServerName")
+			certMap[opts.WithServerName] = &certBundle{
+				leaf: leafCert,
+				ca:   caCert,
+			}
+		}
 	}
 
-	if len(tlsCerts) == 0 {
-		return nil, fmt.Errorf("(%s) no valid server certificates found", op)
-	}
-
-	tlsConf, err := standardTlsConfig(ctx, tlsCerts, rootPool, opt...)
+	tlsConf, err := standardTlsConfig(ctx, rootPool, opt...)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error generating standard tls config: %w", op, err)
+	}
+
+	tlsConf.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+		var certificateSelector string
+		for _, proto := range hello.SupportedProtos {
+			if strings.HasPrefix(proto, nodeenrollment.CertificatePreferenceV1Prefix) {
+				certificateSelector = strings.TrimPrefix(proto, nodeenrollment.CertificatePreferenceV1Prefix)
+				break
+			}
+		}
+		// If we don't find a certificate selector it's an older client. If a
+		// server name was provided, use that; if not just pick something and
+		// hope for the best, which is basically the old logic anyways...
+		// log.Println("GetCertificate", certificateSelector)
+		if certificateSelector == "" {
+			certificateSelector = opts.WithServerName
+		}
+		if certificateSelector == "" {
+			for k := range certMap {
+				certificateSelector = k
+				break
+			}
+		}
+		bundle := certMap[certificateSelector]
+		if bundle == nil {
+			// log.Println("GetCertificate, selector not found", certificateSelector)
+			return nil, nil
+		}
+		return &tls.Certificate{
+			Certificate: [][]byte{
+				bundle.leaf.Raw,
+				bundle.ca.Raw,
+			},
+			PrivateKey: privKey,
+			Leaf:       bundle.leaf,
+		}, nil
 	}
 
 	return tlsConf, nil
