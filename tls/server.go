@@ -173,7 +173,7 @@ func GenerateServerCertificates(
 // ServerConfig takes in a generate response and turns it into a server-side TLS
 // configuration
 //
-// Supported options: WithServerName, which causes use that as the value in the
+// Supported options: WithServerName, which will be the value used in the
 // cert map for lookup; also, options passed in here will be passed through to
 // the standard TLS configuration function (useful for tests, mainly)
 func ServerConfig(
