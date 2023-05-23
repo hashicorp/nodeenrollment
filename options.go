@@ -64,9 +64,15 @@ func getDefaultOptions() *Options {
 }
 
 // WithCertificateLifetime allows overriding a default duration for certificate
-// creation
+// creation. If 0 is passed in, the default will be used; to get an actual zero
+// lifetime (e.g. to only use skew), just specify something short, like a
+// nanosecond.
 func WithCertificateLifetime(with time.Duration) Option {
 	return func(o *Options) error {
+		if with == 0 {
+			o.WithCertificateLifetime = DefaultCertificateLifetime
+			return nil
+		}
 		o.WithCertificateLifetime = with
 		return nil
 	}
