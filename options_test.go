@@ -32,6 +32,9 @@ func Test_GetOpts(t *testing.T) {
 		opts, err = GetOpts(WithCertificateLifetime(time.Hour))
 		require.NoError(err)
 		assert.Equal(time.Hour, opts.WithCertificateLifetime)
+		opts, err = GetOpts(WithCertificateLifetime(0))
+		require.NoError(err)
+		assert.Equal(DefaultCertificateLifetime, opts.WithCertificateLifetime)
 	})
 	t.Run("with-not-before-clock-skew", func(t *testing.T) {
 		assert, require := assert.New(t), require.New(t)
