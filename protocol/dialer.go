@@ -33,7 +33,8 @@ import (
 // TLS), WithExtraAlpnProtos (passed through to the client side TLS
 // configuration),
 // WithActivationToken/WithRegistrationWrapper/WithWrappingRegistrationFlowApplicationSpecificParams
-// (passed through to CreateFetchNodeCredentialsRequest)
+// (passed through to CreateFetchNodeCredentialsRequest),
+// WithLogger
 func Dial(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -47,6 +48,11 @@ func Dial(
 		return nil, fmt.Errorf("(%s) nil context", op)
 	case nodeenrollment.IsNil(storage):
 		return nil, fmt.Errorf("(%s) nil storage", op)
+	}
+
+	opts, err := nodeenrollment.GetOpts(opt...)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
 	nonTlsConnFn := func() (net.Conn, error) {
@@ -68,7 +74,9 @@ func Dial(
 	// Fetch credentials for the node
 	creds, err := types.LoadNodeCredentials(ctx, storage, nodeenrollment.CurrentId, opt...)
 	if err != nil && !errors.Is(err, nodeenrollment.ErrNotFound) {
-		return nil, fmt.Errorf("(%s) unable to load node credentials: %w", op, err)
+		err := fmt.Errorf("error loading node credentials: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 	if creds == nil {
 		return nil, fmt.Errorf("(%s) loaded node credentials are nil", op)
@@ -81,7 +89,9 @@ func Dial(
 		if strings.Contains(err.Error(), "missing port") {
 			host = addr
 		} else {
-			return nil, fmt.Errorf("(%s) error splitting address host/port: %w", op, err)
+			err := fmt.Errorf("error splitting address host/port: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 	}
 	opt = append(opt, nodeenrollment.WithServerName(host))
@@ -90,7 +100,9 @@ func Dial(
 		// We don't have creds yet, so attempt fetching them
 		nonTlsConn, err := nonTlsConnFn()
 		if err != nil {
-			return nil, fmt.Errorf("(%s) unable to dial to server: %w", op, err)
+			err := fmt.Errorf("unable to dial to server: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 
 		fetchResp, err := attemptFetch(ctx, nonTlsConn, creds, opt...)
@@ -101,11 +113,14 @@ func Dial(
 		if err != nil {
 			// If not authorized, this will pass ErrNotAuthorized back to the
 			// caller
+			opts.WithLogger.Error(err.Error(), "op", op, "note", "not-authorized")
 			return nil, err
 		}
 
 		if _, err := creds.HandleFetchNodeCredentialsResponse(ctx, storage, fetchResp, opt...); err != nil {
-			return nil, fmt.Errorf("(%s) error handling fetch creds response from server: %w", op, err)
+			err := fmt.Errorf("error handling fetch creds response from server: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 
 		// At this point if there is no error we have found and saved our
@@ -114,10 +129,14 @@ func Dial(
 
 	tlsConfigs, err := nodetls.ClientConfigs(ctx, creds, opt...)
 	if err != nil {
-		return nil, fmt.Errorf("(%s) unable to get tls config from node creds: %w", op, err)
+		err := fmt.Errorf("error getting tls configs from node creds: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 	if len(tlsConfigs) == 0 {
-		return nil, fmt.Errorf("(%s) no valid tls client configs could be generated", op)
+		err := errors.New("no valid tls client configs were returned")
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	// We have two configs: one will ask for a chain with the current CA cert,
@@ -129,17 +148,21 @@ func Dial(
 	for _, tlsConfig := range tlsConfigs {
 		nonTlsConn, err := nonTlsConnFn()
 		if err != nil {
-			return nil, fmt.Errorf("(%s) unable to dial to server: %w", op, err)
+			err := fmt.Errorf("unable to dial to server: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 		tlsConn := tls.Client(nonTlsConn, tlsConfig)
 		if err := tlsConn.HandshakeContext(ctx); err != nil {
-			tlsErrors = multierror.Append(tlsErrors, fmt.Errorf("(%s) error handshaking tls connection: %w", op, err))
+			tlsErrors = multierror.Append(tlsErrors, fmt.Errorf("error handshaking tls connection: %w", err))
 			continue
 		}
 		return tlsConn, nil
 	}
 
-	return nil, fmt.Errorf("(%s) errors encountered attempting to create client TLS connection: %w", op, tlsErrors)
+	err = fmt.Errorf("errors encountered attempting to create client tls connection: %w", tlsErrors)
+	opts.WithLogger.Error(err.Error(), "op", op)
+	return nil, fmt.Errorf("(%s) %s", op, err.Error())
 }
 
 // attemptFetch creates a signed fetch request and tries to perform a TLS
@@ -235,25 +258,30 @@ func attemptFetch(ctx context.Context, nonTlsConn net.Conn, creds *types.NodeCre
 	tlsConn := tls.Client(nonTlsConn, tlsConf)
 
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
-		return nil, fmt.Errorf("(%s) error tls handshaking connection: %w", op, err)
+		err := fmt.Errorf("error tls handshaking connection on client: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	commonName := tlsConn.ConnectionState().PeerCertificates[0].Subject.CommonName
 	switch commonName {
 	case nodeenrollment.CommonDnsName:
 		// We're unauthorized
-		// log.Println("got common name")
 		return nil, nodeenrollment.ErrNotAuthorized
 
 	default:
 		// log.Println("common name was", commonName)
 		respBytes, err := base64.RawStdEncoding.DecodeString(tlsConn.ConnectionState().PeerCertificates[0].Subject.CommonName)
 		if err != nil {
-			return nil, fmt.Errorf("(%s) error base64 decoding fetch response: %w", op, err)
+			err := fmt.Errorf("error base-64 decoding fetch response: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 		fetchResp := new(types.FetchNodeCredentialsResponse)
 		if err := proto.Unmarshal(respBytes, fetchResp); err != nil {
-			return nil, fmt.Errorf("(%s) error decoding response from server: %w", op, err)
+			err := fmt.Errorf("error decoding response from server: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 
 		return fetchResp, nil

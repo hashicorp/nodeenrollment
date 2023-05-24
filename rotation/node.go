@@ -28,7 +28,7 @@ import (
 //
 // Supported options:
 // WithStorageWrapper/WithRandomReader/WithNotBeforeClockSkew/WithNotAfterClockSkew
-// (passed through to AuthorizeNode and others)
+// (passed through to AuthorizeNode and others), WithLogger
 func RotateNodeCredentials(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -48,15 +48,24 @@ func RotateNodeCredentials(
 		return nil, fmt.Errorf("(%s) nil encrypted fetch node credentials request", op)
 	}
 
+	opts, err := nodeenrollment.GetOpts(opt...)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
+	}
+
 	currentKeyId, err := nodeenrollment.KeyIdFromPkix(req.CertificatePublicKeyPkix)
 	if err != nil {
-		return nil, fmt.Errorf("(%s) error deriving current key id: %w", op, err)
+		err := fmt.Errorf("error deriving current key id: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	// First we get our current node information and decrypt the fetch request
 	currentNodeInfo, err := types.LoadNodeInformation(ctx, storage, currentKeyId, opt...)
 	if err != nil {
-		return nil, fmt.Errorf("(%s) error loading current node information: %w", op, err)
+		err := fmt.Errorf("error loading current node information: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	fetchRequest := new(types.FetchNodeCredentialsRequest)
@@ -67,7 +76,9 @@ func RotateNodeCredentials(
 		fetchRequest,
 		opt...,
 	); err != nil {
-		return nil, fmt.Errorf("(%s) error decrypting request with current keys: %w", op, err)
+		err := fmt.Errorf("error decrypting request with current keys: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	// At this point we've validated via the shared encryption key that it came
@@ -76,20 +87,26 @@ func RotateNodeCredentials(
 	// on it and return the result, encrypted with the new keys.
 	_, err = registration.AuthorizeNode(ctx, storage, fetchRequest, append(opt, nodeenrollment.WithState(currentNodeInfo.State))...)
 	if err != nil {
-		return nil, fmt.Errorf("(%s) error authorizing node with request: %w", op, err)
+		err := fmt.Errorf("error authorizing node with request: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	// We can use the same request as it is signed/valid. This will be encrypted
 	// against the _new_ keys.
 	fetchResp, err := registration.FetchNodeCredentials(ctx, storage, fetchRequest, opt...)
 	if err != nil {
-		return nil, fmt.Errorf("(%s) error getting new fetch credentials response: %w", op, err)
+		err := fmt.Errorf("error getting new fetch credentials response: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	// Wrap that new message in one encrypted with the current keys
 	encryptedResp, err := nodeenrollment.EncryptMessage(ctx, fetchResp, currentNodeInfo, opt...)
 	if err != nil {
-		return nil, fmt.Errorf("(%s) error encrypting fetch credentials response: %w", op, err)
+		err := fmt.Errorf("error encrypting fetch credentials response: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	return &types.RotateNodeCredentialsResponse{

@@ -34,7 +34,7 @@ import (
 // Supported options: WithRandomReader, WithCertificateLifetime,
 // WithStorageWrapper (passed through to LoadRootCertificates and
 // RootCertificates.Store), WithSkipStorage, WithNotBeforeClockSkew,
-// WithNotAfterClockSkew, WithReinitializeRoots
+// WithNotAfterClockSkew, WithReinitializeRoots, WithLogger
 //
 // Note that WithNotAfterClockSkew is cumulative with WithCertificatLifetime
 func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) (*types.RootCertificates, error) {
@@ -55,13 +55,17 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 		}
 		err = storage.Remove(ctx, roots)
 		if err != nil {
-			return nil, fmt.Errorf("(%s) error removing existing roots: %w", op, err)
+			err := fmt.Errorf("error removing existing roots: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 	}
 
 	currentRoots, err := types.LoadRootCertificates(ctx, storage, opt...)
 	if err != nil && !errors.Is(err, nodeenrollment.ErrNotFound) {
-		return nil, fmt.Errorf("(%s) error checking for existing roots: %w", op, err)
+		err := fmt.Errorf("error checking for existing roots: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	var toMake []nodeenrollment.KnownId
@@ -72,7 +76,9 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 		return currentRoots, nil
 
 	case len(toMake) == 1 && nextCurrent == nil:
-		return nil, fmt.Errorf("(%s) only one certificate to make but next current certificate not determined", op)
+		err := errors.New("only one certificate to make but next current certificate not determined")
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	if nextCurrent != nil {
@@ -169,7 +175,9 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 
 	if !opts.WithSkipStorage {
 		if err := ret.Store(ctx, storage, opt...); err != nil {
-			return nil, fmt.Errorf("(%s) error persisting current root certificates: %w", op, err)
+			err := fmt.Errorf("error persisting current root certificates: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 	}
 

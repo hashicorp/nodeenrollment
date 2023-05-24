@@ -85,10 +85,8 @@ func (l *InterceptingListener) getTlsConfigForClient(clientInfo *ClientInfo) fun
 				}
 				// This will return a response either with Authorized false and no
 				// other data or Authorized true and encrypted values
-				// log.Println("fetching creds")
 				fetchResp, err := l.fetchCredsFn(l.ctx, l.storage, req, l.options...)
 				if err != nil {
-					// log.Println("error fetching creds", err)
 					return nil, fmt.Errorf("(%s) error handling fetch creds: %w", op, err)
 				}
 
