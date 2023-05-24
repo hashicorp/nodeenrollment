@@ -173,6 +173,8 @@ func NewInterceptingListener(
 //
 // What's returned is a protocol.Conn; it contains an embedded *tls.Conn as the
 // Conn variable, if needed.
+//
+// Supported options: WithLogger
 func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 	const op = "nodeenrollment.protocol.(InterceptingListener).Accept"
 	opts, err := nodeenrollment.GetOpts(l.options...)
@@ -186,8 +188,9 @@ func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 			if errors.Is(err, net.ErrClosed) {
 				return nil, net.ErrClosed
 			}
-			opts.WithLogger.Error(err.Error())
-			return nil, fmt.Errorf("(%s) error accepting connection: %w", op, err)
+			err := fmt.Errorf("error accepting connection: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 		if conn == nil {
 			continue
@@ -206,22 +209,23 @@ func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 				err = multierror.Append(err, fmt.Errorf("error closing connection: %w", closeErr))
 			}
 			// Return a temp error so we don't close the listener
-			opts.WithLogger.Error(err.Error())
-			return nil, temperror.New(fmt.Errorf("(%s) error tls handshaking connection: %w", op, err))
+			err := fmt.Errorf("error tls handshaking server side: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, temperror.New(fmt.Errorf("(%s) %s", op, err.Error()))
 		}
 
 		// Now that we've performed the handshake, see if it's a fetch. If so,
 		// we want to close the connection and return a temp error either way so
 		// that the node either retries with new creds or tries again to fetch later.
 		if strings.HasPrefix(tlsConn.ConnectionState().NegotiatedProtocol, nodeenrollment.FetchNodeCredsNextProtoV1Prefix) {
-			err := fmt.Errorf("(%s) fetch handled, awaiting authorization or auth connection", op)
+			err := errors.New("fetch handled, awaiting authorization or auth connection")
 			// If we got here we've already sent back the creds, so close the
 			// connection and return a temp error so we keep the listener alive
 			if closeErr := tlsConn.Close(); closeErr != nil {
 				err = multierror.Append(err, fmt.Errorf("error closing connection: %w", closeErr))
 			}
-			opts.WithLogger.Error(err.Error())
-			return nil, temperror.New(err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, temperror.New(fmt.Errorf("(%s) %s", op, err.Error()))
 		}
 
 		return NewConn(tlsConn,

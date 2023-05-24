@@ -53,6 +53,10 @@ const (
 	// is trying to authenticate
 	AuthenticateNodeNextProtoV1Prefix = "v1-nodee-authenticate-node-"
 
+	// CertificatePreferenceV1Prefix is the ALPN NextProto used by a node to
+	// indicate a certificate preference, since we can't use ServerName
+	CertificatePreferenceV1Prefix = "v1-nodee-certificate-preference-"
+
 	// NonceSize is our defined nonce size, in bytes
 	NonceSize = 32
 

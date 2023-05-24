@@ -32,7 +32,8 @@ func ContainsKnownAlpnProto(protos ...string) bool {
 	for _, p := range protos {
 		switch {
 		case strings.HasPrefix(p, FetchNodeCredsNextProtoV1Prefix),
-			strings.HasPrefix(p, AuthenticateNodeNextProtoV1Prefix):
+			strings.HasPrefix(p, AuthenticateNodeNextProtoV1Prefix),
+			strings.HasPrefix(p, CertificatePreferenceV1Prefix):
 			return true
 		}
 	}

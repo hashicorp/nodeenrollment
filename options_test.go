@@ -32,6 +32,9 @@ func Test_GetOpts(t *testing.T) {
 		opts, err = GetOpts(WithCertificateLifetime(time.Hour))
 		require.NoError(err)
 		assert.Equal(time.Hour, opts.WithCertificateLifetime)
+		opts, err = GetOpts(WithCertificateLifetime(0))
+		require.NoError(err)
+		assert.Equal(DefaultCertificateLifetime, opts.WithCertificateLifetime)
 	})
 	t.Run("with-not-before-clock-skew", func(t *testing.T) {
 		assert, require := assert.New(t), require.New(t)
@@ -220,5 +223,14 @@ func Test_GetOpts(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(opts.WithLogger)
 		assert.NotEqual(currLogger, opts.WithLogger)
+	})
+	t.Run("with-test-error-contains", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.Empty(opts.WithTestErrorContains)
+		opts, err = GetOpts(WithTestErrorContains("foobar"))
+		require.NoError(err)
+		assert.Equal("foobar", opts.WithTestErrorContains)
 	})
 }

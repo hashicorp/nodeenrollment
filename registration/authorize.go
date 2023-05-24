@@ -138,12 +138,17 @@ func authorizeNodeCommon(
 				Subject: pkix.Name{
 					CommonName: nodeInfo.Id,
 				},
-				DNSNames:     []string{nodeenrollment.CommonDnsName},
+				DNSNames:     []string{nodeInfo.Id},
 				KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement,
 				SerialNumber: big.NewInt(mathrand.Int63()),
 				NotBefore:    caCert.NotBefore,
 				NotAfter:     caCert.NotAfter,
 			}
+
+			// TODO: After enough time, remove this; it's here because
+			// verification code used to expect it, but these days we want to
+			// only use it in the context of fetching
+			template.DNSNames = append(template.DNSNames, nodeenrollment.CommonDnsName)
 
 			certificateDer, err := x509.CreateCertificate(opts.WithRandomReader, template, caCert, ed25519.PublicKey(certPubKey), caPrivKey)
 			if err != nil {

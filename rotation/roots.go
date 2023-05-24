@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"errors"
 	"fmt"
 	"math/big"
@@ -33,7 +34,9 @@ import (
 // Supported options: WithRandomReader, WithCertificateLifetime,
 // WithStorageWrapper (passed through to LoadRootCertificates and
 // RootCertificates.Store), WithSkipStorage, WithNotBeforeClockSkew,
-// WithReinitializeRoots, WithLogger
+// WithNotAfterClockSkew, WithReinitializeRoots, WithLogger
+//
+// Note that WithNotAfterClockSkew is cumulative with WithCertificatLifetime
 func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage, opt ...nodeenrollment.Option) (*types.RootCertificates, error) {
 	const op = "nodeenrollment.rotation.RotateRootCertificates"
 	opts, err := nodeenrollment.GetOpts(opt...)
@@ -52,15 +55,17 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 		}
 		err = storage.Remove(ctx, roots)
 		if err != nil {
-			opts.WithLogger.Error(err.Error())
-			return nil, fmt.Errorf("(%s) error removing existing roots: %w", op, err)
+			err := fmt.Errorf("error removing existing roots: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 	}
 
 	currentRoots, err := types.LoadRootCertificates(ctx, storage, opt...)
 	if err != nil && !errors.Is(err, nodeenrollment.ErrNotFound) {
-		opts.WithLogger.Error(err.Error())
-		return nil, fmt.Errorf("(%s) error checking for existing roots: %w", op, err)
+		err := fmt.Errorf("error checking for existing roots: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	var toMake []nodeenrollment.KnownId
@@ -71,8 +76,9 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 		return currentRoots, nil
 
 	case len(toMake) == 1 && nextCurrent == nil:
-		opts.WithLogger.Error(err.Error())
-		return nil, fmt.Errorf("(%s) only one certificate to make but next current certificate not determined", op)
+		err := errors.New("only one certificate to make but next current certificate not determined")
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	if nextCurrent != nil {
@@ -84,6 +90,7 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 			newRoot = new(types.RootCertificate)
 			pubKey  ed25519.PublicKey
 			privKey ed25519.PrivateKey
+			keyId   string
 		)
 		// Create certificate key
 		{
@@ -98,7 +105,7 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 			}
 			newRoot.PrivateKeyType = types.KEYTYPE_ED25519
 
-			newRoot.PublicKeyPkix, _, err = nodeenrollment.SubjectKeyInfoAndKeyIdFromPubKey(pubKey)
+			newRoot.PublicKeyPkix, keyId, err = nodeenrollment.SubjectKeyInfoAndKeyIdFromPubKey(pubKey)
 			if err != nil {
 				return nil, fmt.Errorf("(%s) error fetching public key id: %w", op, err)
 			}
@@ -108,16 +115,24 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 		{
 			now := time.Now()
 			template := &x509.Certificate{
-				AuthorityKeyId:        newRoot.PublicKeyPkix,
-				SubjectKeyId:          newRoot.PublicKeyPkix,
-				DNSNames:              []string{nodeenrollment.CommonDnsName},
+				AuthorityKeyId: newRoot.PublicKeyPkix,
+				SubjectKeyId:   newRoot.PublicKeyPkix,
+				Subject: pkix.Name{
+					CommonName: keyId,
+				},
+				DNSNames:              []string{keyId},
 				KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement | x509.KeyUsageCertSign,
 				SerialNumber:          big.NewInt(mathrand.Int63()),
 				NotBefore:             now.Add(opts.WithNotBeforeClockSkew),
-				NotAfter:              now.Add(opts.WithCertificateLifetime),
+				NotAfter:              now.Add(opts.WithCertificateLifetime).Add(opts.WithNotAfterClockSkew),
 				BasicConstraintsValid: true,
 				IsCA:                  true,
 			}
+
+			// TODO: After enough time, remove this; it's here because
+			// verification code used to expect it, but these days we want to
+			// only use it in the context of fetching
+			template.DNSNames = append(template.DNSNames, nodeenrollment.CommonDnsName)
 
 			if kind == nodeenrollment.NextId {
 				newRoot.Id = string(nodeenrollment.NextId)
@@ -160,8 +175,9 @@ func RotateRootCertificates(ctx context.Context, storage nodeenrollment.Storage,
 
 	if !opts.WithSkipStorage {
 		if err := ret.Store(ctx, storage, opt...); err != nil {
-			opts.WithLogger.Error(err.Error())
-			return nil, fmt.Errorf("(%s) error persisting current root certificates: %w", op, err)
+			err := fmt.Errorf("error persisting current root certificates: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 	}
 

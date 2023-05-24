@@ -53,6 +53,7 @@ type Options struct {
 	WithMaximumServerLedActivationTokenLifetime           time.Duration
 	WithNativeConns                                       bool
 	WithLogger                                            hclog.Logger
+	WithTestErrorContains                                 string
 }
 
 // Option is a function that takes in an options struct and sets values or
@@ -71,9 +72,15 @@ func getDefaultOptions() *Options {
 }
 
 // WithCertificateLifetime allows overriding a default duration for certificate
-// creation
+// creation. If 0 is passed in, the default will be used; to get an actual zero
+// lifetime (e.g. to only use skew), just specify something short, like a
+// nanosecond.
 func WithCertificateLifetime(with time.Duration) Option {
 	return func(o *Options) error {
+		if with == 0 {
+			o.WithCertificateLifetime = DefaultCertificateLifetime
+			return nil
+		}
 		o.WithCertificateLifetime = with
 		return nil
 	}
@@ -189,7 +196,7 @@ func WithAlpnProtoPrefix(with string) Option {
 	const op = "nodeenrollment.WithAlpnProtoPrefix"
 	return func(o *Options) error {
 		switch with {
-		case FetchNodeCredsNextProtoV1Prefix, AuthenticateNodeNextProtoV1Prefix:
+		case FetchNodeCredsNextProtoV1Prefix, AuthenticateNodeNextProtoV1Prefix, CertificatePreferenceV1Prefix:
 			o.WithAlpnProtoPrefix = with
 			return nil
 		default:
@@ -257,6 +264,14 @@ func WithNativeConns(with bool) Option {
 func WithLogger(with hclog.Logger) Option {
 	return func(o *Options) error {
 		o.WithLogger = with
+		return nil
+	}
+}
+
+// WithTestErrorContains is used in some tests to pass expected error values
+func WithTestErrorContains(with string) Option {
+	return func(o *Options) error {
+		o.WithTestErrorContains = with
 		return nil
 	}
 }

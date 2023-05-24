@@ -131,41 +131,42 @@ func FetchNodeCredentials(
 		if len(req.RewrappedWrappingRegistrationFlowInfo) > 0 {
 			encryptingNodeInfo, err := types.LoadNodeInformation(ctx, storage, req.RewrappingKeyId, opt...)
 			if err != nil {
-				err := fmt.Errorf("(%s) error looking up node information for rewrapping key id: %w", op, err)
-				opts.WithLogger.Error(err.Error())
-				return nil, err
+				err := fmt.Errorf("error looking up node information for rewrapping key id: %w", err)
+				opts.WithLogger.Error(err.Error(), "op", op)
+				return nil, fmt.Errorf("(%s) %s", op, err.Error())
 			}
 			registrationInfo = new(types.WrappingRegistrationFlowInfo)
 			if err := nodeenrollment.DecryptMessage(ctx, req.RewrappedWrappingRegistrationFlowInfo, encryptingNodeInfo, registrationInfo); err != nil {
-				err := fmt.Errorf("(%s) error decrypting rewrapped registration info: %w", op, err)
-				opts.WithLogger.Error(err.Error())
-				return nil, err
+				err := fmt.Errorf("error decrypting rewrapped registration info: %w", err)
+				opts.WithLogger.Error(err.Error(), "op", op)
+				return nil, fmt.Errorf("(%s) %s", op, err.Error())
 			}
 		} else {
 			registrationInfo, err = DecryptWrappedRegistrationInfo(ctx, reqInfo, opt...)
 			if err != nil {
-				opts.WithLogger.Error(err.Error())
-				return nil, err
+				err := fmt.Errorf("error decrypting wrapped registration info: %w", err)
+				opts.WithLogger.Error(err.Error(), "op", op)
+				return nil, fmt.Errorf("(%s) %s", op, err.Error())
 			}
 		}
 		if registrationInfo == nil {
-			err := fmt.Errorf("(%s) registration info nil after decryption", op)
-			opts.WithLogger.Error(err.Error())
-			return nil, err
+			err := errors.New("registration info nil after decryption")
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 
 		// Regardless of how we got the decrypted data, perform validation here
 		// since here is where we validated the signature on the bundle and the
 		// overall validity of the bundle
 		if subtle.ConstantTimeCompare(registrationInfo.Nonce, reqInfo.Nonce) != 1 {
-			err := fmt.Errorf("(%s) mismatched nonce in unwrapped registration info", op)
-			opts.WithLogger.Error(err.Error())
-			return nil, err
+			err := errors.New("mismatched nonce in unwrapped registration info")
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 		if subtle.ConstantTimeCompare(registrationInfo.CertificatePublicKeyPkix, reqInfo.CertificatePublicKeyPkix) != 1 {
-			err := fmt.Errorf("(%s) mismatched public key in unwrapped registration info", op)
-			opts.WithLogger.Error(err.Error())
-			return nil, err
+			err := errors.New("mismatched public key in unwrapped registration info")
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 		// Cache the decrypted registration information so that it's usable when
 		// authorizing the node
@@ -173,9 +174,9 @@ func FetchNodeCredentials(
 
 		nodeInfo, err = authorizeNodeCommon(ctx, storage, reqInfo, opt...)
 		if err != nil {
-			err := fmt.Errorf("(%s) error authorizing node after validating wrapping-flow registration: %w", op, err)
-			opts.WithLogger.Error(err.Error())
-			return nil, err
+			err := fmt.Errorf("error authorizing node after validating wrapping-flow registration: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 
 	case len(reqInfo.Nonce) == nodeenrollment.NonceSize:
@@ -190,7 +191,10 @@ func FetchNodeCredentials(
 		case err != nil && !errors.Is(err, nodeenrollment.ErrNotFound):
 			return nil, fmt.Errorf("(%s) error looking up node information from storage: %w", op, err)
 		case err != nil, nodeInfo == nil:
-			// Unauthorized, so return empty
+			// Unauthorized, so return empty. We cannot return nil because this
+			// will
+			// cause a marshal error if this function is via RPC since gRPC does not
+			// allow nil responses.
 			return new(types.FetchNodeCredentialsResponse), nil
 		}
 
@@ -213,7 +217,9 @@ func FetchNodeCredentials(
 		}
 		nodeInfo, err = validateServerLedActivationToken(ctx, storage, reqInfo, tokenNonce, opt...)
 		if err != nil {
-			return nil, fmt.Errorf("(%s) error validating server-led activation token: %w", op, err)
+			err := fmt.Errorf("error validating server-led activation token: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 
 	default:
@@ -286,42 +292,42 @@ func DecryptWrappedRegistrationInfo(ctx context.Context, reqInfo *types.FetchNod
 	const op = "nodeenrollment.registration.DecryptWrappedRegistrationInfo"
 	opts, err := nodeenrollment.GetOpts(opt...)
 	if err != nil {
-		err := fmt.Errorf("(%s) error parsing options: %w", op, err)
-		opts.WithLogger.Error(err.Error())
-		return nil, err
+		err := fmt.Errorf("error parsing options: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	if nodeenrollment.IsNil(reqInfo) {
-		err := fmt.Errorf("(%s) fetch request is nil", op)
-		opts.WithLogger.Error(err.Error())
-		return nil, err
+		err := errors.New("fetch request is nil")
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	if nodeenrollment.IsNil(opts.WithRegistrationWrapper) {
-		err := fmt.Errorf("(%s) wrapped registration information in fetch request but no registration wrapper provided", op)
-		opts.WithLogger.Error(err.Error())
-		return nil, err
+		err := fmt.Errorf("wrapped registration information in fetch request but no registration wrapper provided: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	blobInfo := new(wrapping.BlobInfo)
 	if err := proto.Unmarshal(reqInfo.WrappedRegistrationInfo, blobInfo); err != nil {
-		err := fmt.Errorf("(%s) error unmarshaling encrypted wrapped registration info: %w", op, err)
-		opts.WithLogger.Error(err.Error())
-		return nil, err
+		err := fmt.Errorf("error unmarshaling encrypted wrapped registration info: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	registrationInfoBytes, err := opts.WithRegistrationWrapper.Decrypt(ctx, blobInfo)
 	if err != nil {
-		err := fmt.Errorf("(%s) error decrypting encrypted wrapped registration info: %w", op, err)
-		opts.WithLogger.Error(err.Error())
-		return nil, err
+		err := fmt.Errorf("error decrypting encrypted wrapped registration info: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	registrationInfo := new(types.WrappingRegistrationFlowInfo)
 	if err := proto.Unmarshal(registrationInfoBytes, registrationInfo); err != nil {
-		err := fmt.Errorf("(%s) error unmarshaling decrypted wrapped registration info: %w", op, err)
-		opts.WithLogger.Error(err.Error())
-		return nil, err
+		err := fmt.Errorf("error unmarshaling decrypted wrapped registration info: %w", err)
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	return registrationInfo, nil
