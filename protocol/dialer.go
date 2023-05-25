@@ -113,7 +113,7 @@ func Dial(
 		if err != nil {
 			// If not authorized, this will pass ErrNotAuthorized back to the
 			// caller
-			opts.WithLogger.Error(err.Error(), "op", op, "note", "not-authorized")
+			opts.WithLogger.Error(err.Error(), "op", op)
 			return nil, err
 		}
 
