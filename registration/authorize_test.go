@@ -11,7 +11,7 @@ import (
 	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/rotation"
 	"github.com/hashicorp/nodeenrollment/storage/inmem"
-	"github.com/hashicorp/nodeenrollment/storage/inmem/storeonce"
+	testing2 "github.com/hashicorp/nodeenrollment/storage/testing"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,14 +23,14 @@ func TestAuthorizeNode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	fileStorage, err := inmem.New(ctx)
+	memStorage, err := inmem.New(ctx)
 	require.NoError(t, err)
 
-	_, err = rotation.RotateRootCertificates(ctx, fileStorage)
+	_, err = rotation.RotateRootCertificates(ctx, memStorage)
 	require.NoError(t, err)
 
 	// This happens on the node
-	nodeCreds, err := types.NewNodeCredentials(ctx, fileStorage)
+	nodeCreds, err := types.NewNodeCredentials(ctx, memStorage)
 	require.NoError(t, err)
 	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
 	require.NoError(t, err)
@@ -78,7 +78,7 @@ func TestAuthorizeNode(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			require, assert := require.New(t), assert.New(t)
 
-			storage := fileStorage
+			storage := memStorage
 			var wantErrContains string
 
 			if tt.storageNil {
@@ -128,14 +128,14 @@ func TestAuthorizeNodeCommon_DuplicateStore(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	fileStorage, err := storeonce.New(ctx)
+	memStorage, err := testing2.New(ctx)
 	require.NoError(t, err)
 
-	_, err = rotation.RotateRootCertificates(ctx, fileStorage)
+	_, err = rotation.RotateRootCertificates(ctx, memStorage)
 	require.NoError(t, err)
 
 	// This happens on the node
-	nodeCreds, err := types.NewNodeCredentials(ctx, fileStorage)
+	nodeCreds, err := types.NewNodeCredentials(ctx, memStorage)
 	require.NoError(t, err)
 	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
 	require.NoError(t, err)
@@ -159,12 +159,12 @@ func TestAuthorizeNodeCommon_DuplicateStore(t *testing.T) {
 		State:                    state,
 	}
 
-	fetchInfo, _ := registration.ValidateFetchRequestCommon(ctx, fileStorage, fetchReq)
-	_, err = registration.AuthorizeNodeCommon(ctx, fileStorage, fetchInfo)
+	fetchInfo, _ := registration.ValidateFetchRequestCommon(ctx, memStorage, fetchReq)
+	_, err = registration.AuthorizeNodeCommon(ctx, memStorage, fetchInfo)
 	require.NoError(t, err)
 
 	checkNodeInfo := &types.NodeInformation{Id: nodeInfo.Id}
-	require.NoError(t, fileStorage.Load(ctx, checkNodeInfo))
+	require.NoError(t, memStorage.Load(ctx, checkNodeInfo))
 	require.NotNil(t, checkNodeInfo)
 	assert.Equal(t, nodeInfo.Id, checkNodeInfo.Id)
 	assert.NotEmpty(t, checkNodeInfo.CertificatePublicKeyPkix)
@@ -185,7 +185,8 @@ func TestAuthorizeNodeCommon_DuplicateStore(t *testing.T) {
 	assert.Len(t, checkNodeInfo.RegistrationNonce, nodeenrollment.NonceSize)
 
 	// Simulate a withWrapper case where we might hit authorizeNodeCommon a second time
-	returnedNodeInfo, err := registration.AuthorizeNodeCommon(ctx, fileStorage, fetchInfo)
+	returnedNodeInfo, err := registration.AuthorizeNodeCommon(ctx, memStorage, fetchInfo)
 	require.NoError(t, err)
 	require.Equal(t, checkNodeInfo, returnedNodeInfo)
+	require.Equal(t, checkNodeInfo.ServerEncryptionPrivateKeyBytes, returnedNodeInfo.ServerEncryptionPrivateKeyBytes)
 }

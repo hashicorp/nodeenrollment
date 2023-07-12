@@ -1,11 +1,10 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package storeonce
+package testing
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/storage/inmem"
@@ -49,12 +48,5 @@ func (ts *Storage) Store(ctx context.Context, msg nodeenrollment.MessageWithId) 
 		}
 	}
 
-	if err := types.ValidateMessage(msg); err != nil {
-		return fmt.Errorf("(%s) given message cannot be stored: %w", op, err)
-	}
-	subPath, err := inmem.SubPathFromMsg(msg)
-	if err != nil {
-		return fmt.Errorf("(%s) given message cannot be stored: %w", op, err)
-	}
-	return ts.StoreValue(ctx, msg.GetId(), subPath, msg)
+	return ts.Storage.Store(ctx, msg)
 }

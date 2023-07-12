@@ -187,6 +187,7 @@ func authorizeNodeCommon(
 				if err == nil {
 					return loadNodeInfo, nil
 				}
+				err = fmt.Errorf("(%s) error loading node information after duplicate record detected: %w", op, err)
 			}
 			return nil, fmt.Errorf("(%s) error updating registration information: %w", op, err)
 		}
