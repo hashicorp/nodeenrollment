@@ -43,10 +43,10 @@ func New(ctx context.Context) (*Storage, error) {
 	}, nil
 }
 
-// subPathFromMsg determines what subdirectory to use based on which message
+// SubPathFromMsg determines what subdirectory to use based on which message
 // type it is
-func subPathFromMsg(msg proto.Message) (string, error) {
-	const op = "nodeenrollment.storage.inmem.(Storage).subPathFromMsg"
+func SubPathFromMsg(msg proto.Message) (string, error) {
+	const op = "nodeenrollment.storage.inmem.(Storage).SubPathFromMsg"
 	switch t := msg.(type) {
 	case *types.NodeCredentials:
 		return nodeCredsSubPath, nil
@@ -69,11 +69,11 @@ func (ts *Storage) Store(ctx context.Context, msg nodeenrollment.MessageWithId) 
 	if err := types.ValidateMessage(msg); err != nil {
 		return fmt.Errorf("(%s) given message cannot be stored: %w", op, err)
 	}
-	subPath, err := subPathFromMsg(msg)
+	subPath, err := SubPathFromMsg(msg)
 	if err != nil {
 		return fmt.Errorf("(%s) given message cannot be stored: %w", op, err)
 	}
-	return ts.storeValue(ctx, msg.GetId(), subPath, msg)
+	return ts.StoreValue(ctx, msg.GetId(), subPath, msg)
 }
 
 // Load implements the Storage interface
@@ -82,7 +82,7 @@ func (ts *Storage) Load(ctx context.Context, msg nodeenrollment.MessageWithId) e
 	if err := types.ValidateMessage(msg); err != nil {
 		return fmt.Errorf("(%s) given message cannot be loaded: %w", op, err)
 	}
-	subPath, err := subPathFromMsg(msg)
+	subPath, err := SubPathFromMsg(msg)
 	if err != nil {
 		return fmt.Errorf("(%s) given message cannot be loaded: %w", op, err)
 	}
@@ -99,7 +99,7 @@ func (ts *Storage) Remove(ctx context.Context, msg nodeenrollment.MessageWithId)
 	if err := types.ValidateMessage(msg); err != nil {
 		return fmt.Errorf("(%s) given message cannot be removed: %w", op, err)
 	}
-	subPath, err := subPathFromMsg(msg)
+	subPath, err := SubPathFromMsg(msg)
 	if err != nil {
 		return fmt.Errorf("(%s) given message cannot be removed: %w", op, err)
 	}
@@ -118,16 +118,16 @@ func (ts *Storage) List(ctx context.Context, msg proto.Message) ([]string, error
 		return nil, fmt.Errorf("(%s) unknown message type %T", op, t)
 	}
 
-	subPath, err := subPathFromMsg(msg)
+	subPath, err := SubPathFromMsg(msg)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) given messages cannot be listed: %w", op, err)
 	}
 	return ts.listValues(ctx, subPath)
 }
 
-// storeValue is the general function called to store values, taking in an id,
+// StoreValue is the general function called to store values, taking in an id,
 // subpath, and proto message to store
-func (ts *Storage) storeValue(ctx context.Context, id, subPath string, msg proto.Message) error {
+func (ts *Storage) StoreValue(ctx context.Context, id, subPath string, msg proto.Message) error {
 	switch {
 	case id == "":
 		return errors.New("no id given when storing value")

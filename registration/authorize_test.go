@@ -5,6 +5,7 @@ package registration_test
 
 import (
 	"context"
+	"github.com/hashicorp/nodeenrollment/storage/inmem/storeonce"
 	"testing"
 
 	"github.com/hashicorp/nodeenrollment"
@@ -121,4 +122,70 @@ func TestAuthorizeNode(t *testing.T) {
 			assert.Len(checkNodeInfo.RegistrationNonce, nodeenrollment.NonceSize)
 		})
 	}
+}
+
+func TestAuthorizeNode_DuplicateStore(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	fileStorage, err := storeonce.New(ctx)
+	require.NoError(t, err)
+
+	_, err = rotation.RotateRootCertificates(ctx, fileStorage)
+	require.NoError(t, err)
+
+	// This happens on the node
+	nodeCreds, err := types.NewNodeCredentials(ctx, fileStorage)
+	require.NoError(t, err)
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	require.NoError(t, err)
+	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
+	require.NoError(t, err)
+	nodePubKey, err := curve25519.X25519(nodeCreds.EncryptionPrivateKeyBytes, curve25519.Basepoint)
+	require.NoError(t, err)
+
+	structMap := map[string]interface{}{"foo": "bar"}
+	state, err := structpb.NewStruct(structMap)
+	require.NoError(t, err)
+
+	// Add in node information to storage so we have a key to use
+	nodeInfo := &types.NodeInformation{
+		Id:                       keyId,
+		CertificatePublicKeyPkix: nodeCreds.CertificatePublicKeyPkix,
+		CertificatePublicKeyType: nodeCreds.CertificatePrivateKeyType,
+		EncryptionPublicKeyBytes: nodePubKey,
+		EncryptionPublicKeyType:  nodeCreds.EncryptionPrivateKeyType,
+		RegistrationNonce:        nodeCreds.RegistrationNonce,
+		State:                    state,
+	}
+
+	_, err = registration.AuthorizeNode(ctx, fileStorage, fetchReq)
+	require.NoError(t, err)
+
+	checkNodeInfo := &types.NodeInformation{Id: nodeInfo.Id}
+	require.NoError(t, fileStorage.Load(ctx, checkNodeInfo))
+	require.NotNil(t, checkNodeInfo)
+	assert.Equal(t, nodeInfo.Id, checkNodeInfo.Id)
+	assert.NotEmpty(t, checkNodeInfo.CertificatePublicKeyPkix)
+	assert.Equal(t, types.KEYTYPE_ED25519, checkNodeInfo.CertificatePublicKeyType)
+	assert.Len(t, checkNodeInfo.CertificateBundles, 2)
+	for _, bundle := range checkNodeInfo.CertificateBundles {
+		assert.NotEmpty(t, bundle.CertificateDer)
+		assert.NotEmpty(t, bundle.CaCertificateDer)
+		assert.NoError(t, bundle.CertificateNotBefore.CheckValid())
+		assert.False(t, bundle.CertificateNotBefore.AsTime().IsZero())
+		assert.NoError(t, bundle.CertificateNotAfter.CheckValid())
+		assert.False(t, bundle.CertificateNotAfter.AsTime().IsZero())
+	}
+	assert.NotEmpty(t, checkNodeInfo.EncryptionPublicKeyBytes)
+	assert.Equal(t, types.KEYTYPE_X25519, checkNodeInfo.EncryptionPublicKeyType)
+	assert.NotEmpty(t, checkNodeInfo.ServerEncryptionPrivateKeyBytes)
+	assert.Equal(t, types.KEYTYPE_X25519, checkNodeInfo.ServerEncryptionPrivateKeyType)
+	assert.Len(t, checkNodeInfo.RegistrationNonce, nodeenrollment.NonceSize)
+
+	// Simulate a withWrapper case where we might hit authorizeNodeCommon a second time
+	fetchInfo, _ := registration.ValidateFetchRequestCommon(ctx, fileStorage, fetchReq)
+	returnedNodeInfo, err := registration.AuthorizeNodeCommon(ctx, fileStorage, fetchInfo)
+	require.NoError(t, err)
+	require.Equal(t, checkNodeInfo, returnedNodeInfo)
 }
