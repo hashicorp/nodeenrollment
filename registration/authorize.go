@@ -180,6 +180,14 @@ func authorizeNodeCommon(
 	// Save the node information into storage if not skipped
 	if !opts.WithSkipStorage {
 		if err := nodeInfo.Store(ctx, storage, opt...); err != nil {
+			// If using a storage implementation where Store does not overwrite existing records, detect
+			// and handle receiving duplicate reqInfo by returning the stored nodeInfo
+			if errors.Is(err, &types.DuplicateRecordError{}) {
+				loadNodeInfo, err := types.LoadNodeInformation(ctx, storage, nodeInfo.Id)
+				if err == nil {
+					return loadNodeInfo, nil
+				}
+			}
 			return nil, fmt.Errorf("(%s) error updating registration information: %w", op, err)
 		}
 	}
