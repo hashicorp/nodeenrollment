@@ -124,7 +124,7 @@ func TestAuthorizeNode(t *testing.T) {
 	}
 }
 
-func TestAuthorizeNode_DuplicateStore(t *testing.T) {
+func TestAuthorizeNodeCommon_DuplicateStore(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
@@ -159,7 +159,8 @@ func TestAuthorizeNode_DuplicateStore(t *testing.T) {
 		State:                    state,
 	}
 
-	_, err = registration.AuthorizeNode(ctx, fileStorage, fetchReq)
+	fetchInfo, _ := registration.ValidateFetchRequestCommon(ctx, fileStorage, fetchReq)
+	_, err = registration.AuthorizeNodeCommon(ctx, fileStorage, fetchInfo)
 	require.NoError(t, err)
 
 	checkNodeInfo := &types.NodeInformation{Id: nodeInfo.Id}
@@ -184,7 +185,6 @@ func TestAuthorizeNode_DuplicateStore(t *testing.T) {
 	assert.Len(t, checkNodeInfo.RegistrationNonce, nodeenrollment.NonceSize)
 
 	// Simulate a withWrapper case where we might hit authorizeNodeCommon a second time
-	fetchInfo, _ := registration.ValidateFetchRequestCommon(ctx, fileStorage, fetchReq)
 	returnedNodeInfo, err := registration.AuthorizeNodeCommon(ctx, fileStorage, fetchInfo)
 	require.NoError(t, err)
 	require.Equal(t, checkNodeInfo, returnedNodeInfo)
