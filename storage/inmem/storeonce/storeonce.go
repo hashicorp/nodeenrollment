@@ -9,7 +9,7 @@ import (
 	"github.com/hashicorp/nodeenrollment/types"
 )
 
-// StoreOnce is an in-memory storage that does not overrwite NodeInformation on store
+// StoreOnce is an in-memory storage that does not overrwite information on store
 type Storage struct {
 	*inmem.Storage
 }
@@ -28,13 +28,19 @@ func New(ctx context.Context) (*Storage, error) {
 
 // Store implements the Storage interface.
 //
-// If the message already exists, return the existing value
+// If the message already exists, return a duplicate record error
 func (ts *Storage) Store(ctx context.Context, msg nodeenrollment.MessageWithId) error {
 	const op = "nodeenrollment.storage.inmem.storeonce.(Storage).Store"
 	switch msg.(type) {
 	case *types.NodeInformation:
 		loadNode := types.NodeInformation{Id: msg.GetId()}
 		err := ts.Load(ctx, &loadNode)
+		if err == nil {
+			return types.DuplicateRecordError{}
+		}
+	case *types.RootCertificates:
+		loadRoot := types.RootCertificate{Id: msg.GetId()}
+		err := ts.Load(ctx, &loadRoot)
 		if err == nil {
 			return types.DuplicateRecordError{}
 		}
