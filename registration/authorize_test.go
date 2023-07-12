@@ -5,13 +5,13 @@ package registration_test
 
 import (
 	"context"
-	"github.com/hashicorp/nodeenrollment/storage/inmem/storeonce"
 	"testing"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/rotation"
 	"github.com/hashicorp/nodeenrollment/storage/inmem"
+	"github.com/hashicorp/nodeenrollment/storage/inmem/storeonce"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
