@@ -182,7 +182,8 @@ func authorizeNodeCommon(
 		if err := nodeInfo.Store(ctx, storage, opt...); err != nil {
 			// If using a storage implementation where Store does not overwrite existing records, detect
 			// and handle receiving duplicate reqInfo by returning the stored nodeInfo
-			if errors.As(err, &types.DuplicateRecordError{}) {
+			var dre *types.DuplicateRecordError
+			if errors.As(err, &dre) {
 				loadNodeInfo, err := types.LoadNodeInformation(ctx, storage, nodeInfo.Id)
 				if err == nil {
 					return loadNodeInfo, nil

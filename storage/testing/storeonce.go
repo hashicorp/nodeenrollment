@@ -38,13 +38,13 @@ func (ts *Storage) Store(ctx context.Context, msg nodeenrollment.MessageWithId) 
 		loadNode := types.NodeInformation{Id: msg.GetId()}
 		err := ts.Load(ctx, &loadNode)
 		if err == nil {
-			return types.DuplicateRecordError{}
+			return new(types.DuplicateRecordError)
 		}
 	case *types.RootCertificates:
 		loadRoot := types.RootCertificate{Id: msg.GetId()}
 		err := ts.Load(ctx, &loadRoot)
 		if err == nil {
-			return types.DuplicateRecordError{}
+			return new(types.DuplicateRecordError)
 		}
 	}
 
