@@ -5,6 +5,8 @@ package testing
 
 import (
 	"context"
+	"math/rand"
+	"time"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/storage/inmem"
@@ -38,13 +40,27 @@ func (ts *Storage) Store(ctx context.Context, msg nodeenrollment.MessageWithId) 
 		loadNode := types.NodeInformation{Id: msg.GetId()}
 		err := ts.Load(ctx, &loadNode)
 		if err == nil {
-			return new(types.DuplicateRecordError)
+			// Randomize what form of dupe record error we return
+			s1 := rand.NewSource(time.Now().UnixNano())
+			r1 := rand.New(s1)
+			num := r1.Intn(2)
+			if num == 0 {
+				return new(types.DuplicateRecordError)
+			}
+			return types.DuplicateRecordError{}
 		}
 	case *types.RootCertificates:
 		loadRoot := types.RootCertificate{Id: msg.GetId()}
 		err := ts.Load(ctx, &loadRoot)
 		if err == nil {
-			return new(types.DuplicateRecordError)
+			// Randomize what form of dupe record error we return
+			s1 := rand.NewSource(time.Now().UnixNano())
+			r1 := rand.New(s1)
+			num := r1.Intn(2)
+			if num == 0 {
+				return new(types.DuplicateRecordError)
+			}
+			return types.DuplicateRecordError{}
 		}
 	}
 
