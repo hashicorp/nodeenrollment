@@ -5,8 +5,8 @@ package nodeenrollment
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/hashicorp/go-multierror"
 
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
 	"github.com/hashicorp/go-kms-wrapping/v2/aead"
@@ -121,7 +121,7 @@ func DecryptMessage(ctx context.Context, ct []byte, keySource X25519KeyProducer,
 		}
 		prevErr = decryptWithKey(ctx, prevId, ct, previousKey, result)
 		if prevErr != nil {
-			err = multierror.Append(err, fmt.Errorf("(%s) error decrypting with previous key: %w", op, prevErr))
+			err = errors.Join(err, fmt.Errorf("(%s) error decrypting with previous key: %w", op, prevErr))
 			return err
 		}
 	}

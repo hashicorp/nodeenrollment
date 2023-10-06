@@ -11,7 +11,6 @@ import (
 	"net"
 	"strings"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/registration"
 	nodetls "github.com/hashicorp/nodeenrollment/tls"
@@ -206,7 +205,7 @@ func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 		if err := tlsConn.HandshakeContext(l.ctx); err != nil {
 			// If there is an error close the connection
 			if closeErr := tlsConn.Close(); closeErr != nil {
-				err = multierror.Append(err, fmt.Errorf("error closing connection: %w", closeErr))
+				err = errors.Join(err, fmt.Errorf("error closing connection: %w", closeErr))
 			}
 			// Return a temp error so we don't close the listener
 			err := fmt.Errorf("error tls handshaking server side: %w", err)
@@ -222,7 +221,7 @@ func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 			// If we got here we've already sent back the creds, so close the
 			// connection and return a temp error so we keep the listener alive
 			if closeErr := tlsConn.Close(); closeErr != nil {
-				err = multierror.Append(err, fmt.Errorf("error closing connection: %w", closeErr))
+				err = errors.Join(err, fmt.Errorf("error closing connection: %w", closeErr))
 			}
 			opts.WithLogger.Error(err.Error(), "op", op)
 			return nil, temperror.New(fmt.Errorf("(%s) %s", op, err.Error()))

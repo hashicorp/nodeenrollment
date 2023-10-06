@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/nodeenrollment"
 	nodetls "github.com/hashicorp/nodeenrollment/tls"
 	"github.com/hashicorp/nodeenrollment/types"
@@ -108,7 +107,7 @@ func Dial(
 		fetchResp, err := attemptFetch(ctx, nonTlsConn, creds, opt...)
 		closeErr := nonTlsConn.Close()
 		if closeErr != nil {
-			err = multierror.Append(err, fmt.Errorf("(%s) error closing initial connection: %w", op, closeErr))
+			err = errors.Join(err, fmt.Errorf("(%s) error closing initial connection: %w", op, closeErr))
 		}
 		if err != nil {
 			// If not authorized, this will pass ErrNotAuthorized back to the
@@ -144,7 +143,7 @@ func Dial(
 	// We could return one along with the IDs to use and have this code embed
 	// one or the other but that seems more of a hassle than just ranging
 	// through this and trying to connect.
-	var tlsErrors *multierror.Error
+	var tlsErrors error
 	for _, tlsConfig := range tlsConfigs {
 		nonTlsConn, err := nonTlsConnFn()
 		if err != nil {
@@ -154,7 +153,7 @@ func Dial(
 		}
 		tlsConn := tls.Client(nonTlsConn, tlsConfig)
 		if err := tlsConn.HandshakeContext(ctx); err != nil {
-			tlsErrors = multierror.Append(tlsErrors, fmt.Errorf("error handshaking tls connection: %w", err))
+			tlsErrors = errors.Join(tlsErrors, fmt.Errorf("error handshaking tls connection: %w", err))
 			continue
 		}
 		return tlsConn, nil
