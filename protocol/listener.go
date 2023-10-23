@@ -55,7 +55,7 @@ type InterceptingListenerConfiguration struct {
 
 	// The TLS configuration to use if the incoming connection is not one
 	// handled by this library. If nil, any connection not handled by this
-	// library will be closed.
+	// library will result in a TLS error.
 	BaseTlsConfiguration *tls.Config
 
 	// The function to use for the FetchCredentials operation. If nil, the
