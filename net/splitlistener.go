@@ -303,29 +303,29 @@ func (l *MultiplexingListener) Accept() (net.Conn, error) {
 			// return ErrClosed
 			_ = in.conn.Close()
 			return nil, net.ErrClosed
+		default:
+		}
+
+		switch {
+		case in.conn == nil,
+			// ^ Probably error, pass through
+			l.nativeConns == nil,
+			// ^ Wasn't created via GetListener so don't potentially strip,
+			// pass through
+			*l.nativeConns:
+			// ^ Created via GetListener but told to use whatever we were
+			// given, so pass straight through
+			return in.conn, in.err
 
 		default:
-			switch {
-			case in.conn == nil,
-				// ^ Probably error, pass through
-				l.nativeConns == nil,
-				// ^ Wasn't created via GetListener so don't potentially strip,
-				// pass through
-				*l.nativeConns:
-				// ^ Created via GetListener but told to use whatever we were
-				// given, so pass straight through
-				return in.conn, in.err
-
-			default:
-				// *l.nativeConns is false, so check if it's a *protocol.Conn to
-				// pull out the *tls.Conn
-				if native, ok := in.conn.(*protocol.Conn); ok {
-					// Strip the tls conn out of the package conn
-					return native.Conn, in.err
-				}
-				// Some other type (maybe already *tls.Conn), just return
-				return in.conn, in.err
+			// *l.nativeConns is false, so check if it's a *protocol.Conn to
+			// pull out the *tls.Conn
+			if native, ok := in.conn.(*protocol.Conn); ok {
+				// Strip the tls conn out of the package conn
+				return native.Conn, in.err
 			}
+			// Some other type (maybe already *tls.Conn), just return
+			return in.conn, in.err
 		}
 	}
 }
