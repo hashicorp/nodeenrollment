@@ -216,8 +216,6 @@ func (l *SplitListener) GetListener(nextProto string, opt ...nodeenrollment.Opti
 	existing, loaded := l.babyListeners.LoadOrStore(nextProto, newMultiplexingListener)
 	if loaded {
 		_ = newMultiplexingListener.Close()
-		// In this case we know it's safe to close the channel too
-		close(newMultiplexingListener.incoming)
 		return existing.(*MultiplexingListener), nil
 	}
 	return newMultiplexingListener, nil
@@ -240,6 +238,9 @@ type MultiplexingListener struct {
 	cancel       context.CancelFunc
 	drainSpawned *sync.Once
 	nativeConns  *bool
+	closedMutex  *sync.RWMutex
+	closedOnce   *sync.Once
+	closed       bool
 }
 
 // NewMultiplexingListener creates a new listener with the given context for
@@ -258,6 +259,8 @@ func NewMultiplexingListener(ctx context.Context, addr net.Addr, opt ...nodeenro
 		addr:         addr,
 		incoming:     make(chan splitConn),
 		drainSpawned: new(sync.Once),
+		closedMutex:  new(sync.RWMutex),
+		closedOnce:   new(sync.Once),
 	}
 	multiplexer.ctx, multiplexer.cancel = context.WithCancel(ctx)
 
@@ -274,6 +277,10 @@ func (l *MultiplexingListener) Addr() net.Addr {
 // We call drainConnections here to ensure that senders don't block even though
 // we're no longer accepting them.
 func (l *MultiplexingListener) Close() error {
+	l.closedMutex.Lock()
+	l.closed = true
+	l.closedOnce.Do(func() { close(l.incoming) })
+	l.closedMutex.Unlock()
 	l.drainConnections()
 	return nil
 }
@@ -346,7 +353,14 @@ func (l *MultiplexingListener) IngressListener(ln net.Listener) error {
 			if err != nil && errors.Is(err, net.ErrClosed) {
 				return
 			}
+			l.closedMutex.RLock()
+			if l.closed {
+				conn.Close()
+				l.closedMutex.RUnlock()
+				return
+			}
 			l.incoming <- splitConn{conn: conn, err: err}
+			l.closedMutex.RUnlock()
 		}
 	}()
 
@@ -356,6 +370,12 @@ func (l *MultiplexingListener) IngressListener(ln net.Listener) error {
 // IngressConn sends a connection and associated error through the listener
 // as-is. It does not perform any nil checking on the given values.
 func (l *MultiplexingListener) IngressConn(conn net.Conn, err error) {
+	l.closedMutex.RLock()
+	defer l.closedMutex.RUnlock()
+	if l.closed {
+		conn.Close()
+		return
+	}
 	l.incoming <- splitConn{conn: conn, err: err}
 }
 
