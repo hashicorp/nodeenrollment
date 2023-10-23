@@ -91,8 +91,6 @@ func NewInterceptingListener(
 		return nil, fmt.Errorf("(%s) context is nil", op)
 	case nodeenrollment.IsNil(config.BaseListener):
 		return nil, fmt.Errorf("(%s) base listener is nil", op)
-	case config.BaseTlsConfiguration == nil:
-		return nil, fmt.Errorf("(%s) base tls configuration is nil", op)
 	}
 
 	// These functions are where we use storage, so if they are being
