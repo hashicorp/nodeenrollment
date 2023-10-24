@@ -49,7 +49,7 @@ message RootCertificates {
   string wrapping_key_id = 30 [json_name="wrapping_key_id"];
 
   // State is data that the implementor of a Store can use to round-trip data
-  // through this library; as an example, a verison number on the resource for
+  // through this library; as an example, a version number on the resource for
   // implementing transactions.
   google.protobuf.Struct state = 50;
 }
@@ -102,7 +102,7 @@ message NodeInformation {
   string wrapping_key_id = 30 [json_name="wrapping_key_id"];
 
   // State is data that the implementor of a Store can use to round-trip data
-  // through this library; as an example, a verison number on the resource for
+  // through this library; as an example, a version number on the resource for
   // implementing transactions.
   google.protobuf.Struct state = 50;
 
@@ -131,7 +131,7 @@ message NodeCredentials {
   string wrapping_key_id = 30 [json_name="wrapping_key_id"];
 
   // State is data that the implementor of a Store can use to round-trip data
-  // through this library; as an example, a verison number on the resource for
+  // through this library; as an example, a version number on the resource for
   // implementing transactions.
   google.protobuf.Struct state = 50;
 
@@ -144,8 +144,34 @@ message NodeCredentials {
 // FetchNodeCredentialsInfo, as must the nonce. Forgeries by other users with
 // access to the wrapper are prevented due to the signature on the
 // FetchNodeCredentialsRequest including this; replays are prevented because the
-// returned credentials are still encrypted to the derived shared key. State can
-// be used to pass extra registration information to the consuming application.
+// returned credentials are still encrypted to the derived shared key.
+//
+// The application specific params can be used to pass extra registration
+// information to the consuming application. Although both provide state to the
+// server, there are two differences between the application specific params and
+// passing state through to the node's dialer:
+//
+// * The information is available at different times; client state cannot be
+//   sent through most of the nodeenrollment code because state parameters are
+//   reserved for the storage system to use as needed (e.g. to track operations
+//   across multiple calls). So client state is only available to the eventual
+//   receiver of a connection via a *protocol.Conn, whereas the application
+//   specific params are available when node information is being stored (at
+//   which time a conn is not available, and where passing this information as
+//   state would overwrite the storage system's state, if used).
+// * Anything in WrappingRegistrationFlowInfo is encrypted via the KMS, if
+//   required
+//
+// It is entirely possible that the state passed into `protocol.Dial` and
+// application specific params will carry the same data for use at different
+// times. For instance, information about a node's name and version may be put
+// into application specific params in order to have it avaialble during
+// registration time, since registration is automatic (as opposed to e.g. an API
+// call to activate a worker-led token where name can be provided at that time);
+// however, when the connection is eventually returned to the application
+// listener, the state can help the application figure out the next step in
+// handling the connection based on version (e.g. passing to gRPC versus
+// starting a yamux session).
 message WrappingRegistrationFlowInfo {
   bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
 
@@ -305,7 +331,7 @@ message ServerLedActivationToken {
   string wrapping_key_id = 30 [json_name="wrapping_key_id"];
 
   // State is data that the implementor of a Store can use to round-trip data
-  // through this library; as an example, a verison number on the resource for
+  // through this library; as an example, a version number on the resource for
   // implementing transactions.
   google.protobuf.Struct state = 50;
 }
