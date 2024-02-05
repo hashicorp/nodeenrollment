@@ -5,6 +5,7 @@ package types_test
 
 import (
 	"context"
+	"crypto/ecdh"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
@@ -230,27 +231,23 @@ func TestNodeCredentials_StoreLoad(t *testing.T) {
 func TestNodeCredentials_X25519(t *testing.T) {
 	t.Parallel()
 
-	// Generate a suitable root
-	privKey := make([]byte, curve25519.ScalarSize)
-	n, err := rand.Read(privKey)
-	require.NoError(t, err)
-	require.Equal(t, n, curve25519.ScalarSize)
+	curve := ecdh.X25519()
 
-	privKey2 := make([]byte, curve25519.ScalarSize)
-	n, err = rand.Read(privKey2)
+	// Generate a suitable root
+	privKey, err := curve.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	require.Equal(t, n, curve25519.ScalarSize)
-	pubKey, err := curve25519.X25519(privKey2, curve25519.Basepoint)
+	privKey2, err := curve.GenerateKey(rand.Reader)
 	require.NoError(t, err)
+	pubKey := privKey2.PublicKey()
 	certPubKey, _, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	pubKeyPkix, err := x509.MarshalPKIXPublicKey(certPubKey)
 	require.NoError(t, err)
 
 	nodeCreds := &types.NodeCredentials{
-		EncryptionPrivateKeyBytes:      privKey,
+		EncryptionPrivateKeyBytes:      privKey.Bytes(),
 		EncryptionPrivateKeyType:       types.KEYTYPE_X25519,
-		ServerEncryptionPublicKeyBytes: pubKey,
+		ServerEncryptionPublicKeyBytes: pubKey.Bytes(),
 		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
 		CertificatePublicKeyPkix:       pubKeyPkix,
 	}
@@ -323,33 +320,27 @@ func TestNodeCredentials_X25519(t *testing.T) {
 
 	// Test setting and using prior encryption keys
 	// Generate a suitable root
-	privKey3 := make([]byte, curve25519.ScalarSize)
-	n2, err := rand.Read(privKey3)
+	privKey3, err := curve.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	require.Equal(t, n2, curve25519.ScalarSize)
-
-	privKey4 := make([]byte, curve25519.ScalarSize)
-	n2, err = rand.Read(privKey4)
+	privKey4, err := curve.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	require.Equal(t, n2, curve25519.ScalarSize)
-	pubKey2, err := curve25519.X25519(privKey4, curve25519.Basepoint)
-	require.NoError(t, err)
+	pubKey2 := privKey4.PublicKey()
 	certPubKey2, _, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	pubKeyPkix2, err := x509.MarshalPKIXPublicKey(certPubKey2)
 	require.NoError(t, err)
 
 	nodeCreds2 := &types.NodeCredentials{
-		EncryptionPrivateKeyBytes:      privKey3,
+		EncryptionPrivateKeyBytes:      privKey3.Bytes(),
 		EncryptionPrivateKeyType:       types.KEYTYPE_X25519,
-		ServerEncryptionPublicKeyBytes: pubKey2,
+		ServerEncryptionPublicKeyBytes: pubKey2.Bytes(),
 		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
 		CertificatePublicKeyPkix:       pubKeyPkix2,
 	}
 	oldKeyId, _, _ := nodeCreds.X25519EncryptionKey()
 	newKeyId, _, _ := nodeCreds2.X25519EncryptionKey()
 
-	nodeCreds2.SetPreviousEncryptionKey(nodeCreds)
+	require.NoError(t, nodeCreds2.SetPreviousEncryptionKey(nodeCreds))
 	tests2 := []struct {
 		name          string
 		previousCreds *types.NodeCredentials
@@ -625,20 +616,18 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create server keys
-	serverPrivKey := make([]byte, curve25519.ScalarSize)
-	n, err := rand.Read(serverPrivKey)
+	serverPrivKey, err := ecdh.X25519().GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	require.Equal(t, n, curve25519.ScalarSize)
-	serverPubKey, err := curve25519.X25519(serverPrivKey, curve25519.Basepoint)
-	require.NoError(t, err)
+	serverPubKey := serverPrivKey.PublicKey()
 
 	// Create node keys
-	nodePubKey, err := curve25519.X25519(nodeCreds.EncryptionPrivateKeyBytes, curve25519.Basepoint)
+	nodePrivKey, err := ecdh.X25519().NewPrivateKey(nodeCreds.EncryptionPrivateKeyBytes)
 	require.NoError(t, err)
+	nodePubKey := nodePrivKey.PublicKey()
 
 	// Create and sign encrypted creds
 	serverNodeCreds := &types.NodeCredentials{
-		ServerEncryptionPublicKeyBytes: serverPubKey,
+		ServerEncryptionPublicKeyBytes: serverPubKey.Bytes(),
 		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
 		RegistrationNonce:              nodeCreds.RegistrationNonce,
 		CertificateBundles: []*types.CertificateBundle{
@@ -649,9 +638,9 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 		},
 	}
 	nodeInfo := &types.NodeInformation{
-		ServerEncryptionPrivateKeyBytes: serverPrivKey,
+		ServerEncryptionPrivateKeyBytes: serverPrivKey.Bytes(),
 		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
-		EncryptionPublicKeyBytes:        nodePubKey,
+		EncryptionPublicKeyBytes:        nodePubKey.Bytes(),
 		EncryptionPublicKeyType:         types.KEYTYPE_X25519,
 		CertificatePublicKeyPkix:        nodeCreds.CertificatePublicKeyPkix,
 	}
@@ -659,7 +648,7 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 	require.NoError(t, err)
 
 	fetchNodeCredsResp := &types.FetchNodeCredentialsResponse{
-		ServerEncryptionPublicKeyBytes: serverPubKey,
+		ServerEncryptionPublicKeyBytes: serverPubKey.Bytes(),
 		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
 		EncryptedNodeCredentials:       encryptedCreds,
 	}

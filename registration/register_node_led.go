@@ -6,6 +6,7 @@ package registration
 import (
 	"context"
 	"crypto"
+	"crypto/ecdh"
 	"crypto/ed25519"
 	"crypto/subtle"
 	"crypto/x509"
@@ -17,7 +18,6 @@ import (
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/types"
-	"golang.org/x/crypto/curve25519"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -240,13 +240,14 @@ func FetchNodeCredentials(
 		return nil, fmt.Errorf("(%s) mismatched encryption public keys between authorization and incoming fetch request", op)
 	}
 
-	serverEncryptionPublicKey, err := curve25519.X25519(nodeInfo.ServerEncryptionPrivateKeyBytes, curve25519.Basepoint)
+	serverEncryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(nodeInfo.ServerEncryptionPrivateKeyBytes)
 	if err != nil {
-		return nil, fmt.Errorf("(%s) error deriving server public encryption key: %w", op, err)
+		return nil, fmt.Errorf("(%s) error reading server private encryption key: %w", op, err)
 	}
+	serverEncryptionPublicKey := serverEncryptionPrivateKey.PublicKey()
 
 	nodeCreds := &types.NodeCredentials{
-		ServerEncryptionPublicKeyBytes: serverEncryptionPublicKey,
+		ServerEncryptionPublicKeyBytes: serverEncryptionPublicKey.Bytes(),
 		ServerEncryptionPublicKeyType:  nodeInfo.ServerEncryptionPrivateKeyType,
 		RegistrationNonce:              nodeInfo.RegistrationNonce,
 		CertificateBundles:             nodeInfo.CertificateBundles,
@@ -280,7 +281,7 @@ func FetchNodeCredentials(
 	return &types.FetchNodeCredentialsResponse{
 		EncryptedNodeCredentials:          encryptedBytes,
 		EncryptedNodeCredentialsSignature: sigBytes,
-		ServerEncryptionPublicKeyBytes:    serverEncryptionPublicKey,
+		ServerEncryptionPublicKeyBytes:    serverEncryptionPublicKey.Bytes(),
 		ServerEncryptionPublicKeyType:     nodeInfo.ServerEncryptionPrivateKeyType,
 	}, nil
 }

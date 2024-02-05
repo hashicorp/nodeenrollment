@@ -5,6 +5,7 @@ package registration_test
 
 import (
 	"context"
+	"crypto/ecdh"
 	"testing"
 
 	"github.com/hashicorp/nodeenrollment"
@@ -15,7 +16,6 @@ import (
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/curve25519"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -36,8 +36,9 @@ func TestAuthorizeNode(t *testing.T) {
 	require.NoError(t, err)
 	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)
-	nodePubKey, err := curve25519.X25519(nodeCreds.EncryptionPrivateKeyBytes, curve25519.Basepoint)
+	nodePrivKey, err := ecdh.X25519().NewPrivateKey(nodeCreds.EncryptionPrivateKeyBytes)
 	require.NoError(t, err)
+	nodePubKey := nodePrivKey.PublicKey()
 
 	structMap := map[string]interface{}{"foo": "bar"}
 	state, err := structpb.NewStruct(structMap)
@@ -48,7 +49,7 @@ func TestAuthorizeNode(t *testing.T) {
 		Id:                       keyId,
 		CertificatePublicKeyPkix: nodeCreds.CertificatePublicKeyPkix,
 		CertificatePublicKeyType: nodeCreds.CertificatePrivateKeyType,
-		EncryptionPublicKeyBytes: nodePubKey,
+		EncryptionPublicKeyBytes: nodePubKey.Bytes(),
 		EncryptionPublicKeyType:  nodeCreds.EncryptionPrivateKeyType,
 		RegistrationNonce:        nodeCreds.RegistrationNonce,
 		State:                    state,
@@ -141,8 +142,9 @@ func TestAuthorizeNodeCommon_DuplicateStore(t *testing.T) {
 	require.NoError(t, err)
 	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)
-	nodePubKey, err := curve25519.X25519(nodeCreds.EncryptionPrivateKeyBytes, curve25519.Basepoint)
+	nodePrivKey, err := ecdh.X25519().NewPrivateKey(nodeCreds.EncryptionPrivateKeyBytes)
 	require.NoError(t, err)
+	nodePubKey := nodePrivKey.PublicKey()
 
 	structMap := map[string]interface{}{"foo": "bar"}
 	state, err := structpb.NewStruct(structMap)
@@ -153,7 +155,7 @@ func TestAuthorizeNodeCommon_DuplicateStore(t *testing.T) {
 		Id:                       keyId,
 		CertificatePublicKeyPkix: nodeCreds.CertificatePublicKeyPkix,
 		CertificatePublicKeyType: nodeCreds.CertificatePrivateKeyType,
-		EncryptionPublicKeyBytes: nodePubKey,
+		EncryptionPublicKeyBytes: nodePubKey.Bytes(),
 		EncryptionPublicKeyType:  nodeCreds.EncryptionPrivateKeyType,
 		RegistrationNonce:        nodeCreds.RegistrationNonce,
 		State:                    state,

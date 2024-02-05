@@ -4,10 +4,10 @@
 package types
 
 import (
+	"crypto/ecdh"
 	"fmt"
 
 	"github.com/hashicorp/nodeenrollment"
-	"golang.org/x/crypto/curve25519"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -56,9 +56,20 @@ func X25519EncryptionKey(privKey []byte, privKeyType KEYTYPE, pubKey []byte, pub
 		return nil, fmt.Errorf("(%s) public key type is not known", op)
 	}
 
-	out, err := curve25519.X25519(privKey, pubKey)
+	curve := ecdh.X25519()
+	pub, err := curve.NewPublicKey(pubKey)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error parsing public key: %w", op, err)
+	}
+	priv, err := curve.NewPrivateKey(privKey)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error parsing private key: %w", op, err)
+	}
+
+	out, err := priv.ECDH(pub)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error performing x25519 operation: %w", op, err)
 	}
+
 	return out, nil
 }

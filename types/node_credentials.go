@@ -6,6 +6,7 @@ package types
 import (
 	"context"
 	"crypto"
+	"crypto/ecdh"
 	"crypto/ed25519"
 	"crypto/subtle"
 	"crypto/x509"
@@ -448,10 +449,11 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		reqInfo.Nonce = nonce
 	}
 
-	reqInfo.EncryptionPublicKeyBytes, err = curve25519.X25519(n.EncryptionPrivateKeyBytes, curve25519.Basepoint)
+	encryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(n.EncryptionPrivateKeyBytes)
 	if err != nil {
-		return nil, fmt.Errorf("(%s) error performing x25519 operation on private key: %w", op, err)
+		return nil, fmt.Errorf("(%s) error reading node private encryption key: %w", op, err)
 	}
+	reqInfo.EncryptionPublicKeyBytes = encryptionPrivateKey.PublicKey().Bytes()
 
 	var req FetchNodeCredentialsRequest
 	req.Bundle, err = proto.Marshal(reqInfo)

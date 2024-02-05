@@ -6,6 +6,7 @@ package registration_test
 import (
 	"context"
 	"crypto"
+	"crypto/ecdh"
 	"crypto/ed25519"
 	"crypto/x509"
 	"testing"
@@ -19,7 +20,6 @@ import (
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/curve25519"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -42,8 +42,9 @@ func TestValidateFetchRequest(t *testing.T) {
 	require.NoError(t, err)
 	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)
-	nodePubKey, err := curve25519.X25519(nodeCreds.EncryptionPrivateKeyBytes, curve25519.Basepoint)
+	nodePrivKey, err := ecdh.X25519().NewPrivateKey(nodeCreds.EncryptionPrivateKeyBytes)
 	require.NoError(t, err)
+	nodePubKey := nodePrivKey.PublicKey()
 
 	// Also create a server-led value for that path
 	_, activationToken, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{})
@@ -105,7 +106,7 @@ func TestValidateFetchRequest(t *testing.T) {
 		Id:                       keyId,
 		CertificatePublicKeyPkix: nodeCreds.CertificatePublicKeyPkix,
 		CertificatePublicKeyType: nodeCreds.CertificatePrivateKeyType,
-		EncryptionPublicKeyBytes: nodePubKey,
+		EncryptionPublicKeyBytes: nodePubKey.Bytes(),
 		EncryptionPublicKeyType:  nodeCreds.EncryptionPrivateKeyType,
 		RegistrationNonce:        nodeCreds.RegistrationNonce,
 	}
@@ -401,15 +402,16 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 	require.NoError(t, err)
 	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)
-	nodePubKey, err := curve25519.X25519(nodeCreds.EncryptionPrivateKeyBytes, curve25519.Basepoint)
+	nodePrivKey, err := ecdh.X25519().NewPrivateKey(nodeCreds.EncryptionPrivateKeyBytes)
 	require.NoError(t, err)
+	nodePubKey := nodePrivKey.PublicKey()
 
 	// If testing already authorized path, add this to storage
 	baseNodeInfo := &types.NodeInformation{
 		Id:                       keyId,
 		CertificatePublicKeyPkix: nodeCreds.CertificatePublicKeyPkix,
 		CertificatePublicKeyType: nodeCreds.CertificatePrivateKeyType,
-		EncryptionPublicKeyBytes: nodePubKey,
+		EncryptionPublicKeyBytes: nodePubKey.Bytes(),
 		EncryptionPublicKeyType:  nodeCreds.EncryptionPrivateKeyType,
 		RegistrationNonce:        nodeCreds.RegistrationNonce,
 	}

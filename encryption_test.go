@@ -5,6 +5,7 @@ package nodeenrollment
 
 import (
 	"context"
+	"crypto/ecdh"
 	"crypto/rand"
 	"testing"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/hashicorp/go-kms-wrapping/v2/aead"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/curve25519"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 )
@@ -25,8 +25,19 @@ type testNode struct {
 }
 
 func (t testNode) X25519EncryptionKey() (string, []byte, error) {
-	b, err := curve25519.X25519(t.priv, t.otherPub)
-	return t.keyId, b, err
+	privKey, err := ecdh.X25519().NewPrivateKey(t.priv)
+	if err != nil {
+		return "", nil, err
+	}
+	otherPubKey, err := ecdh.X25519().NewPublicKey(t.otherPub)
+	if err != nil {
+		return "", nil, err
+	}
+	encKey, err := privKey.ECDH(otherPubKey)
+	if err != nil {
+		return "", nil, err
+	}
+	return t.keyId, encKey, err
 }
 
 func (t testNode) PreviousX25519EncryptionKey() (string, []byte, error) {
@@ -42,24 +53,18 @@ func Test_EncryptionDecryption(t *testing.T) {
 
 	wrapper := aead.TestWrapper(t)
 
-	node1Priv := make([]byte, curve25519.ScalarSize)
-	n, err := rand.Read(node1Priv)
-	tRequire.NoError(err)
-	tRequire.Equal(n, curve25519.ScalarSize)
+	curve := ecdh.X25519()
 
-	node1Pub, err := curve25519.X25519(node1Priv, curve25519.Basepoint)
+	node1Priv, err := curve.GenerateKey(rand.Reader)
 	tRequire.NoError(err)
+	node1Pub := node1Priv.PublicKey()
 
-	node2Priv := make([]byte, curve25519.ScalarSize)
-	n, err = rand.Read(node2Priv)
+	node2Priv, err := curve.GenerateKey(rand.Reader)
 	tRequire.NoError(err)
-	tRequire.Equal(n, curve25519.ScalarSize)
+	node2Pub := node2Priv.PublicKey()
 
-	node2Pub, err := curve25519.X25519(node2Priv, curve25519.Basepoint)
-	tRequire.NoError(err)
-
-	node1 := &testNode{priv: node1Priv, otherPub: node2Pub}
-	node2 := &testNode{priv: node2Priv, otherPub: node1Pub}
+	node1 := &testNode{priv: node1Priv.Bytes(), otherPub: node2Pub.Bytes()}
+	node2 := &testNode{priv: node2Priv.Bytes(), otherPub: node1Pub.Bytes()}
 
 	encryptMsg := &wrapping.BlobInfo{
 		Ciphertext: []byte("foo"),
