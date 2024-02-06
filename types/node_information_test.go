@@ -5,6 +5,7 @@ package types_test
 
 import (
 	"context"
+	"crypto/ecdh"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
@@ -203,26 +204,24 @@ func TestNodeInformation_X25519(t *testing.T) {
 	t.Parallel()
 
 	// Generate a suitable root
-	privKey := make([]byte, curve25519.ScalarSize)
-	n, err := rand.Read(privKey)
-	require.NoError(t, err)
-	require.Equal(t, n, curve25519.ScalarSize)
+	curve := ecdh.X25519()
 
-	privKey2 := make([]byte, curve25519.ScalarSize)
-	n, err = rand.Read(privKey2)
+	privKey, err := curve.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	require.Equal(t, n, curve25519.ScalarSize)
-	pubKey, err := curve25519.X25519(privKey2, curve25519.Basepoint)
+
+	privKey2, err := curve.GenerateKey(rand.Reader)
 	require.NoError(t, err)
+	pubKey := privKey2.PublicKey()
+
 	certPubKey, _, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	pubKeyPkix, err := x509.MarshalPKIXPublicKey(certPubKey)
 	require.NoError(t, err)
 
 	nodeInfo := &types.NodeInformation{
-		ServerEncryptionPrivateKeyBytes: privKey,
+		ServerEncryptionPrivateKeyBytes: privKey.Bytes(),
 		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
-		EncryptionPublicKeyBytes:        pubKey,
+		EncryptionPublicKeyBytes:        pubKey.Bytes(),
 		EncryptionPublicKeyType:         types.KEYTYPE_X25519,
 		CertificatePublicKeyPkix:        pubKeyPkix,
 	}
@@ -294,26 +293,22 @@ func TestNodeInformation_X25519(t *testing.T) {
 	}
 
 	// Generate a suitable root
-	privKey3 := make([]byte, curve25519.ScalarSize)
-	n2, err := rand.Read(privKey3)
+	privKey3, err := curve.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	require.Equal(t, n2, curve25519.ScalarSize)
 
-	privKey4 := make([]byte, curve25519.ScalarSize)
-	n2, err = rand.Read(privKey)
+	privKey4, err := curve.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	require.Equal(t, n2, curve25519.ScalarSize)
-	pubKey2, err := curve25519.X25519(privKey4, curve25519.Basepoint)
-	require.NoError(t, err)
+	pubKey2 := privKey4.PublicKey()
+
 	certPubKey2, _, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	pubKeyPkix2, err := x509.MarshalPKIXPublicKey(certPubKey2)
 	require.NoError(t, err)
 
 	nodeInfo2 := &types.NodeInformation{
-		ServerEncryptionPrivateKeyBytes: privKey3,
+		ServerEncryptionPrivateKeyBytes: privKey3.Bytes(),
 		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
-		EncryptionPublicKeyBytes:        pubKey2,
+		EncryptionPublicKeyBytes:        pubKey2.Bytes(),
 		EncryptionPublicKeyType:         types.KEYTYPE_X25519,
 		CertificatePublicKeyPkix:        pubKeyPkix2,
 	}
