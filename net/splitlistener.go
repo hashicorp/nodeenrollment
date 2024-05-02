@@ -277,11 +277,11 @@ func (l *MultiplexingListener) Addr() net.Addr {
 // We call drainConnections here to ensure that senders don't block even though
 // we're no longer accepting them.
 func (l *MultiplexingListener) Close() error {
+	l.drainConnections()
 	l.closedMutex.Lock()
 	l.closed = true
 	l.closedOnce.Do(func() { close(l.incoming) })
 	l.closedMutex.Unlock()
-	l.drainConnections()
 	return nil
 }
 
@@ -350,7 +350,7 @@ func (l *MultiplexingListener) IngressListener(ln net.Listener) error {
 	go func() {
 		for {
 			conn, err := ln.Accept()
-			if err != nil && errors.Is(err, net.ErrClosed) {
+			if err != nil {
 				return
 			}
 			l.closedMutex.RLock()

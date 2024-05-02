@@ -310,3 +310,30 @@ func TestIngressListener(t *testing.T) {
 	assert.Empty(listenerReturnedErr.Load())
 	assert.EqualValues(40, conns.Load())
 }
+
+func TestMultiplexingListener_CloseDeadlock(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	ctx := context.Background()
+
+	// Create the base listener
+	baseLn1, err := net.Listen("tcp4", "127.0.0.1:0")
+	require.NoError(err)
+	baseLn2, err := net.Listen("tcp4", "127.0.0.1:0")
+	require.NoError(err)
+
+	mxLn, err := nodeenet.NewMultiplexingListener(ctx, baseLn1.Addr())
+	require.NoError(err)
+	require.NoError(mxLn.IngressListener(baseLn1))
+	require.NoError(mxLn.IngressListener(baseLn2))
+
+	conn, err := net.Dial("tcp4", baseLn1.Addr().String())
+	require.NoError(err)
+	require.NoError(conn.Close())
+
+	// Close one of the underlying listeners
+	baseLn1.Close()
+
+	// Deadlocks before the fix
+	require.NoError(mxLn.Close())
+}
