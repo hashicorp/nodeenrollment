@@ -54,6 +54,7 @@ type Options struct {
 	WithNativeConns                                       bool
 	WithLogger                                            hclog.Logger
 	WithTestErrorContains                                 string
+	WithRemoveUnusedCredentials                           bool
 }
 
 // Option is a function that takes in an options struct and sets values or
@@ -272,6 +273,14 @@ func WithLogger(with hclog.Logger) Option {
 func WithTestErrorContains(with string) Option {
 	return func(o *Options) error {
 		o.WithTestErrorContains = with
+		return nil
+	}
+}
+
+// WithRemoveUnusedCredentials, if set to true, indicates that unused credentials should be removed
+func WithRemoveUnusedCredentials(with bool) Option {
+	return func(o *Options) error {
+		o.WithRemoveUnusedCredentials = with
 		return nil
 	}
 }

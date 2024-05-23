@@ -233,4 +233,13 @@ func Test_GetOpts(t *testing.T) {
 		require.NoError(err)
 		assert.Equal("foobar", opts.WithTestErrorContains)
 	})
+	t.Run("with-remove-unused-creds", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.False(opts.WithRemoveUnusedCredentials)
+		opts, err = GetOpts(WithRemoveUnusedCredentials(true))
+		require.NoError(err)
+		assert.True(opts.WithRemoveUnusedCredentials)
+	})
 }

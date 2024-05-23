@@ -93,7 +93,7 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 		Id:    id,
 		State: opts.WithState,
 	}
-	if err := storage.Load(ctx, nodeInfo); err != nil {
+	if err := storage.Load(ctx, nodeInfo, opt...); err != nil {
 		return nil, fmt.Errorf("(%s) error loading node information from storage: %w", op, err)
 	}
 

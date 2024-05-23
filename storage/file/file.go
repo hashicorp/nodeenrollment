@@ -126,7 +126,7 @@ func (ts *Storage) Store(ctx context.Context, msg nodeenrollment.MessageWithId) 
 }
 
 // Load implements the Storage interface
-func (ts *Storage) Load(ctx context.Context, msg nodeenrollment.MessageWithId) error {
+func (ts *Storage) Load(ctx context.Context, msg nodeenrollment.MessageWithId, _ ...nodeenrollment.Option) error {
 	const op = "nodeenrollment.storage.file.(Storage).Load"
 	if err := types.ValidateMessage(msg); err != nil {
 		return fmt.Errorf("(%s) given message cannot be loaded: %w", op, err)

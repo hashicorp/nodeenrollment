@@ -32,7 +32,7 @@ type Storage interface {
 	// Load loads values into the given message. The message must be populated
 	// with the ID of the value to load. If not found, the returned error should
 	// be ErrNotFound.
-	Load(context.Context, MessageWithId) error
+	Load(context.Context, MessageWithId, ...Option) error
 
 	// Remove removes the given message. The ID field of the message must be
 	// populated, and only the ID field of the message is considered.

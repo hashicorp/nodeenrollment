@@ -60,8 +60,13 @@ func RotateNodeCredentials(
 		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
+	// Update options for rotation to remove unused credentials, if found
+	rotateOpts := make([]nodeenrollment.Option, len(opt))
+	copy(rotateOpts, opt)
+	rotateOpts = append(rotateOpts, nodeenrollment.WithRemoveUnusedCredentials(true))
+
 	// First we get our current node information and decrypt the fetch request
-	currentNodeInfo, err := types.LoadNodeInformation(ctx, storage, currentKeyId, opt...)
+	currentNodeInfo, err := types.LoadNodeInformation(ctx, storage, currentKeyId, rotateOpts...)
 	if err != nil {
 		err := fmt.Errorf("error loading current node information: %w", err)
 		opts.WithLogger.Error(err.Error(), "op", op)
