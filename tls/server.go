@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math/big"
 	mathrand "math/rand"
@@ -60,32 +61,42 @@ func GenerateServerCertificates(
 			return nil, fmt.Errorf("(%s) empty nonce signature", op)
 		}
 		// Ensure node is authorized
-		keyId, err := nodeenrollment.KeyIdFromPkix(req.CertificatePublicKeyPkix)
-		if err != nil {
-			return nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
-		}
-		nodeInfo, err := types.LoadNodeInformation(ctx, storage, keyId, opt...)
-		if err != nil {
-			return nil, fmt.Errorf("(%s) error loading node information: %w", op, err)
-		}
-		// Validate the nonce
-		nodePubKeyRaw, err := x509.ParsePKIXPublicKey(nodeInfo.CertificatePublicKeyPkix)
-		if err != nil {
-			return nil, fmt.Errorf("(%s) node public key cannot be parsed: %w", op, err)
-		}
-		nodePubKey, ok := nodePubKeyRaw.(ed25519.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("(%s) node public key cannot be interpreted as ed25519 public key: %w", op, err)
-		}
-		if !ed25519.Verify(nodePubKey, req.Nonce, req.NonceSignature) {
-			return nil, fmt.Errorf("(%s) nonce signature verification failed", op)
-		}
-		if len(req.ClientState) != 0 {
-			if len(req.ClientStateSignature) == 0 {
-				return nil, fmt.Errorf("(%s) client state is not empty but state signature is", op)
+		var i interface{} = storage
+		nodeIdStorage, ok := i.(nodeenrollment.NodeIdLoader)
+		switch {
+		// If we have a NodeId & storage supports NodeIdLoader, use it
+		case req.NodeId != "" && ok:
+			nodeInfos, err := types.LoadNodeInformationsByNodeId(ctx, nodeIdStorage, req.NodeId, opt...)
+			if err != nil {
+				return nil, err
 			}
-			if !ed25519.Verify(nodePubKey, req.ClientState, req.ClientStateSignature) {
-				return nil, fmt.Errorf("(%s) client state signature verification failed", op)
+			authorized := false
+			var errs error
+			// We only need to find one valid NodeInfo for this nodeId to authorize the request
+			for _, n := range nodeInfos.Nodes {
+				err = verifyGenerateCertificatesRequest(n, req)
+				if err != nil {
+					errs = errors.Join(errs, err)
+				}
+				authorized = true
+				break
+			}
+			if !authorized {
+				return nil, fmt.Errorf("(%s) unable to authorize node information: %w", op, errs)
+			}
+		// Otherwise use the key id passed in
+		default:
+			keyId, err := nodeenrollment.KeyIdFromPkix(req.CertificatePublicKeyPkix)
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
+			}
+			nodeInfo, err := types.LoadNodeInformation(ctx, storage, keyId, opt...)
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error loading node information: %w", op, err)
+			}
+			err = verifyGenerateCertificatesRequest(nodeInfo, req)
+			if err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -171,6 +182,32 @@ func GenerateServerCertificates(
 	}
 
 	return resp, nil
+}
+
+func verifyGenerateCertificatesRequest(nodeInfo *types.NodeInformation, req *types.GenerateServerCertificatesRequest) error {
+	const op = "nodeenrollment.tls.verifyGenerateCertificatesRequest"
+
+	// Validate the nonce
+	nodePubKeyRaw, err := x509.ParsePKIXPublicKey(nodeInfo.CertificatePublicKeyPkix)
+	if err != nil {
+		return fmt.Errorf("(%s) node public key cannot be parsed: %w", op, err)
+	}
+	nodePubKey, ok := nodePubKeyRaw.(ed25519.PublicKey)
+	if !ok {
+		return fmt.Errorf("(%s) node public key cannot be interpreted as ed25519 public key: %w", op, err)
+	}
+	if !ed25519.Verify(nodePubKey, req.Nonce, req.NonceSignature) {
+		return fmt.Errorf("(%s) nonce signature verification failed", op)
+	}
+	if len(req.ClientState) != 0 {
+		if len(req.ClientStateSignature) == 0 {
+			return fmt.Errorf("(%s) client state is not empty but state signature is", op)
+		}
+		if !ed25519.Verify(nodePubKey, req.ClientState, req.ClientStateSignature) {
+			return fmt.Errorf("(%s) client state signature verification failed", op)
+		}
+	}
+	return nil
 }
 
 // ServerConfig takes in a generate response and turns it into a server-side TLS

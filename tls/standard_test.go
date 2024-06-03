@@ -131,7 +131,7 @@ func TestStandardTls(t *testing.T) {
 	runTest(t, ctx, storage, node, false)
 }
 
-func runTest(t *testing.T, ctx context.Context, storage nodeenrollment.Storage, nodeCreds *types.NodeCredentials, shouldFailHandshake bool, opt ...nodeenrollment.Option) {
+func runTest(t *testing.T, ctx context.Context, storage nodeenrollment.NodeIdLoader, nodeCreds *types.NodeCredentials, shouldFailHandshake bool, opt ...nodeenrollment.Option) {
 	require, assert := require.New(t), assert.New(t)
 
 	opts, err := nodeenrollment.GetOpts(opt...)

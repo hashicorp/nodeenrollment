@@ -10,18 +10,18 @@ import (
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/rotation"
-	"github.com/hashicorp/nodeenrollment/storage/inmem"
+	teststore "github.com/hashicorp/nodeenrollment/storage/testing"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/require"
 )
 
 // CommonTestParams is a one-stop shop returning a context, valid storage with
 // root certificates, and pre-registered node credentials for testing
-func CommonTestParams(t *testing.T, opt ...nodeenrollment.Option) (context.Context, nodeenrollment.Storage, *types.NodeCredentials) {
+func CommonTestParams(t *testing.T, opt ...nodeenrollment.Option) (context.Context, nodeenrollment.NodeIdLoader, *types.NodeCredentials) {
 	t.Helper()
 	ctx := context.Background()
 
-	storage, err := inmem.New(ctx)
+	storage, err := teststore.New(ctx)
 	require.NoError(t, err)
 
 	_, err = rotation.RotateRootCertificates(ctx, storage, opt...)
