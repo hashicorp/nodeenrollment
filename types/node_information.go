@@ -6,6 +6,7 @@ package types
 import (
 	"context"
 	"fmt"
+
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
 	"github.com/hashicorp/nodeenrollment"
 	"google.golang.org/protobuf/proto"
