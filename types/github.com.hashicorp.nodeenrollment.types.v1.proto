@@ -81,6 +81,8 @@ message EncryptionKey {
 // only have at most two active values, here we need to identify an incoming
 // node's information so use the actual key ID. Rotation simply means a new
 // entry will be added with the new ID.
+//
+// NodeId is an external identifier for this node that does not change
 message NodeInformation {
   string id = 1;
   bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
@@ -110,9 +112,10 @@ message NodeInformation {
   EncryptionKey previous_encryption_key = 60 [json_name="previous_encryption_key"];
 }
 
-// NodeInformations is a message that holds multiple NodeInformations
+// NodeInformations is a message that holds multiple NodeInformations for node.
 // This is used to load all valid NodeInformation for a node from storage
 // and can be used in situations where failover to previous credentials is necessary
+// NodeId is an external identifier for this node that does not change
 message NodeInformations {
   string node_id = 7 [json_name="node_id"];
   repeated NodeInformation nodes = 10;
@@ -264,6 +267,7 @@ message RotateNodeCredentialsRequest {
   // connection
   bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
 
+  // NodeId is an external identifier for this node that does not change
   string node_id = 7 [json_name="node_id"];
 
   // Encrypted FetchNodeCredentialsRequest, with the current encryption
@@ -295,6 +299,7 @@ message RotateNodeCredentialsResponse {
 message GenerateServerCertificatesRequest {
   bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
 
+  // NodeId is an external identifier for this node that does not change
   string node_id = 7 [json_name="node_id"];
 
   bytes nonce = 20;

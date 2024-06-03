@@ -5,11 +5,13 @@ package rotation
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/golang/protobuf/proto"
+
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/types"
+	"google.golang.org/protobuf/proto"
 )
 
 // RotateNodeCredentials accepts a request containing an encrypted fetch node
@@ -61,8 +63,7 @@ func RotateNodeCredentials(
 	}
 
 	// First we get our current node information and decrypt the fetch request
-	var i interface{} = storage
-	nodeIdStorage, ok := i.(nodeenrollment.NodeIdLoader)
+	nodeIdStorage, ok := storage.(nodeenrollment.NodeIdLoader)
 	var nodeInfos *types.NodeInformations
 	switch {
 	// If we have a NodeId & storage supports NodeIdLoader, use it
@@ -89,6 +90,7 @@ func RotateNodeCredentials(
 	var currentNodeInfo *types.NodeInformation
 	fetchRequest := new(types.FetchNodeCredentialsRequest)
 	// Find the most current nodeInfo that can decrypt the request
+	var fetchErrors error
 	for _, n := range nodeInfos.Nodes {
 		err := nodeenrollment.DecryptMessage(
 			ctx,
@@ -101,11 +103,13 @@ func RotateNodeCredentials(
 			currentNodeInfo = proto.Clone(n).(*types.NodeInformation)
 			break
 		}
+		errors.Join(fetchErrors, err)
 	}
 	if nodeenrollment.IsNil(currentNodeInfo) {
 		err := fmt.Errorf("no node information could decrypt the request")
-		opts.WithLogger.Error(err.Error(), "op", op)
-		return nil, fmt.Errorf("(%s) %s", op, err.Error())
+		errors.Join(fetchErrors, err)
+		opts.WithLogger.Error(fetchErrors.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, fetchErrors.Error())
 	}
 
 	// At this point we've validated via the shared encryption key that it came

@@ -61,8 +61,7 @@ func GenerateServerCertificates(
 			return nil, fmt.Errorf("(%s) empty nonce signature", op)
 		}
 		// Ensure node is authorized
-		var i interface{} = storage
-		nodeIdStorage, ok := i.(nodeenrollment.NodeIdLoader)
+		nodeIdStorage, ok := storage.(nodeenrollment.NodeIdLoader)
 		switch {
 		// If we have a NodeId & storage supports NodeIdLoader, use it
 		case req.NodeId != "" && ok:

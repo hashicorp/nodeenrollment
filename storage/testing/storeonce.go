@@ -5,6 +5,7 @@ package testing
 
 import (
 	"context"
+	"errors"
 	"math/rand"
 	"time"
 
@@ -72,6 +73,9 @@ func (ts *Storage) Store(ctx context.Context, msg nodeenrollment.MessageWithId) 
 // LoadByNodeId implements the NodeIdLoader interface. Iterate through all NodeInformation records
 // and return those matching the NodeId
 func (ts *Storage) LoadByNodeId(ctx context.Context, msg nodeenrollment.MessageWithNodeId) error {
+	if msg.GetNodeId() == "" {
+		return errors.New("nodeID is required")
+	}
 
 	switch t := msg.(type) {
 	case *types.NodeInformations:

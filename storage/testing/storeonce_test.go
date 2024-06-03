@@ -33,7 +33,7 @@ func Test_StorageLifecycle(t *testing.T) {
 		require.NoError(err)
 	}
 
-	// Store a few unerelated NodeInfos
+	// Store a few unrelated NodeInfos
 	for i := 0; i < numNodeInfos; i++ {
 		name := fmt.Sprintf("other-node-info-%d", i)
 		newNode := &types.NodeInformation{
@@ -51,4 +51,7 @@ func Test_StorageLifecycle(t *testing.T) {
 	err = ts.LoadByNodeId(ctx, searchInfo)
 	require.NoError(err)
 	assert.Equal(numNodeInfos, len(searchInfo.Nodes))
+	for _, s := range searchInfo.Nodes {
+		assert.Equal(nodeId, s.NodeId)
+	}
 }

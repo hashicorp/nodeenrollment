@@ -45,7 +45,7 @@ type Storage interface {
 
 // MessageWithNodeId is a proto message that is required to implement a GetNodeId
 // function, which will be immediately satisfied by any message with an
-// `string nodeid = X;` parameter.
+// `string node_id = X;` parameter.
 type MessageWithNodeId interface {
 	proto.Message
 	GetNodeId() string
