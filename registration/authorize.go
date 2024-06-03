@@ -104,6 +104,7 @@ func authorizeNodeCommon(
 		RegistrationNonce:            reqInfo.Nonce,
 		State:                        opts.WithState,
 		WrappingRegistrationFlowInfo: reqInfo.WrappingRegistrationFlowInfo,
+		PreviousEncryptionKey:        reqInfo.PreviousEncryptionKey,
 	}
 
 	certPubKeyRaw, err := x509.ParsePKIXPublicKey(nodeInfo.CertificatePublicKeyPkix)

@@ -218,6 +218,8 @@ message FetchNodeCredentialsInfo {
 
   google.protobuf.Timestamp not_before = 7 [json_name="not_before"];
   google.protobuf.Timestamp not_after = 8 [json_name="not_after"];
+
+  EncryptionKey previous_encryption_key = 60 [json_name="previous_encryption_key"];
 }
 
 // FetchNodeCredentialsRequest contains the marshaled FetchNodeCredentialsInfo
