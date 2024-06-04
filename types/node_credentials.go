@@ -417,6 +417,7 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		EncryptionPublicKeyType:  KEYTYPE_X25519,
 		NotBefore:                timestamppb.New(now),
 		NotAfter:                 timestamppb.New(now.Add(nodeenrollment.DefaultFetchCredentialsLifetime)),
+		PreviousEncryptionKey:    n.PreviousEncryptionKey,
 	}
 
 	switch {

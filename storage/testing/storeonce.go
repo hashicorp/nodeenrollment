@@ -5,6 +5,7 @@ package testing
 
 import (
 	"context"
+	"errors"
 	"math/rand"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/hashicorp/nodeenrollment/storage/inmem"
 	"github.com/hashicorp/nodeenrollment/types"
 )
+
+var _ nodeenrollment.NodeIdLoader = (*Storage)(nil)
 
 // StoreOnce is an in-memory storage that does not overrwite information on store
 type Storage struct {
@@ -65,4 +68,34 @@ func (ts *Storage) Store(ctx context.Context, msg nodeenrollment.MessageWithId) 
 	}
 
 	return ts.Storage.Store(ctx, msg)
+}
+
+// LoadByNodeId implements the NodeIdLoader interface. Iterate through all NodeInformation records
+// and return those matching the NodeId
+func (ts *Storage) LoadByNodeId(ctx context.Context, msg nodeenrollment.MessageWithNodeId) error {
+	if msg.GetNodeId() == "" {
+		return errors.New("nodeID is required")
+	}
+
+	switch t := msg.(type) {
+	case *types.NodeInformations:
+		nodes, err := ts.Storage.List(ctx, (*types.NodeInformation)(nil))
+		if err != nil {
+			return err
+		}
+
+		nodesToReturn := make([]*types.NodeInformation, 0)
+		for _, n := range nodes {
+			node := &types.NodeInformation{Id: n}
+			ts.Load(ctx, node)
+			if node.NodeId == msg.GetNodeId() {
+				nodesToReturn = append(nodesToReturn, node)
+			}
+		}
+		if len(nodesToReturn) == 0 {
+			return nodeenrollment.ErrNotFound
+		}
+		t.Nodes = nodesToReturn
+	}
+	return nil
 }

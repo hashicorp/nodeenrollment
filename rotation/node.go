@@ -5,11 +5,13 @@ package rotation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/types"
+	"google.golang.org/protobuf/proto"
 )
 
 // RotateNodeCredentials accepts a request containing an encrypted fetch node
@@ -61,24 +63,53 @@ func RotateNodeCredentials(
 	}
 
 	// First we get our current node information and decrypt the fetch request
-	currentNodeInfo, err := types.LoadNodeInformation(ctx, storage, currentKeyId, opt...)
-	if err != nil {
-		err := fmt.Errorf("error loading current node information: %w", err)
-		opts.WithLogger.Error(err.Error(), "op", op)
-		return nil, fmt.Errorf("(%s) %s", op, err.Error())
+	nodeIdStorage, ok := storage.(nodeenrollment.NodeIdLoader)
+	var nodeInfos *types.NodeInformations
+	switch {
+	// If we have a NodeId & storage supports NodeIdLoader, use it
+	case req.NodeId != "" && ok:
+		nodeInfos, err = types.LoadNodeInformationsByNodeId(ctx, nodeIdStorage, req.NodeId, opt...)
+		if err != nil {
+			err := fmt.Errorf("error loading node informations for nodeId %s: %w", req.NodeId, err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
+		}
+	// Otherwise use the key id passed in
+	default:
+		currentNodeInfo, err := types.LoadNodeInformation(ctx, storage, currentKeyId, opt...)
+		if err != nil {
+			err := fmt.Errorf("error loading current node information: %w", err)
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
+		}
+		nodeInfos = &types.NodeInformations{
+			Nodes: []*types.NodeInformation{currentNodeInfo},
+		}
 	}
 
+	var currentNodeInfo *types.NodeInformation
 	fetchRequest := new(types.FetchNodeCredentialsRequest)
-	if err := nodeenrollment.DecryptMessage(
-		ctx,
-		req.EncryptedFetchNodeCredentialsRequest,
-		currentNodeInfo,
-		fetchRequest,
-		opt...,
-	); err != nil {
-		err := fmt.Errorf("error decrypting request with current keys: %w", err)
-		opts.WithLogger.Error(err.Error(), "op", op)
-		return nil, fmt.Errorf("(%s) %s", op, err.Error())
+	// Find the most current nodeInfo that can decrypt the request
+	var fetchErrors error
+	for _, n := range nodeInfos.Nodes {
+		err := nodeenrollment.DecryptMessage(
+			ctx,
+			req.EncryptedFetchNodeCredentialsRequest,
+			n,
+			fetchRequest,
+			opt...,
+		)
+		if err == nil {
+			currentNodeInfo = proto.Clone(n).(*types.NodeInformation)
+			break
+		}
+		errors.Join(fetchErrors, err)
+	}
+	if nodeenrollment.IsNil(currentNodeInfo) {
+		err := fmt.Errorf("no node information could decrypt the request")
+		errors.Join(fetchErrors, err)
+		opts.WithLogger.Error(fetchErrors.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, fetchErrors.Error())
 	}
 
 	// At this point we've validated via the shared encryption key that it came

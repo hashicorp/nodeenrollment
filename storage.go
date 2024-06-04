@@ -19,7 +19,7 @@ type MessageWithId interface {
 
 // Storage is an interface for to store values. The interface operates on
 // proto.Message or MessageWithId (which embeds a proto.Message but requires a
-// GetId() function), which is satisifed by all types in this library and
+// GetId() function), which is satisfied by all types in this library and
 // provides some type safety vs. any.
 //
 // The interface can be used for multiple types of message via a type switch on,
@@ -41,6 +41,26 @@ type Storage interface {
 	// List returns a list of IDs; the type of the message is used to
 	// disambiguate what to list, and can be a nil pointer to the type.
 	List(context.Context, proto.Message) ([]string, error)
+}
+
+// MessageWithNodeId is a proto message that is required to implement a GetNodeId
+// function, which will be immediately satisfied by any message with an
+// `string node_id = X;` parameter.
+type MessageWithNodeId interface {
+	proto.Message
+	GetNodeId() string
+}
+
+// NodeIdLoader is an interface for to store values. It builds on the Storage interface
+// to add the ability to load values by NodeID.
+type NodeIdLoader interface {
+	Storage
+
+	// LoadByNodeId loads values into the given message. The message must be populated
+	// with the NodeID of the value to load. If not found, the returned error should
+	// be ErrNotFound.
+	// LoadByNodeId will only load valid credentials, from newest to oldest.
+	LoadByNodeId(context.Context, MessageWithNodeId) error
 }
 
 // CleanableStorage is an interface that can optionally be implemented by storage

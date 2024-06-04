@@ -81,11 +81,14 @@ message EncryptionKey {
 // only have at most two active values, here we need to identify an incoming
 // node's information so use the actual key ID. Rotation simply means a new
 // entry will be added with the new ID.
+//
+// NodeId is an external identifier for this node that does not change
 message NodeInformation {
   string id = 1;
   bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
   KEYTYPE certificate_public_key_type = 3 [json_name="certificate_public_key_type"];
   repeated CertificateBundle certificate_bundles = 6 [json_name="certificate_bundles"];
+  string node_id = 7 [json_name="node_id"];
 
   bytes encryption_public_key_bytes = 10 [json_name="encryption_public_key_bytes"];
   KEYTYPE encryption_public_key_type = 11 [json_name="encryption_public_key_type"];
@@ -107,6 +110,15 @@ message NodeInformation {
   google.protobuf.Struct state = 50;
 
   EncryptionKey previous_encryption_key = 60 [json_name="previous_encryption_key"];
+}
+
+// NodeInformations is a message that holds multiple NodeInformations for node.
+// This is used to load all valid NodeInformation for a node from storage
+// and can be used in situations where failover to previous credentials is necessary
+// NodeId is an external identifier for this node that does not change
+message NodeInformations {
+  string node_id = 7 [json_name="node_id"];
+  repeated NodeInformation nodes = 10;
 }
 
 // NodeCredentials is the corresponding struct for NodeInformation on the node
@@ -209,6 +221,8 @@ message FetchNodeCredentialsInfo {
 
   google.protobuf.Timestamp not_before = 7 [json_name="not_before"];
   google.protobuf.Timestamp not_after = 8 [json_name="not_after"];
+
+  EncryptionKey previous_encryption_key = 60 [json_name="previous_encryption_key"];
 }
 
 // FetchNodeCredentialsRequest contains the marshaled FetchNodeCredentialsInfo
@@ -253,6 +267,9 @@ message RotateNodeCredentialsRequest {
   // connection
   bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
 
+  // NodeId is an external identifier for this node that does not change
+  string node_id = 7 [json_name="node_id"];
+
   // Encrypted FetchNodeCredentialsRequest, with the current encryption
   // parameters used for key generation
   bytes encrypted_fetch_node_credentials_request = 45 [json_name="encrypted_fetch_node_credentials_request"];
@@ -281,6 +298,10 @@ message RotateNodeCredentialsResponse {
 // any other) values aggregated there.
 message GenerateServerCertificatesRequest {
   bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
+
+  // NodeId is an external identifier for this node that does not change
+  string node_id = 7 [json_name="node_id"];
+
   bytes nonce = 20;
   bytes nonce_signature = 21 [json_name="nonce_signature"];
   string common_name = 24 [json_name="common_name"];

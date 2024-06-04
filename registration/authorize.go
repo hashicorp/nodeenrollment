@@ -55,12 +55,11 @@ func AuthorizeNode(
 		return nil, fmt.Errorf("(%s) server-led activation tokens cannot be used with node-led authorize call", op)
 
 	default:
-		// Check for existing node information
+		// Check for existing node information for this keyId
 		keyId, err := nodeenrollment.KeyIdFromPkix(reqInfo.CertificatePublicKeyPkix)
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error deriving key id: %w", op, err)
 		}
-
 		nodeInfo, err := types.LoadNodeInformation(ctx, storage, keyId, opt...)
 		switch {
 		case err == nil || nodeInfo != nil:
@@ -105,6 +104,7 @@ func authorizeNodeCommon(
 		RegistrationNonce:            reqInfo.Nonce,
 		State:                        opts.WithState,
 		WrappingRegistrationFlowInfo: reqInfo.WrappingRegistrationFlowInfo,
+		PreviousEncryptionKey:        reqInfo.PreviousEncryptionKey,
 	}
 
 	certPubKeyRaw, err := x509.ParsePKIXPublicKey(nodeInfo.CertificatePublicKeyPkix)

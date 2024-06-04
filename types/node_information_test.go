@@ -9,13 +9,15 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/x509"
+	"fmt"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
+	gocmp "github.com/google/go-cmp/cmp"
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
 	"github.com/hashicorp/go-kms-wrapping/v2/aead"
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/storage/inmem"
+	store "github.com/hashicorp/nodeenrollment/storage/testing"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -195,7 +197,186 @@ func TestNodeInformation_StoreLoad(t *testing.T) {
 				return
 			}
 
-			assert.Empty(cmp.Diff(n, loaded, protocmp.Transform()))
+			assert.Empty(gocmp.Diff(n, loaded, protocmp.Transform()))
+		})
+	}
+}
+
+func TestNodeInformations_LoadById(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	storage, err := store.New(ctx)
+	require.NoError(t, err)
+
+	// Generate a suitable root
+	privKey1 := make([]byte, curve25519.ScalarSize)
+	n, err := rand.Read(privKey1)
+	require.NoError(t, err)
+	require.Equal(t, n, curve25519.ScalarSize)
+
+	privKey2 := make([]byte, curve25519.ScalarSize)
+	n, err = rand.Read(privKey2)
+	require.NoError(t, err)
+	require.Equal(t, n, curve25519.ScalarSize)
+
+	state1, err := structpb.NewStruct(map[string]any{"foo": "bar"})
+	require.NoError(t, err)
+	state2, err := structpb.NewStruct(map[string]any{"bar": "foo"})
+	require.NoError(t, err)
+
+	validWrapper := aead.TestWrapper(t)
+	invalidWrapper := aead.TestWrapper(t)
+
+	tests := []struct {
+		name string
+		// Flag to set storage to nil on store
+		storeStorageNil bool
+		// Overrides the default id to load
+		loadIdOverride []byte
+		// Flag to set storage to nil on load
+		loadStorageNil bool
+		// Error to find on load
+		loadWantErrContains string
+		// The wrapper to use on store
+		storeWrapper wrapping.Wrapper
+		// The wrapper to use on load
+		loadWrapper wrapping.Wrapper
+	}{
+		{
+			name: "load-valid",
+		},
+		{
+			name:                "load-invalid-no-id",
+			loadIdOverride:      []byte(""),
+			loadWantErrContains: "missing node id",
+		},
+		{
+			name:                "load-invalid-bad-id",
+			loadIdOverride:      []byte("foo"),
+			loadWantErrContains: nodeenrollment.ErrNotFound.Error(),
+		},
+		{
+			name:                "load-invalid-nil-storage",
+			loadStorageNil:      true,
+			loadWantErrContains: "storage is nil",
+		},
+		{
+			name:         "valid-with-wrapping",
+			storeWrapper: validWrapper,
+			loadWrapper:  validWrapper,
+		},
+		{
+			name:        "valid-no-store-wrapping",
+			loadWrapper: validWrapper,
+		},
+		{
+			name:                "invalid-no-load-wrapping",
+			storeWrapper:        validWrapper,
+			loadWantErrContains: "wrapper not provided",
+		},
+		{
+			name:                "invalid-mismatched-wrapping",
+			storeWrapper:        validWrapper,
+			loadWrapper:         invalidWrapper,
+			loadWantErrContains: "message authentication failed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require, assert := require.New(t), assert.New(t)
+			nodeId := fmt.Sprintf("%s-%s", "test-node-id", tt.name)
+			nodeInfo1 := &types.NodeInformation{
+				ServerEncryptionPrivateKeyBytes: privKey1,
+				State:                           state1,
+				NodeId:                          nodeId,
+			}
+
+			nodeInfo2 := &types.NodeInformation{
+				ServerEncryptionPrivateKeyBytes: privKey2,
+				State:                           state2,
+				NodeId:                          nodeId,
+			}
+
+			// We don't care about this key, just need something valid for the marshal function
+			pubKey1, _, err := ed25519.GenerateKey(rand.Reader)
+			require.NoError(err)
+			pubKey2, _, err := ed25519.GenerateKey(rand.Reader)
+			require.NoError(err)
+
+			nodeInfo1.CertificatePublicKeyPkix, err = x509.MarshalPKIXPublicKey(pubKey1)
+			require.NoError(err)
+			nodeInfo1.Id, err = nodeenrollment.KeyIdFromPkix(nodeInfo1.CertificatePublicKeyPkix)
+			require.NoError(err)
+			nodeInfo1.RegistrationNonce = pubKey1
+
+			nodeInfo2.CertificatePublicKeyPkix, err = x509.MarshalPKIXPublicKey(pubKey2)
+			require.NoError(err)
+			nodeInfo2.Id, err = nodeenrollment.KeyIdFromPkix(nodeInfo2.CertificatePublicKeyPkix)
+			require.NoError(err)
+			nodeInfo2.RegistrationNonce = pubKey2
+
+			nodeInfos := &types.NodeInformations{
+				NodeId: nodeId,
+				Nodes:  []*types.NodeInformation{nodeInfo1, nodeInfo2},
+			}
+			var storeStorage nodeenrollment.NodeIdLoader
+			if !tt.storeStorageNil {
+				storeStorage = storage
+			}
+
+			err = nodeInfo1.Store(ctx, storeStorage, nodeenrollment.WithStorageWrapper(tt.storeWrapper))
+			require.NoError(err)
+			err = nodeInfo2.Store(ctx, storeStorage, nodeenrollment.WithStorageWrapper(tt.storeWrapper))
+			require.NoError(err)
+
+			//Do a check on the registration nonce to ensure it's different
+			testNodeInfo1 := &types.NodeInformation{Id: nodeInfo1.Id}
+			testNodeInfo2 := &types.NodeInformation{Id: nodeInfo2.Id}
+			require.NoError(storage.Load(ctx, testNodeInfo1))
+			require.NoError(storage.Load(ctx, testNodeInfo2))
+			if tt.storeWrapper != nil {
+				assert.EqualValues(pubKey1, testNodeInfo1.RegistrationNonce)
+				assert.NotEqualValues(nodeInfo1.ServerEncryptionPrivateKeyBytes, testNodeInfo1.ServerEncryptionPrivateKeyBytes)
+				assert.EqualValues(pubKey2, testNodeInfo2.RegistrationNonce)
+				assert.NotEqualValues(nodeInfo2.ServerEncryptionPrivateKeyBytes, testNodeInfo2.ServerEncryptionPrivateKeyBytes)
+				// This should be set in storage but not modified in the original struct
+				assert.NotEmpty(testNodeInfo1.WrappingKeyId)
+				assert.NotEmpty(testNodeInfo2.WrappingKeyId)
+				assert.Empty(nodeInfo1.WrappingKeyId)
+				assert.Empty(nodeInfo2.WrappingKeyId)
+			} else {
+				assert.EqualValues(pubKey1, testNodeInfo1.RegistrationNonce)
+				assert.EqualValues(nodeInfo1.ServerEncryptionPrivateKeyBytes, testNodeInfo1.ServerEncryptionPrivateKeyBytes)
+				assert.EqualValues(pubKey2, testNodeInfo2.RegistrationNonce)
+				assert.EqualValues(nodeInfo2.ServerEncryptionPrivateKeyBytes, testNodeInfo2.ServerEncryptionPrivateKeyBytes)
+			}
+
+			loadId := nodeInfos.NodeId
+			if tt.loadIdOverride != nil {
+				loadId = string(tt.loadIdOverride)
+			}
+			var loadStorage nodeenrollment.NodeIdLoader
+			if !tt.loadStorageNil {
+				loadStorage = storage
+			}
+			loaded, err := types.LoadNodeInformationsByNodeId(ctx, loadStorage, loadId, nodeenrollment.WithStorageWrapper(tt.loadWrapper))
+			switch tt.loadWantErrContains {
+			case "":
+				require.NoError(err)
+			default:
+				require.Error(err)
+				assert.Contains(err.Error(), tt.loadWantErrContains)
+				return
+			}
+
+			require.Equal(len(nodeInfos.Nodes), len(loaded.Nodes))
+			for _, ln := range loaded.Nodes {
+				for _, l := range nodeInfos.Nodes {
+					if ln.Id == l.Id {
+						assert.Empty(gocmp.Diff(ln, l, protocmp.Transform()))
+					}
+				}
+			}
 		})
 	}
 }
@@ -366,7 +547,7 @@ func TestNodeInformation_X25519(t *testing.T) {
 			decryptedMsg := new(wrapping.BlobInfo)
 			err = nodeenrollment.DecryptMessage(context.Background(), encryptedMsg, nodeInfo2, decryptedMsg)
 			require.NoError(err)
-			assert.Empty(cmp.Diff(message, decryptedMsg, protocmp.Transform()))
+			assert.Empty(gocmp.Diff(message, decryptedMsg, protocmp.Transform()))
 		})
 	}
 }

@@ -31,16 +31,13 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 	case n.Id == "":
 		return fmt.Errorf("(%s) node is missing id", op)
 	}
-
 	opts, err := nodeenrollment.GetOpts(opt...)
 	if err != nil {
 		return fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
-	infoToStore := n
+	infoToStore := proto.Clone(n).(*NodeInformation)
 	if opts.WithStorageWrapper != nil {
-		infoToStore = proto.Clone(n).(*NodeInformation)
-
 		keyId, err := opts.WithStorageWrapper.KeyId(ctx)
 		if err != nil {
 			return fmt.Errorf("(%s) error reading wrapper key id: %w", op, err)
@@ -95,6 +92,54 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 	}
 	if err := storage.Load(ctx, nodeInfo); err != nil {
 		return nil, fmt.Errorf("(%s) error loading node information from storage: %w", op, err)
+	}
+
+	return decryptForLoad(ctx, nodeInfo, opt...)
+}
+
+// LoadNodeInformationsByNodeId loads node informations from storage by node id, unwrapping encrypted
+// values if needed.
+//
+// Supported options: WithStorageWrapper
+func LoadNodeInformationsByNodeId(ctx context.Context, storage nodeenrollment.NodeIdLoader, nodeid string, opt ...nodeenrollment.Option) (*NodeInformations, error) {
+	const op = "nodeenrollment.types.LoadNodeInformationsByNodeId"
+
+	switch {
+	case nodeenrollment.IsNil(storage):
+		return nil, fmt.Errorf("(%s) storage is nil", op)
+	case nodeid == "":
+		return nil, fmt.Errorf("(%s) missing node id", op)
+	}
+
+	nodeInfo := &NodeInformations{
+		NodeId: nodeid,
+	}
+	if err := storage.LoadByNodeId(ctx, nodeInfo); err != nil {
+		return nil, fmt.Errorf("(%s) error loading node information from storage: %w", op, err)
+	}
+
+	nodeInfosToReturn := make([]*NodeInformation, 0)
+	for _, n := range nodeInfo.Nodes {
+		n, err := decryptForLoad(ctx, n, opt...)
+		if err != nil {
+			return nil, err
+		}
+		thisNode := proto.Clone(n).(*NodeInformation)
+		nodeInfosToReturn = append(nodeInfosToReturn, thisNode)
+	}
+
+	nodeInfos := &NodeInformations{
+		NodeId: nodeid,
+		Nodes:  nodeInfosToReturn,
+	}
+	return nodeInfos, nil
+}
+
+func decryptForLoad(ctx context.Context, nodeInfo *NodeInformation, opt ...nodeenrollment.Option) (*NodeInformation, error) {
+	const op = "nodeenrollment.types.decryptForLoad"
+	opts, err := nodeenrollment.GetOpts(opt...)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
 	switch {
