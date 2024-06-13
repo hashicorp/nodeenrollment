@@ -97,12 +97,12 @@ func LoadNodeInformation(ctx context.Context, storage nodeenrollment.Storage, id
 	return decryptForLoad(ctx, nodeInfo, opt...)
 }
 
-// LoadNodeInformationsByNodeId loads node informations from storage by node id, unwrapping encrypted
+// LoadNodeInformationSetByNodeId loads node information entries from storage by node id, unwrapping encrypted
 // values if needed.
 //
 // Supported options: WithStorageWrapper
-func LoadNodeInformationsByNodeId(ctx context.Context, storage nodeenrollment.NodeIdLoader, nodeid string, opt ...nodeenrollment.Option) (*NodeInformations, error) {
-	const op = "nodeenrollment.types.LoadNodeInformationsByNodeId"
+func LoadNodeInformationSetByNodeId(ctx context.Context, storage nodeenrollment.NodeIdLoader, nodeid string, opt ...nodeenrollment.Option) (*NodeInformationSet, error) {
+	const op = "nodeenrollment.types.LoadNodeInformationSetByNodeId"
 
 	switch {
 	case nodeenrollment.IsNil(storage):
@@ -111,7 +111,7 @@ func LoadNodeInformationsByNodeId(ctx context.Context, storage nodeenrollment.No
 		return nil, fmt.Errorf("(%s) missing node id", op)
 	}
 
-	nodeInfo := &NodeInformations{
+	nodeInfo := &NodeInformationSet{
 		NodeId: nodeid,
 	}
 	if err := storage.LoadByNodeId(ctx, nodeInfo); err != nil {
@@ -128,7 +128,7 @@ func LoadNodeInformationsByNodeId(ctx context.Context, storage nodeenrollment.No
 		nodeInfosToReturn = append(nodeInfosToReturn, thisNode)
 	}
 
-	nodeInfos := &NodeInformations{
+	nodeInfos := &NodeInformationSet{
 		NodeId: nodeid,
 		Nodes:  nodeInfosToReturn,
 	}

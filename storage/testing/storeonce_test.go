@@ -44,7 +44,7 @@ func Test_StorageLifecycle(t *testing.T) {
 		require.NoError(err)
 	}
 
-	searchInfo := &types.NodeInformations{
+	searchInfo := &types.NodeInformationSet{
 		NodeId: nodeId,
 	}
 

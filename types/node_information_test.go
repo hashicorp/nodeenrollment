@@ -315,7 +315,7 @@ func TestNodeInformations_LoadById(t *testing.T) {
 			require.NoError(err)
 			nodeInfo2.RegistrationNonce = pubKey2
 
-			nodeInfos := &types.NodeInformations{
+			nodeInfos := &types.NodeInformationSet{
 				NodeId: nodeId,
 				Nodes:  []*types.NodeInformation{nodeInfo1, nodeInfo2},
 			}
@@ -329,7 +329,7 @@ func TestNodeInformations_LoadById(t *testing.T) {
 			err = nodeInfo2.Store(ctx, storeStorage, nodeenrollment.WithStorageWrapper(tt.storeWrapper))
 			require.NoError(err)
 
-			//Do a check on the registration nonce to ensure it's different
+			// Do a check on the registration nonce to ensure it's different
 			testNodeInfo1 := &types.NodeInformation{Id: nodeInfo1.Id}
 			testNodeInfo2 := &types.NodeInformation{Id: nodeInfo2.Id}
 			require.NoError(storage.Load(ctx, testNodeInfo1))
@@ -359,7 +359,7 @@ func TestNodeInformations_LoadById(t *testing.T) {
 			if !tt.loadStorageNil {
 				loadStorage = storage
 			}
-			loaded, err := types.LoadNodeInformationsByNodeId(ctx, loadStorage, loadId, nodeenrollment.WithStorageWrapper(tt.loadWrapper))
+			loaded, err := types.LoadNodeInformationSetByNodeId(ctx, loadStorage, loadId, nodeenrollment.WithStorageWrapper(tt.loadWrapper))
 			switch tt.loadWantErrContains {
 			case "":
 				require.NoError(err)
