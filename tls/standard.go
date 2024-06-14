@@ -22,7 +22,7 @@ import (
 //
 // Supported options: WithRandomReader, WithNonce, WithVerifyConnectionFunc,
 // WithExpectedPublicKey, WithServerName
-func standardTlsConfig(ctx context.Context, pool *x509.CertPool, opt ...nodeenrollment.Option) (*tls.Config, error) {
+func standardTlsConfig(_ context.Context, pool *x509.CertPool, opt ...nodeenrollment.Option) (*tls.Config, error) {
 	const op = "nodeenrollment.tls.standardTlsConfig"
 
 	switch {

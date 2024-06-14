@@ -64,11 +64,11 @@ func RotateNodeCredentials(
 
 	// First we get our current node information and decrypt the fetch request
 	nodeIdStorage, ok := storage.(nodeenrollment.NodeIdLoader)
-	var nodeInfos *types.NodeInformations
+	var nodeInfos *types.NodeInformationSet
 	switch {
 	// If we have a NodeId & storage supports NodeIdLoader, use it
 	case req.NodeId != "" && ok:
-		nodeInfos, err = types.LoadNodeInformationsByNodeId(ctx, nodeIdStorage, req.NodeId, opt...)
+		nodeInfos, err = types.LoadNodeInformationSetByNodeId(ctx, nodeIdStorage, req.NodeId, opt...)
 		if err != nil {
 			err := fmt.Errorf("error loading node informations for nodeId %s: %w", req.NodeId, err)
 			opts.WithLogger.Error(err.Error(), "op", op)
@@ -82,7 +82,7 @@ func RotateNodeCredentials(
 			opts.WithLogger.Error(err.Error(), "op", op)
 			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
-		nodeInfos = &types.NodeInformations{
+		nodeInfos = &types.NodeInformationSet{
 			Nodes: []*types.NodeInformation{currentNodeInfo},
 		}
 	}
@@ -90,7 +90,7 @@ func RotateNodeCredentials(
 	var currentNodeInfo *types.NodeInformation
 	fetchRequest := new(types.FetchNodeCredentialsRequest)
 	// Find the most current nodeInfo that can decrypt the request
-	var fetchErrors error
+	var fetchErrors []error
 	for _, n := range nodeInfos.Nodes {
 		err := nodeenrollment.DecryptMessage(
 			ctx,
@@ -103,13 +103,12 @@ func RotateNodeCredentials(
 			currentNodeInfo = proto.Clone(n).(*types.NodeInformation)
 			break
 		}
-		errors.Join(fetchErrors, err)
+		fetchErrors = append(fetchErrors, err)
 	}
-	if nodeenrollment.IsNil(currentNodeInfo) {
-		err := fmt.Errorf("no node information could decrypt the request")
-		errors.Join(fetchErrors, err)
-		opts.WithLogger.Error(fetchErrors.Error(), "op", op)
-		return nil, fmt.Errorf("(%s) %s", op, fetchErrors.Error())
+	if currentNodeInfo == nil {
+		err := fmt.Errorf("no node information could decrypt the request: %w", errors.Join(fetchErrors...))
+		opts.WithLogger.Error(err.Error(), "op", op)
+		return nil, fmt.Errorf("(%s) %s", op, err.Error())
 	}
 
 	// At this point we've validated via the shared encryption key that it came

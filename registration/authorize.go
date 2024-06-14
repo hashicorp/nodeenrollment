@@ -96,15 +96,15 @@ func authorizeNodeCommon(
 	}
 
 	nodeInfo := &types.NodeInformation{
-		Id:                           keyId,
-		CertificatePublicKeyPkix:     reqInfo.CertificatePublicKeyPkix,
-		CertificatePublicKeyType:     reqInfo.CertificatePublicKeyType,
-		EncryptionPublicKeyBytes:     reqInfo.EncryptionPublicKeyBytes,
-		EncryptionPublicKeyType:      reqInfo.EncryptionPublicKeyType,
-		RegistrationNonce:            reqInfo.Nonce,
-		State:                        opts.WithState,
-		WrappingRegistrationFlowInfo: reqInfo.WrappingRegistrationFlowInfo,
-		PreviousEncryptionKey:        reqInfo.PreviousEncryptionKey,
+		Id:                               keyId,
+		CertificatePublicKeyPkix:         reqInfo.CertificatePublicKeyPkix,
+		CertificatePublicKeyType:         reqInfo.CertificatePublicKeyType,
+		PreviousCertificatePublicKeyPkix: reqInfo.PreviousCertificatePublicKeyPkix,
+		EncryptionPublicKeyBytes:         reqInfo.EncryptionPublicKeyBytes,
+		EncryptionPublicKeyType:          reqInfo.EncryptionPublicKeyType,
+		RegistrationNonce:                reqInfo.Nonce,
+		State:                            opts.WithState,
+		WrappingRegistrationFlowInfo:     reqInfo.WrappingRegistrationFlowInfo,
 	}
 
 	certPubKeyRaw, err := x509.ParsePKIXPublicKey(nodeInfo.CertificatePublicKeyPkix)

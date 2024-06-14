@@ -65,7 +65,7 @@ func GenerateServerCertificates(
 		switch {
 		// If we have a NodeId & storage supports NodeIdLoader, use it
 		case req.NodeId != "" && ok:
-			nodeInfos, err := types.LoadNodeInformationsByNodeId(ctx, nodeIdStorage, req.NodeId, opt...)
+			nodeInfos, err := types.LoadNodeInformationSetByNodeId(ctx, nodeIdStorage, req.NodeId, opt...)
 			if err != nil {
 				return nil, err
 			}

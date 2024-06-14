@@ -411,13 +411,13 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 
 	now := time.Now()
 	reqInfo := &FetchNodeCredentialsInfo{
-		CertificatePublicKeyPkix: n.CertificatePublicKeyPkix,
-		CertificatePublicKeyType: n.CertificatePrivateKeyType,
-		Nonce:                    n.RegistrationNonce,
-		EncryptionPublicKeyType:  KEYTYPE_X25519,
-		NotBefore:                timestamppb.New(now),
-		NotAfter:                 timestamppb.New(now.Add(nodeenrollment.DefaultFetchCredentialsLifetime)),
-		PreviousEncryptionKey:    n.PreviousEncryptionKey,
+		CertificatePublicKeyPkix:         n.CertificatePublicKeyPkix,
+		CertificatePublicKeyType:         n.CertificatePrivateKeyType,
+		PreviousCertificatePublicKeyPkix: n.PreviousCertificatePublicKeyPkix,
+		Nonce:                            n.RegistrationNonce,
+		EncryptionPublicKeyType:          KEYTYPE_X25519,
+		NotBefore:                        timestamppb.New(now),
+		NotAfter:                         timestamppb.New(now.Add(nodeenrollment.DefaultFetchCredentialsLifetime)),
 	}
 
 	switch {

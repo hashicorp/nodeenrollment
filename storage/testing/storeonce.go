@@ -78,7 +78,7 @@ func (ts *Storage) LoadByNodeId(ctx context.Context, msg nodeenrollment.MessageW
 	}
 
 	switch t := msg.(type) {
-	case *types.NodeInformations:
+	case *types.NodeInformationSet:
 		nodes, err := ts.Storage.List(ctx, (*types.NodeInformation)(nil))
 		if err != nil {
 			return err
