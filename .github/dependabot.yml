@@ -1,0 +1,37 @@
+# Copyright (c) HashiCorp, Inc.
+# SPDX-License-Identifier: MPL-2.0
+
+# See GitHub's docs for more information on this file:
+# https://docs.github.com/en/free-pro-team@latest/github/administering-a-repository/configuration-options-for-dependency-updates
+version: 2
+updates:
+  # Maintain dependencies for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      # Check for updates to GitHub Actions every Sunday
+      interval: "weekly"
+      day: "sunday"
+    groups:
+      # Group all GitHub Actions updates into a single PR
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      # Check for updates to Go modules every Sunday
+      interval: "weekly"
+      day: "sunday"
+    groups:
+      # Group all Go module updates into one PR for version updates
+      # and one for security updates.
+      go:
+        patterns:
+          - "*"
+        applies-to: "version-updates"
+      go-security:
+        patterns:
+          - "*"
+        applies-to: "security-updates"
