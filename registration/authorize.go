@@ -49,9 +49,15 @@ func AuthorizeNode(
 	case err != nil:
 		return nil, fmt.Errorf("(%s) error during fetch request validation: %w", op, err)
 
-	case len(reqInfo.Nonce) != nodeenrollment.NonceSize:
+	case len(reqInfo.Nonce) == 0 &&
+		(reqInfo.RegistrationChallenge == nil || len(reqInfo.RegistrationChallenge.Challenge) == 0) &&
+		len(reqInfo.EncryptedRegistrationChallenge) == 0:
+		return nil, fmt.Errorf("(%s) authorize node request must contain a nonce or a registration challenge", op)
+
+	case len(reqInfo.Nonce) != 0 && len(reqInfo.Nonce) != nodeenrollment.NonceSize:
 		// Not a normal request, possibly one containing server-led activation
-		// token, which should not use this path
+		// token, which should not use this path. Zero nonce is fine as it means
+		// using the new protocol.
 		return nil, fmt.Errorf("(%s) server-led activation tokens cannot be used with node-led authorize call", op)
 
 	default:
@@ -105,6 +111,10 @@ func authorizeNodeCommon(
 		RegistrationNonce:                reqInfo.Nonce,
 		State:                            opts.WithState,
 		WrappingRegistrationFlowInfo:     reqInfo.WrappingRegistrationFlowInfo,
+	}
+	// This may be nil for backwards compat
+	if reqInfo.RegistrationChallenge != nil {
+		nodeInfo.RegistrationChallenge = reqInfo.RegistrationChallenge
 	}
 
 	certPubKeyRaw, err := x509.ParsePKIXPublicKey(nodeInfo.CertificatePublicKeyPkix)
@@ -184,7 +194,8 @@ func authorizeNodeCommon(
 			// and handle receiving duplicate reqInfo by returning the stored nodeInfo
 			var dre *types.DuplicateRecordError
 			if errors.As(err, &dre) || errors.As(err, &types.DuplicateRecordError{}) {
-				loadNodeInfo, err := types.LoadNodeInformation(ctx, storage, nodeInfo.Id)
+				var loadNodeInfo *types.NodeInformation
+				loadNodeInfo, err = types.LoadNodeInformation(ctx, storage, nodeInfo.Id)
 				if err == nil {
 					return loadNodeInfo, nil
 				}

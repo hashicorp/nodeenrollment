@@ -66,8 +66,6 @@ func validateFetchRequestCommon(
 		return nil, fmt.Errorf("(%s) empty node certificate public key", op)
 	case reqInfo.CertificatePublicKeyType != types.KEYTYPE_ED25519:
 		return nil, fmt.Errorf("(%s) unsupported node certificate public key type %v", op, reqInfo.CertificatePublicKeyType.String())
-	case len(reqInfo.Nonce) == 0:
-		return nil, fmt.Errorf("(%s) empty nonce", op)
 	case len(reqInfo.EncryptionPublicKeyBytes) == 0:
 		return nil, fmt.Errorf("(%s) empty node encryption public key", op)
 	case reqInfo.EncryptionPublicKeyType != types.KEYTYPE_X25519:
@@ -179,7 +177,8 @@ func FetchNodeCredentials(
 			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 
-	case len(reqInfo.Nonce) == nodeenrollment.NonceSize:
+	case reqInfo.EncryptedRegistrationChallenge == nil ||
+		len(reqInfo.Nonce) == nodeenrollment.NonceSize:
 		// This is our normal fetch case with node-led activation
 		keyId, err := nodeenrollment.KeyIdFromPkix(reqInfo.CertificatePublicKeyPkix)
 		if err != nil {
@@ -192,16 +191,15 @@ func FetchNodeCredentials(
 			return nil, fmt.Errorf("(%s) error looking up node information from storage: %w", op, err)
 		case err != nil, nodeInfo == nil:
 			// Unauthorized, so return empty. We cannot return nil because this
-			// will
-			// cause a marshal error if this function is via RPC since gRPC does not
-			// allow nil responses.
+			// will cause a marshal error if this function is via RPC since gRPC
+			// does not allow nil responses.
 			return new(types.FetchNodeCredentialsResponse), nil
 		}
 
-	case len(reqInfo.Nonce) > 0:
-		// In this case where we have a non-standard nonce size it is containing
-		// a server-led activation token, which is a proto marshal and may vary
-		// in size, so expect that
+	case reqInfo.EncryptedRegistrationChallenge != nil ||
+		len(reqInfo.Nonce) > 0:
+		// In this case it is a server-led activation token, which is a proto
+		// marshal and may vary in size, so expect that
 		tokenNonce := new(types.ServerLedActivationTokenNonce)
 		if err := proto.Unmarshal(reqInfo.Nonce, tokenNonce); err != nil {
 			if strings.Contains(err.Error(), "cannot parse invalid wire-format data") {
@@ -227,9 +225,19 @@ func FetchNodeCredentials(
 		return nil, fmt.Errorf("(%s) bad registration information during fetch", op)
 	}
 
+	serverEncryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(nodeInfo.ServerEncryptionPrivateKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error reading server private encryption key: %w", op, err)
+	}
+	serverEncryptionPublicKey := serverEncryptionPrivateKey.PublicKey()
+
 	// Run some validations
-	if subtle.ConstantTimeCompare(nodeInfo.RegistrationNonce, reqInfo.Nonce) != 1 {
-		return nil, fmt.Errorf("(%s) mismatched nonces between authorization and incoming fetch request", op)
+
+	// We no longer use this, but _if_ it's already been provided, we will check it
+	if len(reqInfo.Nonce) > 0 {
+		if subtle.ConstantTimeCompare(nodeInfo.RegistrationNonce, reqInfo.Nonce) != 1 {
+			return nil, fmt.Errorf("(%s) mismatched nonces between authorization and incoming fetch request", op)
+		}
 	}
 
 	if subtle.ConstantTimeCompare(nodeInfo.CertificatePublicKeyPkix, reqInfo.CertificatePublicKeyPkix) != 1 {
@@ -240,17 +248,27 @@ func FetchNodeCredentials(
 		return nil, fmt.Errorf("(%s) mismatched encryption public keys between authorization and incoming fetch request", op)
 	}
 
-	serverEncryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(nodeInfo.ServerEncryptionPrivateKeyBytes)
-	if err != nil {
-		return nil, fmt.Errorf("(%s) error reading server private encryption key: %w", op, err)
-	}
-	serverEncryptionPublicKey := serverEncryptionPrivateKey.PublicKey()
-
 	nodeCreds := &types.NodeCredentials{
 		ServerEncryptionPublicKeyBytes: serverEncryptionPublicKey.Bytes(),
 		ServerEncryptionPublicKeyType:  nodeInfo.ServerEncryptionPrivateKeyType,
 		RegistrationNonce:              nodeInfo.RegistrationNonce,
 		CertificateBundles:             nodeInfo.CertificateBundles,
+	}
+
+	// If it's node-led activation and there's a challenge, ensure we include
+	// the encrypted challenge back. In server-led, the node provides the
+	// encrypted registration challenge.
+	if nodeInfo.RegistrationChallenge != nil && reqInfo.EncryptedRegistrationChallenge == nil {
+		encryptedRegistrationChallenge, err := nodeenrollment.EncryptMessage(
+			ctx,
+			nodeInfo.RegistrationChallenge,
+			nodeInfo,
+			opt...,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error encrypting registration challenge: %w", op, err)
+		}
+		nodeCreds.EncryptedRegistrationChallenge = encryptedRegistrationChallenge
 	}
 
 	encryptedBytes, err := nodeenrollment.EncryptMessage(

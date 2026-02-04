@@ -432,7 +432,10 @@ func TestNodeCredentials_New(t *testing.T) {
 			assert.NotEmpty(n.CertificatePublicKeyPkix)
 			assert.NotEmpty(n.EncryptionPrivateKeyBytes)
 			assert.Equal(types.KEYTYPE_X25519, n.EncryptionPrivateKeyType)
-			assert.NotEmpty(n.RegistrationNonce)
+			assert.Empty(n.RegistrationNonce)
+			require.NotNil(n.RegistrationChallenge)
+			assert.NotEmpty(n.RegistrationChallenge.Challenge)
+			assert.Empty(n.EncryptedRegistrationChallenge)
 
 			testNodeCreds := &types.NodeCredentials{Id: n.Id}
 			require.NoError(tt.storage.Load(ctx, testNodeCreds))
@@ -463,6 +466,7 @@ func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
 		storage,
 		&types.ServerLedRegistrationRequest{},
 	)
+	require.NoError(t, err)
 
 	tests := []struct {
 		name string
@@ -499,10 +503,17 @@ func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid-no-registration-nonce",
+			name: "invalid-nil-registration-challenge",
 			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
-				nodeCreds.RegistrationNonce = nil
-				return nodeCreds, "registration nonce is empty"
+				nodeCreds.RegistrationChallenge = nil
+				return nodeCreds, "registration challenge is missing"
+			},
+		},
+		{
+			name: "invalid-empty-registration-challenge",
+			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+				nodeCreds.RegistrationChallenge.Challenge = nil
+				return nodeCreds, "registration challenge is empty"
 			},
 		},
 		{
@@ -625,18 +636,6 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 	require.NoError(t, err)
 	nodePubKey := nodePrivKey.PublicKey()
 
-	// Create and sign encrypted creds
-	serverNodeCreds := &types.NodeCredentials{
-		ServerEncryptionPublicKeyBytes: serverPubKey.Bytes(),
-		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
-		RegistrationNonce:              nodeCreds.RegistrationNonce,
-		CertificateBundles: []*types.CertificateBundle{
-			{
-				CertificateDer:   []byte("cert"),
-				CaCertificateDer: []byte("ca"),
-			},
-		},
-	}
 	nodeInfo := &types.NodeInformation{
 		ServerEncryptionPrivateKeyBytes: serverPrivKey.Bytes(),
 		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
@@ -644,6 +643,26 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 		EncryptionPublicKeyType:         types.KEYTYPE_X25519,
 		CertificatePublicKeyPkix:        nodeCreds.CertificatePublicKeyPkix,
 	}
+
+	encryptedChallenge, err := nodeenrollment.EncryptMessage(ctx, &types.RegistrationChallenge{
+		Challenge: nodeCreds.RegistrationChallenge.Challenge,
+	}, nodeInfo)
+	require.NoError(t, err)
+
+	// Create and sign encrypted creds
+	serverNodeCreds := &types.NodeCredentials{
+		ServerEncryptionPublicKeyBytes: serverPubKey.Bytes(),
+		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
+		RegistrationNonce:              nodeCreds.RegistrationNonce,
+		EncryptedRegistrationChallenge: encryptedChallenge,
+		CertificateBundles: []*types.CertificateBundle{
+			{
+				CertificateDer:   []byte("cert"),
+				CaCertificateDer: []byte("ca"),
+			},
+		},
+	}
+
 	encryptedCreds, err := nodeenrollment.EncryptMessage(ctx, serverNodeCreds, nodeInfo)
 	require.NoError(t, err)
 

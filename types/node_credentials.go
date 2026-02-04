@@ -116,6 +116,24 @@ func (n *NodeCredentials) Store(ctx context.Context, storage nodeenrollment.Stor
 				return fmt.Errorf("(%s) error marshaling wrapped registration nonce: %w", op, err)
 			}
 		}
+		if credsToStore.RegistrationChallenge != nil {
+			marshaledRegistrationChallenge, err := proto.Marshal(credsToStore.RegistrationChallenge)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling registration challenge: %w", op, err)
+			}
+			blobInfo, err = opts.WithStorageWrapper.Encrypt(
+				ctx,
+				marshaledRegistrationChallenge,
+				wrapping.WithAad(credsToStore.CertificatePublicKeyPkix),
+			)
+			if err != nil {
+				return fmt.Errorf("(%s) error wrapping registration challenge: %w", op, err)
+			}
+			credsToStore.EncryptedRegistrationChallenge, err = proto.Marshal(blobInfo)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling wrapped registration challenge: %w", op, err)
+			}
+		}
 	}
 
 	if err := storage.Store(ctx, credsToStore); err != nil {
@@ -207,6 +225,24 @@ func LoadNodeCredentials(ctx context.Context, storage nodeenrollment.Storage, id
 			}
 			nodeCreds.RegistrationNonce = pt
 		}
+		if len(nodeCreds.EncryptedRegistrationChallenge) != 0 {
+			blobInfo = new(wrapping.BlobInfo)
+			if err := proto.Unmarshal(nodeCreds.EncryptedRegistrationChallenge, blobInfo); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling registration nonce blob info: %w", op, err)
+			}
+			pt, err := opts.WithStorageWrapper.Decrypt(
+				ctx,
+				blobInfo,
+				wrapping.WithAad(nodeCreds.CertificatePublicKeyPkix),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error decrypting registration nonce: %w", op, err)
+			}
+			if err := proto.Unmarshal(pt, nodeCreds.RegistrationChallenge); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling registration challenge: %w", op, err)
+			}
+			nodeCreds.EncryptedRegistrationChallenge = nil
+		}
 
 		nodeCreds.WrappingKeyId = ""
 	}
@@ -289,15 +325,17 @@ func NewNodeCredentials(
 		certPrivKey ed25519.PrivateKey
 	)
 
+	// Create challenge
 	switch len(opts.WithActivationToken) {
 	case 0:
-		n.RegistrationNonce = make([]byte, nodeenrollment.NonceSize)
-		num, err := opts.WithRandomReader.Read(n.RegistrationNonce)
+		n.RegistrationChallenge = new(RegistrationChallenge)
+		n.RegistrationChallenge.Challenge = make([]byte, nodeenrollment.NonceSize)
+		num, err := opts.WithRandomReader.Read(n.RegistrationChallenge.Challenge)
 		switch {
 		case err != nil:
-			return nil, fmt.Errorf("(%s) error generating nonce: %w", op, err)
+			return nil, fmt.Errorf("(%s) error generating challenge: %w", op, err)
 		case num != nodeenrollment.NonceSize:
-			return nil, fmt.Errorf("(%s) read incorrect number of bytes for nonce, wanted %d, got %d", op, nodeenrollment.NonceSize, num)
+			return nil, fmt.Errorf("(%s) read incorrect number of bytes for challenge, wanted %d, got %d", op, nodeenrollment.NonceSize, num)
 		}
 	default:
 		nonce, err := base58.FastBase58Decoding(strings.TrimPrefix(opts.WithActivationToken, nodeenrollment.ServerLedActivationTokenPrefix))
@@ -379,7 +417,8 @@ func (n *NodeCredentials) SetPreviousEncryptionKey(oldNodeCredentials *NodeCrede
 // Supported options: WithRandomReader, WithActivationToken (used in place of
 // the node's nonce value if provided, for the server-led flow; note that this
 // should be the full string token, it will be decoded by this function),
-// WithRegistrationWrapper/WithWrappingRegistrationFlowApplicationSpecificParams
+// WithRegistrationWrapper/WithWrappingRegistrationFlowApplicationSpecificParams,
+// WithRegistrationChallenge
 func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 	ctx context.Context,
 	opt ...nodeenrollment.Option,
@@ -393,8 +432,10 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		return nil, fmt.Errorf("(%s) node credentials pkcs8 private key is empty", op)
 	case len(n.CertificatePublicKeyPkix) == 0:
 		return nil, fmt.Errorf("(%s) node credentials pkix public key is empty", op)
-	case len(n.RegistrationNonce) == 0:
-		return nil, fmt.Errorf("(%s) node credentials registration nonce is empty", op)
+	case n.RegistrationChallenge == nil && len(n.RegistrationNonce) == 0:
+		return nil, fmt.Errorf("(%s) node credentials registration challenge is missing", op)
+	case n.RegistrationChallenge != nil && len(n.RegistrationChallenge.Challenge) == 0:
+		return nil, fmt.Errorf("(%s) node credentials registration challenge is empty", op)
 	case len(n.EncryptionPrivateKeyBytes) == 0:
 		return nil, fmt.Errorf("(%s) node credentials encryption private key is empty", op)
 	}
@@ -414,10 +455,14 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		CertificatePublicKeyPkix:         n.CertificatePublicKeyPkix,
 		CertificatePublicKeyType:         n.CertificatePrivateKeyType,
 		PreviousCertificatePublicKeyPkix: n.PreviousCertificatePublicKeyPkix,
-		Nonce:                            n.RegistrationNonce,
 		EncryptionPublicKeyType:          KEYTYPE_X25519,
 		NotBefore:                        timestamppb.New(now),
 		NotAfter:                         timestamppb.New(now.Add(nodeenrollment.DefaultFetchCredentialsLifetime)),
+	}
+	// Only include if specifically requested, as the only time we want to do
+	// this is when generating the activation token from the node to the server
+	if opts.WithRegistrationChallenge {
+		reqInfo.RegistrationChallenge = n.RegistrationChallenge
 	}
 
 	switch {
@@ -521,18 +566,31 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 		return nil, fmt.Errorf("(%s) error decrypting server message: %w", op, err)
 	}
 
-	// Validate the nonce
-	nonce := n.RegistrationNonce
-	if opts.WithActivationToken != "" {
-		nonce, err = base58.FastBase58Decoding(strings.TrimPrefix(opts.WithActivationToken, nodeenrollment.ServerLedActivationTokenPrefix))
+	// Validate the challenge
+	var challenge []byte
+	switch len(opts.WithActivationToken) {
+	case 0:
+		registrationChallenge := new(RegistrationChallenge)
+		if err := nodeenrollment.DecryptMessage(
+			ctx,
+			newNodeCreds.EncryptedRegistrationChallenge,
+			n,
+			registrationChallenge,
+			opt...,
+		); err != nil {
+			return nil, fmt.Errorf("(%s) error decrypting registration challenge: %w", op, err)
+		}
+		challenge = registrationChallenge.Challenge
+	default:
+		challenge, err = base58.FastBase58Decoding(strings.TrimPrefix(opts.WithActivationToken, nodeenrollment.ServerLedActivationTokenPrefix))
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error base58-decoding activation token: %w", op, err)
 		}
 	}
-	if subtle.ConstantTimeCompare(nonce, newNodeCreds.RegistrationNonce) == 0 {
-		return nil, fmt.Errorf("(%s) server message decrypted successfully but nonce does not match", op)
+	if subtle.ConstantTimeCompare(n.RegistrationChallenge.Challenge, challenge) == 0 {
+		return nil, fmt.Errorf("(%s) server message decrypted successfully but challenge does not match", op)
 	}
-	n.RegistrationNonce = nil
+	n.RegistrationChallenge = nil
 
 	// Now copy values over
 	n.CertificateBundles = newNodeCreds.CertificateBundles

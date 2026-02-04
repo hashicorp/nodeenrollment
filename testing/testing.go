@@ -27,9 +27,11 @@ func CommonTestParams(t *testing.T, opt ...nodeenrollment.Option) (context.Conte
 	_, err = rotation.RotateRootCertificates(ctx, storage, opt...)
 	require.NoError(t, err)
 
-	_, activationToken, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{})
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
-	nodeCreds, err := types.NewNodeCredentials(ctx, storage, nodeenrollment.WithActivationToken(activationToken))
+	authzFetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithRegistrationChallenge(true))
+	require.NoError(t, err)
+	_, err = registration.AuthorizeNode(ctx, storage, authzFetchReq)
 	require.NoError(t, err)
 	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
 	require.NoError(t, err)

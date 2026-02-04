@@ -13,37 +13,37 @@ import "google/protobuf/struct.proto";
 // KEYTYPE is an enum holding known key types
 enum KEYTYPE {
   UNSPECIFIED = 0;
-  ED25519 = 1;
-  X25519 = 2;
+  ED25519     = 1;
+  X25519      = 2;
 }
 
 // CertificateBundle contains information about a certificate the its issuing
 // certificate
 message CertificateBundle {
-  bytes certificate_der = 1 [json_name="certificate_der"];
-  bytes ca_certificate_der = 2 [json_name="ca_certificate_der"];
+  bytes                     certificate_der        = 1 [json_name="certificate_der"];
+  bytes                     ca_certificate_der     = 2 [json_name="ca_certificate_der"];
   google.protobuf.Timestamp certificate_not_before = 7 [json_name="certificate_not_before"];
-  google.protobuf.Timestamp certificate_not_after = 8 [json_name="certificate_not_after"];
+  google.protobuf.Timestamp certificate_not_after  = 8 [json_name="certificate_not_after"];
 }
 
 // RootCertificate contains information about a root CA certificate and its
 // associated public/private keys
 message RootCertificate {
-  string id = 1; // "current" or "next"
-  bytes public_key_pkix = 2 [json_name="public_key_pkix"];
-  bytes private_key_pkcs8 = 4 [json_name="private_key_pkcs8"];
-  KEYTYPE private_key_type = 5 [json_name="private_key_type"];
-  bytes certificate_der = 6 [json_name="certificate_der"];
-  google.protobuf.Timestamp not_before = 7 [json_name="not_before"];
-  google.protobuf.Timestamp not_after = 8 [json_name="not_after"];
+  string                    id                = 1; // "current" or "next"
+  bytes                     public_key_pkix   = 2 [json_name="public_key_pkix"];
+  bytes                     private_key_pkcs8 = 4 [json_name="private_key_pkcs8"];
+  KEYTYPE                   private_key_type  = 5 [json_name="private_key_type"];
+  bytes                     certificate_der   = 6 [json_name="certificate_der"];
+  google.protobuf.Timestamp not_before        = 7 [json_name="not_before"];
+  google.protobuf.Timestamp not_after         = 8 [json_name="not_after"];
 }
 
 // RootCertificates is a message that holds two root certificates for easy
 // usage/identification. The ID will always be "roots".
 message RootCertificates {
-  string id = 1;
+  string          id      = 1;
   RootCertificate current = 2;
-  RootCertificate next = 3;
+  RootCertificate next    = 3;
 
   // If set, the key ID of the wrapping key used to encrypt the private key
   string wrapping_key_id = 30 [json_name="wrapping_key_id"];
@@ -58,11 +58,11 @@ message RootCertificates {
 // NodeInformation and NodeCredentials will store their previous encryption key
 // using this message type
 message EncryptionKey {
-  string key_id = 1 [json_name="key_id"];
-  bytes private_key_pkcs8 = 2 [json_name="private_key_pkcs8"];
-  KEYTYPE private_key_type = 3 [json_name="private_key_type"];
+  string  key_id            = 1 [json_name="key_id"];
+  bytes   private_key_pkcs8 = 2 [json_name="private_key_pkcs8"];
+  KEYTYPE private_key_type  = 3 [json_name="private_key_type"];
 
-  bytes public_key_pkix = 4 [json_name="public_key_pkix"];
+  bytes   public_key_pkix = 4 [json_name="public_key_pkix"];
   KEYTYPE public_key_type = 5 [json_name="public_key_type"];
 }
 
@@ -84,19 +84,20 @@ message EncryptionKey {
 //
 // NodeId is an external identifier for this node that does not change
 message NodeInformation {
-  string id = 1;
-  bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
-  KEYTYPE certificate_public_key_type = 3 [json_name="certificate_public_key_type"];
-  repeated CertificateBundle certificate_bundles = 6 [json_name="certificate_bundles"];
-  string node_id = 7 [json_name="node_id"];
-  bytes previous_certificate_public_key_pkix = 9 [json_name="previous_certificate_public_key_pkix"];
+  string                     id                                   = 1;
+  bytes                      certificate_public_key_pkix          = 2 [json_name="certificate_public_key_pkix"];
+  KEYTYPE                    certificate_public_key_type          = 3 [json_name="certificate_public_key_type"];
+  repeated CertificateBundle certificate_bundles                  = 6 [json_name="certificate_bundles"];
+  string                     node_id                              = 7 [json_name="node_id"];
+  bytes                      previous_certificate_public_key_pkix = 9 [json_name="previous_certificate_public_key_pkix"];
 
-  bytes encryption_public_key_bytes = 10 [json_name="encryption_public_key_bytes"];
-  KEYTYPE encryption_public_key_type = 11 [json_name="encryption_public_key_type"];
-  bytes server_encryption_private_key_bytes = 12 [json_name="server_encryption_private_key_bytes"];
-  KEYTYPE server_encryption_private_key_type = 13 [json_name="server_encryption_private_key_type"];
+  bytes   encryption_public_key_bytes         = 10 [json_name="encryption_public_key_bytes"];
+  KEYTYPE encryption_public_key_type          = 11 [json_name="encryption_public_key_type"];
+  bytes   server_encryption_private_key_bytes = 12 [json_name="server_encryption_private_key_bytes"];
+  KEYTYPE server_encryption_private_key_type  = 13 [json_name="server_encryption_private_key_type"];
 
-  bytes registration_nonce = 20 [json_name="registration_nonce"];
+  bytes                 registration_nonce     = 20 [json_name="registration_nonce"];
+  RegistrationChallenge registration_challenge = 23 [json_name="registration_challenge"];
   // This will be populated with with any decrypted values that came in as a
   // result of this flow
   WrappingRegistrationFlowInfo wrapping_registration_flow_info = 22 [json_name="wrapping_registration_flow_info"];
@@ -120,28 +121,35 @@ message NodeInformation {
 //
 // NodeId is an external identifier for this node that does not change
 message NodeInformationSet {
-  string node_id = 7 [json_name="node_id"];
-  repeated NodeInformation nodes = 10;
+  string                   node_id = 7 [json_name="node_id"];
+  repeated NodeInformation nodes   = 10;
+}
+
+// RegistrationChallenge is a challenge issued by one side to the other for authentication.
+message RegistrationChallenge {
+  bytes challenge = 1;
 }
 
 // NodeCredentials is the corresponding struct for NodeInformation on the node
 // side, containing the values necessary for proving identity. At various points
 // in registration/authorization flows this may have some or all fields filled in.
 message NodeCredentials {
-  string id = 1; // "current" or "next"
-  bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
-  bytes certificate_private_key_pkcs8 = 4 [json_name="certificate_private_key_pkcs8"];
-  KEYTYPE certificate_private_key_type = 5 [json_name="certificate_private_key_type"];
-  repeated CertificateBundle certificate_bundles = 6 [json_name="certificate_bundles"];
-  bytes previous_certificate_public_key_pkix = 9 [json_name="previous_certificate_public_key_pkix"];
+  string                     id                                   = 1; // "current" or "next"
+  bytes                      certificate_public_key_pkix          = 2 [json_name="certificate_public_key_pkix"];
+  bytes                      certificate_private_key_pkcs8        = 4 [json_name="certificate_private_key_pkcs8"];
+  KEYTYPE                    certificate_private_key_type         = 5 [json_name="certificate_private_key_type"];
+  repeated CertificateBundle certificate_bundles                  = 6 [json_name="certificate_bundles"];
+  bytes                      previous_certificate_public_key_pkix = 9 [json_name="previous_certificate_public_key_pkix"];
 
-  bytes encryption_private_key_bytes = 10 [json_name="encryption_private_key_bytes"];
-  KEYTYPE encryption_private_key_type = 11 [json_name="encryption_private_key_type"];
+  bytes   encryption_private_key_bytes = 10 [json_name="encryption_private_key_bytes"];
+  KEYTYPE encryption_private_key_type  = 11 [json_name="encryption_private_key_type"];
 
-  bytes server_encryption_public_key_bytes = 12 [json_name="server_encryption_public_key_bytes"];
-  KEYTYPE server_encryption_public_key_type = 13 [json_name="server_encryption_public_key_type"];
+  bytes   server_encryption_public_key_bytes = 12 [json_name="server_encryption_public_key_bytes"];
+  KEYTYPE server_encryption_public_key_type  = 13 [json_name="server_encryption_public_key_type"];
 
-  bytes registration_nonce = 20 [json_name="registration_nonce"];
+  bytes                 registration_nonce               = 20 [json_name="registration_nonce"];
+  RegistrationChallenge registration_challenge           = 23 [json_name="registration_challenge"];
+  bytes                 encrypted_registration_challenge = 24 [json_name="encrypted_registration_challenge"];
 
   // If set, the key ID of the wrapping key used to encrypt the private keys
   string wrapping_key_id = 30 [json_name="wrapping_key_id"];
@@ -191,7 +199,8 @@ message NodeCredentials {
 message WrappingRegistrationFlowInfo {
   bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
 
-  bytes nonce = 20;
+  bytes nonce                  = 20;
+  bytes registration_challenge = 23 [json_name="registration_challenge"];
 
   google.protobuf.Struct application_specific_params = 50;
 }
@@ -209,14 +218,18 @@ message WrappingRegistrationFlowInfo {
 message FetchNodeCredentialsInfo {
   string id = 1; // Key id derived from pkix public key
 
-  bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
-  KEYTYPE certificate_public_key_type = 3 [json_name="certificate_public_key_type"];
-  bytes previous_certificate_public_key_pkix = 9 [json_name="previous_certificate_public_key_pkix"];
+  bytes   certificate_public_key_pkix          = 2 [json_name="certificate_public_key_pkix"];
+  KEYTYPE certificate_public_key_type          = 3 [json_name="certificate_public_key_type"];
+  bytes   previous_certificate_public_key_pkix = 9 [json_name="previous_certificate_public_key_pkix"];
 
-  bytes encryption_public_key_bytes = 10 [json_name="encryption_public_key_bytes"];
-  KEYTYPE encryption_public_key_type = 11 [json_name="encryption_public_key_type"];
+  bytes   encryption_public_key_bytes = 10 [json_name="encryption_public_key_bytes"];
+  KEYTYPE encryption_public_key_type  = 11 [json_name="encryption_public_key_type"];
 
   bytes nonce = 20;
+  // Used in node-led as part of the activation token
+  RegistrationChallenge registration_challenge = 23 [json_name="registration_challenge"];
+  // Used in server-led for node to prove its identity
+  bytes encrypted_registration_challenge = 24 [json_name="encrypted_registration_challenge"];
 
   // If provided, a wrapped (encrypted) registration bundle that can be used for
   // just-in-time authorization
@@ -225,22 +238,22 @@ message FetchNodeCredentialsInfo {
   WrappingRegistrationFlowInfo wrapping_registration_flow_info = 22 [json_name="wrapping_registration_flow_info"];
 
   google.protobuf.Timestamp not_before = 7 [json_name="not_before"];
-  google.protobuf.Timestamp not_after = 8 [json_name="not_after"];
+  google.protobuf.Timestamp not_after  = 8 [json_name="not_after"];
 }
 
 // FetchNodeCredentialsRequest contains the marshaled FetchNodeCredentialsInfo
 // message and a signature using private key corresponding to the certificate
 // public key contained within the marshaled bundle.
 message FetchNodeCredentialsRequest {
-  bytes bundle = 28;
+  bytes bundle           = 28;
   bytes bundle_signature = 29 [json_name="bundle_signature"];
 
   // If an intermediate node is decrypting the wrapped registration info with a
   // wrapper not available on the server, it can't cache the decrypted value in
   // the original bundle because it's signed. In that case, it can cache the
   // value here and encrypt it to the server.
-  bytes rewrapped_wrapping_registration_flow_info = 32 [json_name="rewrapped_wrapping_registration_flow_info"];
-  string rewrapping_key_id = 33 [json_name="rewrapping_key_id"];
+  bytes  rewrapped_wrapping_registration_flow_info = 32 [json_name="rewrapped_wrapping_registration_flow_info"];
+  string rewrapping_key_id                         = 33 [json_name="rewrapping_key_id"];
 }
 
 // FetchNodeCredentialsResponse contains a response to a fetch request. If
@@ -256,10 +269,10 @@ message FetchNodeCredentialsRequest {
 // node credentials. This mostly is a guard against the failure of an operator
 // to actually validate the key ID that they are authorizing.
 message FetchNodeCredentialsResponse {
-  bytes server_encryption_public_key_bytes = 12 [json_name="encryption_public_key_bytes"];
-  KEYTYPE server_encryption_public_key_type = 13 [json_name="encryption_public_key_type"];
+  bytes   server_encryption_public_key_bytes = 12 [json_name="encryption_public_key_bytes"];
+  KEYTYPE server_encryption_public_key_type  = 13 [json_name="encryption_public_key_type"];
 
-  bytes encrypted_node_credentials = 40 [json_name="encrypted_node_credentials"];
+  bytes encrypted_node_credentials           = 40 [json_name="encrypted_node_credentials"];
   bytes encrypted_node_credentials_signature = 41 [json_name="encrypted_node_credentials_signature"];
 }
 
@@ -286,7 +299,6 @@ message RotateNodeCredentialsResponse {
   bytes encrypted_fetch_node_credentials_response = 45 [json_name="encrypted_fetch_node_credentials_response"];
 }
 
-
 // GenerateServerCertificatesRequest holds values necessary for the server to
 // generate a server-side TLS certificate, either for itself or for a middle
 // node in a multi-hop scenario. The nonce and signature are provided by the
@@ -305,10 +317,10 @@ message GenerateServerCertificatesRequest {
   // NodeId is an external identifier for this node that does not change
   string node_id = 7 [json_name="node_id"];
 
-  bytes nonce = 20;
-  bytes nonce_signature = 21 [json_name="nonce_signature"];
-  string common_name = 24 [json_name="common_name"];
-  bool skip_verification = 25 [json_name="skip_verification"];
+  bytes  nonce             = 20;
+  bytes  nonce_signature   = 21 [json_name="nonce_signature"];
+  string common_name       = 24 [json_name="common_name"];
+  bool   skip_verification = 25 [json_name="skip_verification"];
 
   // ClientState data comes from the client and will be returned in the
   // *protocol.Conn, if used. This must be a marshaled structpb.Struct.
@@ -322,9 +334,9 @@ message GenerateServerCertificatesRequest {
 // to the request: a private key for the server (or intemediate node) to use
 // along with the returned certificates.
 message GenerateServerCertificatesResponse {
-  bytes certificate_private_key_pkcs8 = 4 [json_name="certificate_private_key_pkcs8"];
-  KEYTYPE certificate_private_key_type = 5 [json_name="certificate_private_key_type"];
-  repeated CertificateBundle certificate_bundles = 6 [json_name="certificate_bundles"];
+  bytes                      certificate_private_key_pkcs8 = 4 [json_name="certificate_private_key_pkcs8"];
+  KEYTYPE                    certificate_private_key_type  = 5 [json_name="certificate_private_key_type"];
+  repeated CertificateBundle certificate_bundles           = 6 [json_name="certificate_bundles"];
 
   // ClientState data is copied here from the request, if verified, and used to
   // populate the *protocol.Conn, if used

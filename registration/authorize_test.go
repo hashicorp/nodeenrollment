@@ -32,7 +32,7 @@ func TestAuthorizeNode(t *testing.T) {
 	// This happens on the node
 	nodeCreds, err := types.NewNodeCredentials(ctx, memStorage)
 	require.NoError(t, err)
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithRegistrationChallenge(true))
 	require.NoError(t, err)
 	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)
@@ -120,7 +120,7 @@ func TestAuthorizeNode(t *testing.T) {
 			assert.Equal(types.KEYTYPE_X25519, checkNodeInfo.EncryptionPublicKeyType)
 			assert.NotEmpty(checkNodeInfo.ServerEncryptionPrivateKeyBytes)
 			assert.Equal(types.KEYTYPE_X25519, checkNodeInfo.ServerEncryptionPrivateKeyType)
-			assert.Len(checkNodeInfo.RegistrationNonce, nodeenrollment.NonceSize)
+			assert.NotNil(checkNodeInfo.RegistrationChallenge)
 		})
 	}
 }
@@ -138,7 +138,7 @@ func TestAuthorizeNodeCommon_DuplicateStore(t *testing.T) {
 	// This happens on the node
 	nodeCreds, err := types.NewNodeCredentials(ctx, memStorage)
 	require.NoError(t, err)
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithRegistrationChallenge(true))
 	require.NoError(t, err)
 	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)
@@ -184,7 +184,6 @@ func TestAuthorizeNodeCommon_DuplicateStore(t *testing.T) {
 	assert.Equal(t, types.KEYTYPE_X25519, checkNodeInfo.EncryptionPublicKeyType)
 	assert.NotEmpty(t, checkNodeInfo.ServerEncryptionPrivateKeyBytes)
 	assert.Equal(t, types.KEYTYPE_X25519, checkNodeInfo.ServerEncryptionPrivateKeyType)
-	assert.Len(t, checkNodeInfo.RegistrationNonce, nodeenrollment.NonceSize)
 
 	// Simulate a withWrapper case where we might hit authorizeNodeCommon a second time
 	returnedNodeInfo, err := registration.AuthorizeNodeCommon(ctx, memStorage, fetchInfo)

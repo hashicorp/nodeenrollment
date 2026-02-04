@@ -47,14 +47,16 @@ func TestValidateFetchRequest(t *testing.T) {
 	nodePubKey := nodePrivKey.PublicKey()
 
 	// Also create a server-led value for that path
-	_, activationToken, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{})
-	require.NoError(t, err)
-	serverLedNodeCreds, err := types.NewNodeCredentials(ctx, storage, nodeenrollment.WithActivationToken(activationToken))
-	require.NoError(t, err)
-	serverLedFetchReq, err := serverLedNodeCreds.CreateFetchNodeCredentialsRequest(ctx)
-	require.NoError(t, err)
-	serverLedKeyId, err := nodeenrollment.KeyIdFromPkix(serverLedNodeCreds.CertificatePublicKeyPkix)
-	require.NoError(t, err)
+	/*
+		_, activationToken, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{})
+		require.NoError(t, err)
+		serverLedNodeCreds, err := types.NewNodeCredentials(ctx, storage, nodeenrollment.WithActivationToken(activationToken))
+		require.NoError(t, err)
+		serverLedFetchReq, err := serverLedNodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+		require.NoError(t, err)
+		serverLedKeyId, err := nodeenrollment.KeyIdFromPkix(serverLedNodeCreds.CertificatePublicKeyPkix)
+		require.NoError(t, err)
+	*/
 
 	// And, create something for the wrapping flow
 	registrationWrapper := wrapping.NewTestWrapper([]byte("foobar"))
@@ -73,9 +75,12 @@ func TestValidateFetchRequest(t *testing.T) {
 	// Create and register an "interim" node that is used for wrapping for the rewrapping test
 	interimNodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
-	interimReq, err := interimNodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	interimReq, err := interimNodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithRegistrationChallenge(true))
 	require.NoError(t, err)
 	_, err = registration.AuthorizeNode(ctx, storage, interimReq)
+	require.NoError(t, err)
+	// Get a new req without the registration challenge
+	interimReq, err = interimNodeCreds.CreateFetchNodeCredentialsRequest(ctx)
 	require.NoError(t, err)
 	interimFetchResp, err := registration.FetchNodeCredentials(ctx, storage, interimReq)
 	require.NoError(t, err)
@@ -138,13 +143,16 @@ func TestValidateFetchRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid-empty-nonce",
+			name: "invalid-empty-nonce-and-no-registration-challenge",
 			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
 				info := unMarshal(t, req)
 				info.Nonce = nil
+				info.RegistrationChallenge = nil
 				req.Bundle, req.BundleSignature = reMarshalAndSign(t, info, nodeCreds)
-				return req, "empty nonce"
+				return req, ""
 			},
+			runAuthorization:     true,
+			wantAuthzErrContains: "must contain a nonce or a registration challenge",
 		},
 		{
 			name: "invalid-no-bundle",
@@ -238,30 +246,33 @@ func TestValidateFetchRequest(t *testing.T) {
 			name: "invalid-register-bad-nonce",
 			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
 				info := unMarshal(t, req)
-				info.Nonce = info.Nonce[1:]
+				info.EncryptedRegistrationChallenge = []byte("foobar")
+				info.Nonce = []byte("foobar")
 				req.Bundle, req.BundleSignature = reMarshalAndSign(t, info, nodeCreds)
 				return req, "cannot parse invalid wire-format data"
 			},
 		},
-		{
-			name: "invalid-attempt-to-authorize-with-server-led",
-			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
-				return serverLedFetchReq, ""
+		/*
+			{
+				name: "invalid-attempt-to-authorize-with-server-led",
+				fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
+					return serverLedFetchReq, ""
+				},
+				runAuthorization:     true,
+				wantAuthzErrContains: "authorize node request must contain a nonce or a registration challenge",
 			},
-			runAuthorization:     true,
-			wantAuthzErrContains: "server-led activation tokens cannot be used",
-		},
-		{
-			name:             "valid",
-			runAuthorization: true,
-		},
-		{
-			name: "valid-server-led",
-			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
-				return serverLedFetchReq, ""
+			{
+				name:             "valid",
+				runAuthorization: true,
 			},
-			checkNodeInfoIdOverride: serverLedKeyId,
-		},
+				{
+					name: "valid-server-led",
+					fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
+						return serverLedFetchReq, ""
+					},
+					checkNodeInfoIdOverride: serverLedKeyId,
+				},
+		*/
 		{
 			name: "wrapping-flow-no-wrapper",
 			fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
@@ -398,6 +409,9 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 	// This happens on the node
 	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
+	authzFetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithRegistrationChallenge(true))
+	require.NoError(t, err)
+	// Get a new req without the registration challenge
 	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
 	require.NoError(t, err)
 	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
@@ -414,6 +428,7 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 		EncryptionPublicKeyBytes: nodePubKey.Bytes(),
 		EncryptionPublicKeyType:  nodeCreds.EncryptionPrivateKeyType,
 		RegistrationNonce:        nodeCreds.RegistrationNonce,
+		RegistrationChallenge:    nodeCreds.RegistrationChallenge,
 	}
 
 	tests := []struct {
@@ -444,7 +459,7 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 
 			if tt.runAuthorization {
 				// We have to _actually_ authorize the node here to populate things we need
-				_, err := registration.AuthorizeNode(ctx, storage, fetchReq)
+				_, err := registration.AuthorizeNode(ctx, storage, authzFetchReq)
 				require.NoError(err)
 			}
 

@@ -50,6 +50,7 @@ type Options struct {
 	WithExtraAlpnProtos                                   []string
 	WithReinitializeRoots                                 bool
 	WithActivationToken                                   string
+	WithRegistrationChallenge                             bool
 	WithMaximumServerLedActivationTokenLifetime           time.Duration
 	WithNativeConns                                       bool
 	WithLogger                                            hclog.Logger
@@ -238,6 +239,15 @@ func WithReinitializeRoots(with bool) Option {
 func WithActivationToken(with string) Option {
 	return func(o *Options) error {
 		o.WithActivationToken = with
+		return nil
+	}
+}
+
+// WithRegistrationChallenge causes the FetchNodeCredentialsRequest function to
+// include a challenge
+func WithRegistrationChallenge(with bool) Option {
+	return func(o *Options) error {
+		o.WithRegistrationChallenge = with
 		return nil
 	}
 }
