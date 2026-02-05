@@ -59,6 +59,12 @@ func TestServerLedActivationToken_StoreLoad(t *testing.T) {
 	idBytes := hm.Sum(tokenNonce.Nonce)
 	tokenEntry.Id = base58.FastBase58Encoding(idBytes)
 
+	tokenEntry.RegistrationChallenge = &types.RegistrationChallenge{
+		Challenge: tokenNonce.Nonce,
+	}
+	tokenEntry.ServerEncryptionPrivateKeyBytes = privKey
+	tokenEntry.ServerEncryptionPrivateKeyType = types.KEYTYPE_X25519
+
 	now := time.Now()
 	tokenEntry.CreationTime = timestamppb.New(now)
 	tokenEntry.State = state

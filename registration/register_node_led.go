@@ -207,12 +207,6 @@ func FetchNodeCredentials(
 			}
 			return nil, fmt.Errorf("(%s) error unmarshaling server-led activation token: %w", op, err)
 		}
-		switch {
-		case len(tokenNonce.Nonce) == 0:
-			return nil, fmt.Errorf("(%s) nil server-led activation token nonce", op)
-		case len(tokenNonce.HmacKeyBytes) == 0:
-			return nil, fmt.Errorf("(%s) nil server-led activation token hmac key bytes", op)
-		}
 		nodeInfo, err = validateServerLedActivationToken(ctx, storage, reqInfo, tokenNonce, opt...)
 		if err != nil {
 			err := fmt.Errorf("error validating server-led activation token: %w", err)

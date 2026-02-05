@@ -229,7 +229,8 @@ message FetchNodeCredentialsInfo {
   // Used in node-led as part of the activation token
   RegistrationChallenge registration_challenge = 23 [json_name="registration_challenge"];
   // Used in server-led for node to prove its identity
-  bytes encrypted_registration_challenge = 24 [json_name="encrypted_registration_challenge"];
+  bytes  encrypted_registration_challenge = 24 [json_name="encrypted_registration_challenge"];
+  string activation_token_id              = 25 [json_name="activation_token_id"];
 
   // If provided, a wrapped (encrypted) registration bundle that can be used for
   // just-in-time authorization
@@ -363,6 +364,15 @@ message ServerLedActivationToken {
   // be wrapped
   bytes creation_time_marshaled = 11 [json_name="creation_time_marshaled"];
 
+  // The private encryption key that will be used with the node after successful
+  // activation
+  bytes   server_encryption_private_key_bytes = 12 [json_name="server_encryption_private_key_bytes"];
+  KEYTYPE server_encryption_private_key_type  = 13 [json_name="server_encryption_private_key_type"];
+
+  // Stored challenge information
+  RegistrationChallenge registration_challenge           = 23 [json_name="registration_challenge"];
+  bytes                 encrypted_registration_challenge = 24 [json_name="encrypted_registration_challenge"];
+
   // If set, the key ID of the wrapping key used to encrypt the private keys
   string wrapping_key_id = 30 [json_name="wrapping_key_id"];
 
@@ -376,7 +386,14 @@ message ServerLedActivationToken {
 // The a SHA256-HMAC of the nonce by the key bytes should result in an ID that
 // can be found in storage.
 message ServerLedActivationTokenNonce {
-  bytes nonce = 1;
+  bytes nonce = 1; // Equivalent value to Challenge in ServerLedActivationToken
 
   bytes hmac_key_bytes = 2 [json_name = "hmac_key_bytes"];
+
+  string activation_token_id = 3 [json_name="activation_token_id"];
+
+  bytes   server_encryption_public_key_bytes = 12 [json_name="server_encryption_public_key_bytes"];
+  KEYTYPE server_encryption_public_key_type  = 13 [json_name="server_encryption_public_key_type"];
+  bytes   signer_public_key_pkix             = 14 [json_name="signer_public_key_pkix"];
+  KEYTYPE signer_public_key_type             = 15 [json_name="signer_public_key_type"];
 }

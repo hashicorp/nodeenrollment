@@ -70,6 +70,36 @@ func (s *ServerLedActivationToken) Store(ctx context.Context, storage nodeenroll
 		if err != nil {
 			return fmt.Errorf("(%s) error marshaling wrapped creation time: %w", op, err)
 		}
+
+		blobInfo, err = opts.WithStorageWrapper.Encrypt(
+			ctx,
+			tokenToStore.ServerEncryptionPrivateKeyBytes,
+			wrapping.WithAad([]byte(tokenToStore.Id)),
+		)
+		if err != nil {
+			return fmt.Errorf("(%s) error wrapping private key %w", op, err)
+		}
+		tokenToStore.ServerEncryptionPrivateKeyBytes, err = proto.Marshal(blobInfo)
+		if err != nil {
+			return fmt.Errorf("(%s) error marshaling wrapped private key: %w", op, err)
+		}
+
+		marshaledRegistrationChallenge, err := proto.Marshal(tokenToStore.RegistrationChallenge)
+		if err != nil {
+			return fmt.Errorf("(%s) error marshaling registration challenge: %w", op, err)
+		}
+		blobInfo, err = opts.WithStorageWrapper.Encrypt(
+			ctx,
+			marshaledRegistrationChallenge,
+			wrapping.WithAad([]byte(tokenToStore.Id)),
+		)
+		if err != nil {
+			return fmt.Errorf("(%s) error wrapping registration challenge: %w", op, err)
+		}
+		tokenToStore.EncryptedRegistrationChallenge, err = proto.Marshal(blobInfo)
+		if err != nil {
+			return fmt.Errorf("(%s) error marshaling wrapped registration challenge: %w", op, err)
+		}
 	}
 
 	if err := storage.Store(ctx, tokenToStore); err != nil {
@@ -130,6 +160,40 @@ func LoadServerLedActivationToken(ctx context.Context, storage nodeenrollment.St
 			return nil, fmt.Errorf("(%s) error decrypting creation time: %w", op, err)
 		}
 		token.CreationTimeMarshaled = pt
+
+		blobInfo = new(wrapping.BlobInfo)
+		if err := proto.Unmarshal(token.ServerEncryptionPrivateKeyBytes, blobInfo); err != nil {
+			return nil, fmt.Errorf("(%s) error unmarshaling encryption private key bytes blob info: %w", op, err)
+		}
+		pt, err = opts.WithStorageWrapper.Decrypt(
+			ctx,
+			blobInfo,
+			wrapping.WithAad([]byte(id)),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error decrypting private key bytes: %w", op, err)
+		}
+		token.ServerEncryptionPrivateKeyBytes = pt
+
+		if len(token.EncryptedRegistrationChallenge) != 0 {
+			token.RegistrationChallenge = &RegistrationChallenge{}
+			blobInfo = new(wrapping.BlobInfo)
+			if err := proto.Unmarshal(token.EncryptedRegistrationChallenge, blobInfo); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling registration nonce blob info: %w", op, err)
+			}
+			pt, err := opts.WithStorageWrapper.Decrypt(
+				ctx,
+				blobInfo,
+				wrapping.WithAad([]byte(token.Id)),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error decrypting registration nonce: %w", op, err)
+			}
+			if err := proto.Unmarshal(pt, token.RegistrationChallenge); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling registration challenge: %w", op, err)
+			}
+			token.EncryptedRegistrationChallenge = nil
+		}
 
 		token.WrappingKeyId = ""
 	}

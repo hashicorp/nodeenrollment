@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/go-kms-wrapping/v2/aead"
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/registration"
+	"github.com/hashicorp/nodeenrollment/rotation"
 	"github.com/hashicorp/nodeenrollment/storage/file"
 	"github.com/hashicorp/nodeenrollment/storage/inmem"
 	"github.com/hashicorp/nodeenrollment/types"
@@ -444,12 +445,15 @@ func TestNodeCredentials_New(t *testing.T) {
 	}
 }
 
-func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
+func TestNodeCredentials_CreateFetchNodeCredentialsServerLed(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 
 	storage, err := inmem.New(ctx)
+	require.NoError(t, err)
+
+	_, err = rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
 	// Generate a suitable root
@@ -461,7 +465,7 @@ func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
 	mapOpt, err := structpb.NewStruct(applicationSpecificParamsMap)
 	require.NoError(t, err)
 
-	_, serverLedActivationToken, err := registration.CreateServerLedActivationToken(
+	storageId, serverLedActivationToken, err := registration.CreateServerLedActivationToken(
 		ctx,
 		storage,
 		&types.ServerLedRegistrationRequest{},
@@ -592,7 +596,11 @@ func TestNodeCredentials_CreateFetchNodeCredentials(t *testing.T) {
 			assert.True(ed25519.Verify(pubKey.(ed25519.PublicKey), out.Bundle, out.BundleSignature))
 
 			if opts.WithActivationToken != "" {
-				assert.Equal(serverLedActivationToken, fmt.Sprintf("%s%s", nodeenrollment.ServerLedActivationTokenPrefix, base58.FastBase58Encoding(fetchInfo.Nonce)))
+				if fetchInfo.ActivationTokenId == "" {
+					assert.Equal(serverLedActivationToken, fmt.Sprintf("%s%s", nodeenrollment.ServerLedActivationTokenPrefix, base58.FastBase58Encoding(fetchInfo.Nonce)))
+				} else {
+					assert.Equal(storageId, fetchInfo.ActivationTokenId)
+				}
 			} else {
 				assert.Equal(nodeCreds.RegistrationNonce, fetchInfo.Nonce)
 			}

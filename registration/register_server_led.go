@@ -5,14 +5,17 @@ package registration
 
 import (
 	"context"
+	"crypto/ecdh"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"fmt"
 	"time"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/mr-tron/base58"
+	"golang.org/x/crypto/curve25519"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -53,23 +56,64 @@ func CreateServerLedActivationToken(
 		tokenNonce = new(types.ServerLedActivationTokenNonce)
 	)
 
-	// First create nonce values
-	tokenNonce.Nonce = make([]byte, nodeenrollment.NonceSize)
-	num, err := opts.WithRandomReader.Read(tokenNonce.Nonce)
-	switch {
-	case err != nil:
-		return "", "", fmt.Errorf("(%s) error generating nonce: %w", op, err)
-	case num != nodeenrollment.NonceSize:
-		return "", "", fmt.Errorf("(%s) read incorrect number of bytes for nonce, wanted %d, got %d", op, nodeenrollment.NonceSize, num)
+	// First create nonce
+	{
+		tokenNonce.Nonce = make([]byte, nodeenrollment.NonceSize)
+		num, err := opts.WithRandomReader.Read(tokenNonce.Nonce)
+		switch {
+		case err != nil:
+			return "", "", fmt.Errorf("(%s) error generating nonce: %w", op, err)
+		case num != nodeenrollment.NonceSize:
+			return "", "", fmt.Errorf("(%s) read incorrect number of bytes for nonce, wanted %d, got %d", op, nodeenrollment.NonceSize, num)
+		}
+		tokenEntry.RegistrationChallenge = &types.RegistrationChallenge{
+			Challenge: tokenNonce.Nonce,
+		}
 	}
-	// Create a unique hmac key
-	tokenNonce.HmacKeyBytes = make([]byte, 32)
-	num, err = opts.WithRandomReader.Read(tokenNonce.HmacKeyBytes)
-	switch {
-	case err != nil:
-		return "", "", fmt.Errorf("(%s) error generating hmac key bytes: %w", op, err)
-	case num != 32:
-		return "", "", fmt.Errorf("(%s) read incorrect number of bytes for hmac key, wanted %d, got %d", op, nodeenrollment.NonceSize, num)
+	// Create a unique hmac key. This is used only to find the entry in storage;
+	// it's a weird mechanism but legacy for backwards compat.
+	{
+		tokenNonce.HmacKeyBytes = make([]byte, 32)
+		num, err := opts.WithRandomReader.Read(tokenNonce.HmacKeyBytes)
+		switch {
+		case err != nil:
+			return "", "", fmt.Errorf("(%s) error generating hmac key bytes: %w", op, err)
+		case num != 32:
+			return "", "", fmt.Errorf("(%s) read incorrect number of bytes for hmac key, wanted %d, got %d", op, nodeenrollment.NonceSize, num)
+		}
+		// Now, we're going to hmac the nonce; an encoding of the hmac value will
+		// give us the ID for storage of the activation token entry.
+		hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
+		idBytes := hm.Sum(tokenNonce.Nonce)
+		tokenEntry.Id = base58.FastBase58Encoding(idBytes)
+	}
+	// Generate the server-side encryption key that will be used with this node
+	{
+		tokenNonce.ActivationTokenId = tokenEntry.Id
+		tokenEntry.ServerEncryptionPrivateKeyBytes = make([]byte, curve25519.ScalarSize)
+		num, err := opts.WithRandomReader.Read(tokenEntry.ServerEncryptionPrivateKeyBytes)
+		switch {
+		case err != nil:
+			return "", "", fmt.Errorf("(%s) error reading random bytes to generate node encryption key: %w", op, err)
+		case num != curve25519.ScalarSize:
+			return "", "", fmt.Errorf("(%s) wrong number of random bytes read when generating node encryption key, expected %d but got %d", op, curve25519.ScalarSize, num)
+		}
+		tokenEntry.ServerEncryptionPrivateKeyType = types.KEYTYPE_X25519
+		encryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(tokenEntry.ServerEncryptionPrivateKeyBytes)
+		if err != nil {
+			return "", "", fmt.Errorf("(%s) error reading node private encryption key: %w", op, err)
+		}
+		tokenNonce.ServerEncryptionPublicKeyBytes = encryptionPrivateKey.PublicKey().Bytes()
+		tokenNonce.ServerEncryptionPublicKeyType = types.KEYTYPE_X25519
+	}
+	// Add signer information to validate fetch bundle
+	{
+		rootCerts, err := types.LoadRootCertificates(ctx, storage, opt...)
+		if err != nil {
+			return "", "", fmt.Errorf("(%s) error fetching current root certificates: %w", op, err)
+		}
+		tokenNonce.SignerPublicKeyPkix = rootCerts.Current.PublicKeyPkix
+		tokenNonce.SignerPublicKeyType = rootCerts.Current.PrivateKeyType
 	}
 
 	// Now generate the returned value that will be transmitted by marshaling the token
@@ -80,13 +124,6 @@ func CreateServerLedActivationToken(
 
 	tokenEntry.CreationTime = timestamppb.Now()
 	tokenEntry.State = opts.WithState
-
-	// Now, we're going to hmac the nonce; an encoding of the hmac value will
-	// give us the ID for storage of the activation token entry. That way we
-	// aren't storing usable values directly as entries in storage.
-	hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
-	idBytes := hm.Sum(tokenNonce.Nonce)
-	tokenEntry.Id = base58.FastBase58Encoding(idBytes)
 
 	if !opts.WithSkipStorage {
 		// At this point everything is generated and both messages are prepared;
@@ -120,9 +157,9 @@ func validateServerLedActivationToken(
 		return nil, fmt.Errorf("(%s) nil request info", op)
 	case tokenNonce == nil:
 		return nil, fmt.Errorf("(%s) nil token nonce", op)
-	case len(tokenNonce.Nonce) == 0:
+	case tokenNonce.ActivationTokenId == "" && len(tokenNonce.Nonce) == 0:
 		return nil, fmt.Errorf("(%s) empty token nonce nonce", op)
-	case len(tokenNonce.HmacKeyBytes) == 0:
+	case tokenNonce.ActivationTokenId == "" && len(tokenNonce.HmacKeyBytes) == 0:
 		return nil, fmt.Errorf("(%s) empty token nonce hmac key bytes", op)
 	}
 
@@ -131,16 +168,41 @@ func validateServerLedActivationToken(
 		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
-	// Generate the ID from the token values for lookup
-	hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
-	idBytes := hm.Sum(tokenNonce.Nonce)
-	tokenEntry, err := types.LoadServerLedActivationToken(ctx, storage, base58.FastBase58Encoding(idBytes), opt...)
+	activationTokenId := tokenNonce.ActivationTokenId
+	if activationTokenId == "" {
+		// Generate the ID from the token values for lookup
+		hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
+		idBytes := hm.Sum(tokenNonce.Nonce)
+		activationTokenId = base58.FastBase58Encoding(idBytes)
+	}
+	tokenEntry, err := types.LoadServerLedActivationToken(ctx, storage, activationTokenId, opt...)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error looking up activation token: %w", op, err)
 	}
 	if tokenEntry == nil {
 		// Returning ErrNotFound here will result in the Fetch call returning unauthorized
 		return nil, fmt.Errorf("(%s) activation token from lookup is nil: %w", op, nodeenrollment.ErrNotFound)
+	}
+
+	if len(tokenEntry.ServerEncryptionPrivateKeyBytes) != 0 {
+		if len(reqInfo.EncryptionPublicKeyBytes) == 0 {
+			return nil, fmt.Errorf("(%s) missing encryption public key bytes in token nonce", op)
+		}
+		// Create a temp node information struct for easy decryption
+		ni := &types.NodeInformation{
+			ServerEncryptionPrivateKeyBytes: tokenEntry.ServerEncryptionPrivateKeyBytes,
+			ServerEncryptionPrivateKeyType:  tokenEntry.ServerEncryptionPrivateKeyType,
+			EncryptionPublicKeyBytes:        reqInfo.EncryptionPublicKeyBytes,
+			EncryptionPublicKeyType:         reqInfo.EncryptionPublicKeyType,
+		}
+		var challenge types.RegistrationChallenge
+		if err := nodeenrollment.DecryptMessage(ctx, reqInfo.EncryptedRegistrationChallenge, ni, &challenge); err != nil {
+			return nil, fmt.Errorf("(%s) error decrypting registration challenge: %w", op, err)
+		}
+		// Validate challenge
+		if subtle.ConstantTimeCompare(challenge.Challenge, tokenEntry.RegistrationChallenge.Challenge) != 1 {
+			return nil, fmt.Errorf("(%s) invalid registration challenge nonce", op)
+		}
 	}
 
 	// Validate the time since creation
@@ -182,7 +244,7 @@ func validateServerLedActivationToken(
 
 	// Authorize the node; we'll then fall through to the rest of the fetch
 	// workflow (we've already ensured we're not in an authorize call up
-	// above)
+	// above).
 	nodeInfo, err := authorizeNodeCommon(ctx, storage, reqInfo, opt...)
 	return nodeInfo, err
 }

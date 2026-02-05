@@ -342,6 +342,17 @@ func NewNodeCredentials(
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error base58-decoding activation token: %w", op, err)
 		}
+		tokenNonce := new(ServerLedActivationTokenNonce)
+		if err := proto.Unmarshal(nonce, tokenNonce); err != nil {
+			if strings.Contains(err.Error(), "cannot parse invalid wire-format data") {
+				return nil, fmt.Errorf("(%s) invalid registration nonce: %w", op, err)
+			}
+			return nil, fmt.Errorf("(%s) error unmarshaling server-led activation token: %w", op, err)
+		}
+		if len(tokenNonce.ServerEncryptionPublicKeyBytes) != 0 {
+			n.ServerEncryptionPublicKeyBytes = tokenNonce.ServerEncryptionPublicKeyBytes
+			n.ServerEncryptionPublicKeyType = tokenNonce.ServerEncryptionPublicKeyType
+		}
 		n.RegistrationNonce = nonce
 	}
 
@@ -465,6 +476,12 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		reqInfo.RegistrationChallenge = n.RegistrationChallenge
 	}
 
+	encryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(n.EncryptionPrivateKeyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error reading node private encryption key: %w", op, err)
+	}
+	reqInfo.EncryptionPublicKeyBytes = encryptionPrivateKey.PublicKey().Bytes()
+
 	switch {
 	case !nodeenrollment.IsNil(opts.WithRegistrationWrapper):
 		// Create an encrypted registration request
@@ -492,14 +509,39 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error base58-decoding activation token: %w", op, err)
 		}
-		reqInfo.Nonce = nonce
+		tokenNonce := new(ServerLedActivationTokenNonce)
+		if err := proto.Unmarshal(nonce, tokenNonce); err != nil {
+			if strings.Contains(err.Error(), "cannot parse invalid wire-format data") {
+				return nil, fmt.Errorf("(%s) invalid registration nonce: %w", op, err)
+			}
+			return nil, fmt.Errorf("(%s) error unmarshaling server-led activation token: %w", op, err)
+		}
+		// If this is not populated, it's the old version, and use old behavior
+		if len(tokenNonce.ActivationTokenId) == 0 {
+			switch {
+			case len(tokenNonce.Nonce) == 0:
+				return nil, fmt.Errorf("(%s) nil server-led activation token nonce", op)
+			case len(tokenNonce.HmacKeyBytes) == 0:
+				return nil, fmt.Errorf("(%s) nil server-led activation token hmac key bytes", op)
+			}
+			reqInfo.Nonce = nonce
+		} else {
+			reqInfo.ActivationTokenId = tokenNonce.ActivationTokenId
+			challenge := new(RegistrationChallenge)
+			challenge.Challenge = tokenNonce.Nonce
+			n.ServerEncryptionPublicKeyBytes = tokenNonce.ServerEncryptionPublicKeyBytes
+			n.ServerEncryptionPublicKeyType = tokenNonce.ServerEncryptionPublicKeyType
+			reqInfo.EncryptedRegistrationChallenge, err = nodeenrollment.EncryptMessage(
+				ctx,
+				challenge,
+				n,
+				opt...,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error encrypting registration challenge: %w", op, err)
+			}
+		}
 	}
-
-	encryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(n.EncryptionPrivateKeyBytes)
-	if err != nil {
-		return nil, fmt.Errorf("(%s) error reading node private encryption key: %w", op, err)
-	}
-	reqInfo.EncryptionPublicKeyBytes = encryptionPrivateKey.PublicKey().Bytes()
 
 	var req FetchNodeCredentialsRequest
 	req.Bundle, err = proto.Marshal(reqInfo)
