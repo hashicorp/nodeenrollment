@@ -92,75 +92,85 @@ func (l *SplitListener) Start() error {
 			l.cancel()
 			return err
 		}
-
-		protoConn, ok := conn.(*protocol.Conn)
-		if !ok {
-			// It'd be nice not to be silent about this, but since we've
-			// verified that only *protocol.InterceptingListener can be the
-			// underlying listener, this should never really happen
-			_ = conn.Close()
+		if conn == nil {
 			continue
 		}
-
-		tlsConn := protoConn.Conn
-		if !tlsConn.ConnectionState().HandshakeComplete {
-			// Another case where assuming it is in fact the listener we expect,
-			// it will always have performed a handshake as the protocol
-			// requires it; so it'd be nice not to be silent about this, but
-			// this should never really happen
-			_ = conn.Close()
-			continue
-		}
-
-		negProto := tlsConn.ConnectionState().NegotiatedProtocol
-		if nodeenrollment.ContainsKnownAlpnProto(negProto) {
-			if strings.HasPrefix(negProto, nodeenrollment.FetchNodeCredsNextProtoV1Prefix) {
-				// If it's the fetch proto, the TLS handshake should be all that is
-				// needed and the connection should be closed already. Close it for
-				// safety and continue.
+		go func(conn net.Conn) {
+			protoConn, ok := conn.(*protocol.Conn)
+			if !ok {
+				// It'd be nice not to be silent about this, but since we've
+				// verified that only *protocol.InterceptingListener can be the
+				// underlying listener, this should never really happen
 				_ = conn.Close()
-				continue
+				return
 			}
 
-			// Get client conns and do a search
-			clientNextProtos := protoConn.ClientNextProtos()
-			var foundListener *MultiplexingListener
-			l.babyListeners.Range(func(k, v any) bool {
-				for _, proto := range clientNextProtos {
-					if k.(string) == proto {
-						foundListener = v.(*MultiplexingListener)
-						return false
+			// Handshake should have already been kicked off in a sync.Once, calling it here again
+			// as it block until handshake is complete before proceeding.
+			if err := protoConn.Handshake(); err != nil {
+				_ = conn.Close()
+				return
+			}
+
+			if !protoConn.ConnectionState().HandshakeComplete {
+				// Another case where assuming it is in fact the listener we expect,
+				// it will always have performed a handshake as the protocol
+				// requires it; so it'd be nice not to be silent about this, but
+				// this should never really happen
+				_ = conn.Close()
+				return
+			}
+
+			negProto := protoConn.ConnectionState().NegotiatedProtocol
+			if nodeenrollment.ContainsKnownAlpnProto(negProto) {
+				if strings.HasPrefix(negProto, nodeenrollment.FetchNodeCredsNextProtoV1Prefix) {
+					// If it's the fetch proto, the TLS handshake should be all that is
+					// needed and the connection should be closed already. Close it for
+					// safety and continue.
+					_ = conn.Close()
+					return
+				}
+
+				// Get client conns and do a search
+				clientNextProtos := protoConn.ClientNextProtos()
+				var foundListener *MultiplexingListener
+				l.babyListeners.Range(func(k, v any) bool {
+					for _, proto := range clientNextProtos {
+						if k.(string) == proto {
+							foundListener = v.(*MultiplexingListener)
+							return false
+						}
+					}
+					return true
+				})
+
+				// If we didn't find something for that proto, look for a
+				// non-specific authenticated listener
+				if foundListener == nil {
+					val, ok := l.babyListeners.Load(AuthenticatedNonSpecificNextProto)
+					if ok {
+						foundListener = val.(*MultiplexingListener)
 					}
 				}
-				return true
-			})
 
-			// If we didn't find something for that proto, look for a
-			// non-specific authenticated listener
-			if foundListener == nil {
-				val, ok := l.babyListeners.Load(AuthenticatedNonSpecificNextProto)
-				if ok {
-					foundListener = val.(*MultiplexingListener)
+				// If we found a listener send the conn down, otherwise close the
+				// conn
+				if foundListener == nil {
+					_ = conn.Close()
+				} else {
+					foundListener.IngressConn(protoConn, nil)
 				}
+				return
 			}
 
-			// If we found a listener send the conn down, otherwise close the
-			// conn
-			if foundListener == nil {
+			// Not authenticated
+			val, ok := l.babyListeners.Load(UnauthenticatedNextProto)
+			if !ok {
 				_ = conn.Close()
 			} else {
-				foundListener.IngressConn(protoConn, nil)
+				val.(*MultiplexingListener).IngressConn(protoConn, nil)
 			}
-			continue
-		}
-
-		// Not authenticated
-		val, ok := l.babyListeners.Load(UnauthenticatedNextProto)
-		if !ok {
-			_ = conn.Close()
-		} else {
-			val.(*MultiplexingListener).IngressConn(protoConn, nil)
-		}
+		}(conn)
 	}
 }
 
