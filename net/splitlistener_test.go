@@ -21,6 +21,7 @@ import (
 	nodeenet "github.com/hashicorp/nodeenrollment/net"
 	"github.com/hashicorp/nodeenrollment/protocol"
 	nodetesting "github.com/hashicorp/nodeenrollment/testing"
+	nodetls "github.com/hashicorp/nodeenrollment/tls"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -36,6 +37,336 @@ func TestSplitListener(t *testing.T) {
 	t.Run("without-non-specific", func(t *testing.T) {
 		testSplitListener(t, false, false)
 	})
+}
+
+func TestSplitListener_BlockedCertRead(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	ctx, fileStorage, nodeCreds := nodetesting.CommonTestParams(t)
+
+	baseLn, err := net.Listen("tcp4", "127.0.0.1:0")
+	require.NoError(err)
+
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(err)
+	template := &x509.Certificate{
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement | x509.KeyUsageCertSign,
+		SerialNumber:          big.NewInt(0),
+		NotBefore:             time.Now().Add(-30 * time.Second),
+		NotAfter:              time.Now().Add(5 * time.Minute),
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	certBytes, err := x509.CreateCertificate(rand.Reader, template, template, pub, priv)
+	require.NoError(err)
+	cert, err := x509.ParseCertificate(certBytes)
+	require.NoError(err)
+	certPool := x509.NewCertPool()
+	certPool.AddCert(cert)
+	baseTlsConf := &tls.Config{
+		Certificates: []tls.Certificate{{
+			Certificate: [][]byte{certBytes},
+			PrivateKey:  priv,
+			Leaf:        cert,
+		}},
+		RootCAs:            certPool,
+		InsecureSkipVerify: true,
+	}
+
+	authingListener, err := protocol.NewInterceptingListener(&protocol.InterceptingListenerConfiguration{
+		Context:              ctx,
+		Storage:              fileStorage,
+		BaseListener:         baseLn,
+		BaseTlsConfiguration: baseTlsConf,
+		TlsHandshakeTimeout:  30 * time.Second, // Set a long timeout
+	})
+	require.NoError(err)
+
+	splitListener, err := nodeenet.NewSplitListener(authingListener)
+	require.NoError(err)
+
+	authLn, err := splitListener.GetListener(nodeenet.AuthenticatedNonSpecificNextProto)
+	require.NoError(err)
+
+	// Start listeners
+	accepted := make(chan error, 1)
+	go func() {
+		conn, err := authLn.Accept()
+		if err == nil && conn != nil {
+			_ = conn.Close()
+		}
+		accepted <- err
+	}()
+	go func() {
+		splitListener.Start()
+	}()
+
+	clientTlsConfigs, err := nodetls.ClientConfigs(ctx, nodeCreds)
+	require.NoError(err)
+	require.NotEmpty(clientTlsConfigs)
+
+	stalledClientTlsConf := clientTlsConfigs[0].Clone()
+	requestedClientCertificate := make(chan struct{}, 1)
+	releaseClientCertificate := make(chan struct{})
+	originalGetClientCertificate := stalledClientTlsConf.GetClientCertificate
+	stalledClientTlsConf.GetClientCertificate = func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		select {
+		case requestedClientCertificate <- struct{}{}:
+		default:
+		}
+
+		// Block on sending client certificate until we explicitly release it
+		<-releaseClientCertificate
+		return originalGetClientCertificate(cri)
+	}
+
+	stalledConn, err := net.Dial("tcp4", authingListener.Addr().String())
+	require.NoError(err)
+	defer stalledConn.Close()
+
+	stalledHandshakeErr := make(chan error, 1)
+	go func() {
+		stalledTlsConn := tls.Client(stalledConn, stalledClientTlsConf)
+		defer stalledTlsConn.Close()
+		stalledHandshakeErr <- stalledTlsConn.HandshakeContext(ctx)
+	}()
+
+	// wait for server to request cert
+	<-requestedClientCertificate
+
+	// now we are stalling the client cert read, try to connect on another path
+	// this should work!
+	validConn, err := protocol.Dial(ctx, fileStorage, authingListener.Addr().String())
+	require.NoError(err)
+	defer validConn.Close()
+
+	select {
+	case err := <-accepted:
+		require.NoError(err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for authenticated listener to receive a routed connection")
+	}
+
+	// close releaseClientCertificate to unblock the waiting stalled connection
+	close(releaseClientCertificate)
+
+	select {
+	case err := <-stalledHandshakeErr:
+		require.NoError(err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for stalled client handshake to exit after being released")
+	}
+
+	require.NoError(authingListener.Close())
+}
+
+func TestSplitListener_BlockedCertReadTimeout(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	ctx, fileStorage, nodeCreds := nodetesting.CommonTestParams(t)
+
+	baseLn, err := net.Listen("tcp4", "127.0.0.1:0")
+	require.NoError(err)
+
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(err)
+	template := &x509.Certificate{
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement | x509.KeyUsageCertSign,
+		SerialNumber:          big.NewInt(0),
+		NotBefore:             time.Now().Add(-30 * time.Second),
+		NotAfter:              time.Now().Add(5 * time.Minute),
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	certBytes, err := x509.CreateCertificate(rand.Reader, template, template, pub, priv)
+	require.NoError(err)
+	cert, err := x509.ParseCertificate(certBytes)
+	require.NoError(err)
+	certPool := x509.NewCertPool()
+	certPool.AddCert(cert)
+	baseTlsConf := &tls.Config{
+		Certificates: []tls.Certificate{{
+			Certificate: [][]byte{certBytes},
+			PrivateKey:  priv,
+			Leaf:        cert,
+		}},
+		RootCAs:            certPool,
+		InsecureSkipVerify: true,
+	}
+
+	authingListener, err := protocol.NewInterceptingListener(&protocol.InterceptingListenerConfiguration{
+		Context:              ctx,
+		Storage:              fileStorage,
+		BaseListener:         baseLn,
+		BaseTlsConfiguration: baseTlsConf,
+		TlsHandshakeTimeout:  time.Second, // Set timeout to 1 second
+	})
+	require.NoError(err)
+
+	serverHandshakeErr := make(chan error, 1)
+	go func() {
+		conn, err := authingListener.Accept()
+		require.NoError(err)
+
+		protoConn := conn.(*protocol.Conn)
+		serverHandshakeErr <- protoConn.Handshake()
+	}()
+
+	clientTlsConfigs, err := nodetls.ClientConfigs(ctx, nodeCreds)
+	require.NoError(err)
+	require.NotEmpty(clientTlsConfigs)
+
+	stalledClientTlsConf := clientTlsConfigs[0].Clone()
+	requestedClientCertificate := make(chan struct{}, 1)
+	releaseClientCertificate := make(chan struct{})
+	originalGetClientCertificate := stalledClientTlsConf.GetClientCertificate
+	stalledClientTlsConf.GetClientCertificate = func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		select {
+		case requestedClientCertificate <- struct{}{}:
+		default:
+		}
+
+		// Block on sending client certificate until we explicitly release it
+		<-releaseClientCertificate
+		return originalGetClientCertificate(cri)
+	}
+
+	stalledConn, err := net.Dial("tcp4", authingListener.Addr().String())
+	require.NoError(err)
+	defer stalledConn.Close()
+
+	go func() {
+		stalledTlsConn := tls.Client(stalledConn, stalledClientTlsConf)
+		defer stalledTlsConn.Close()
+		stalledTlsConn.HandshakeContext(ctx)
+	}()
+
+	// wait for server to request cert
+	<-requestedClientCertificate
+
+	// server should timeout waiting for the client cert read after 1 second
+	select {
+	case err := <-serverHandshakeErr:
+		require.Error(err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for server-side handshake to fail")
+	}
+
+	// unblock the client cert read to cleanup test
+	close(releaseClientCertificate)
+
+	require.NoError(authingListener.Close())
+}
+
+func TestSplitListener_CloseWhileHandshakeBlocked(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	ctx, fileStorage, nodeCreds := nodetesting.CommonTestParams(t)
+
+	baseLn, err := net.Listen("tcp4", "127.0.0.1:0")
+	require.NoError(err)
+
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(err)
+	template := &x509.Certificate{
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment | x509.KeyUsageKeyAgreement | x509.KeyUsageCertSign,
+		SerialNumber:          big.NewInt(0),
+		NotBefore:             time.Now().Add(-30 * time.Second),
+		NotAfter:              time.Now().Add(5 * time.Minute),
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	certBytes, err := x509.CreateCertificate(rand.Reader, template, template, pub, priv)
+	require.NoError(err)
+	cert, err := x509.ParseCertificate(certBytes)
+	require.NoError(err)
+	certPool := x509.NewCertPool()
+	certPool.AddCert(cert)
+	baseTlsConf := &tls.Config{
+		Certificates: []tls.Certificate{{
+			Certificate: [][]byte{certBytes},
+			PrivateKey:  priv,
+			Leaf:        cert,
+		}},
+		RootCAs:            certPool,
+		InsecureSkipVerify: true,
+	}
+
+	// Create a listener with no TlsHandshakeTimeout so the handshake blocks
+	authingListener, err := protocol.NewInterceptingListener(&protocol.InterceptingListenerConfiguration{
+		Context:              ctx,
+		Storage:              fileStorage,
+		BaseListener:         baseLn,
+		BaseTlsConfiguration: baseTlsConf,
+		TlsHandshakeTimeout:  30 * time.Second, // Set a long timeout
+	})
+	require.NoError(err)
+
+	splitListener, err := nodeenet.NewSplitListener(authingListener)
+	require.NoError(err)
+
+	startErr := make(chan error, 1)
+	go func() {
+		startErr <- splitListener.Start()
+	}()
+
+	clientTlsConfigs, err := nodetls.ClientConfigs(ctx, nodeCreds)
+	require.NoError(err)
+	require.NotEmpty(clientTlsConfigs)
+
+	stalledClientTlsConf := clientTlsConfigs[0].Clone()
+	requestedClientCertificate := make(chan struct{}, 1)
+	releaseClientCertificate := make(chan struct{})
+	originalGetClientCertificate := stalledClientTlsConf.GetClientCertificate
+	stalledClientTlsConf.GetClientCertificate = func(cri *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+		select {
+		case requestedClientCertificate <- struct{}{}:
+		default:
+		}
+
+		<-releaseClientCertificate
+		return originalGetClientCertificate(cri)
+	}
+
+	stalledConn, err := net.Dial("tcp4", authingListener.Addr().String())
+	require.NoError(err)
+	defer stalledConn.Close()
+
+	stalledHandshakeErr := make(chan error, 1)
+	go func() {
+		stalledTLSConn := tls.Client(stalledConn, stalledClientTlsConf)
+		defer stalledTLSConn.Close()
+		stalledHandshakeErr <- stalledTLSConn.HandshakeContext(ctx)
+	}()
+
+	// Ok everything is setup, lets wait for the server to request cert
+	<-requestedClientCertificate
+
+	// try close the server while client cert read is blocked
+	require.NoError(authingListener.Close())
+
+	// We should get err closed from the listener start now that the underlying listener is closed
+	err = <-startErr
+	require.ErrorIs(err, net.ErrClosed)
+
+	// lets stop blocking to cleanup test
+	close(releaseClientCertificate)
+	_ = stalledConn.Close()
+
+	select {
+	case <-stalledHandshakeErr:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for blocked handshake client to exit during shutdown")
+	}
 }
 
 func testSplitListener(t *testing.T, withNonSpecific, withNativeConns bool) {

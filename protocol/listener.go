@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/registration"
@@ -30,11 +31,13 @@ type ClientInfo struct {
 // otherwise
 type InterceptingListener struct {
 	ctx                          context.Context
+	cancel                       context.CancelFunc
 	storage                      nodeenrollment.Storage
 	baseLn                       net.Listener
 	baseTlsConf                  *tls.Config
 	fetchCredsFn                 FetchCredsFn
 	generateServerCertificatesFn GenerateServerCertificatesFn
+	handshakeTimeout             time.Duration
 	options                      []nodeenrollment.Option
 }
 
@@ -57,6 +60,11 @@ type InterceptingListenerConfiguration struct {
 	// handled by this library. If nil, any connection not handled by this
 	// library will result in a TLS error.
 	BaseTlsConfiguration *tls.Config
+
+	// TlsHandshakeTimeout controls the timeout applied to the server-side TLS
+	// handshake performed while classifying accepted connections. If zero, the
+	// default timeout is used.
+	TlsHandshakeTimeout time.Duration
 
 	// The function to use for the FetchCredentials operation. If nil, the
 	// default will be used, which is suitable for a server.
@@ -91,6 +99,8 @@ func NewInterceptingListener(
 		return nil, fmt.Errorf("(%s) context is nil", op)
 	case nodeenrollment.IsNil(config.BaseListener):
 		return nil, fmt.Errorf("(%s) base listener is nil", op)
+	case config.TlsHandshakeTimeout < 0:
+		return nil, fmt.Errorf("(%s) tls handshake timeout cannot be negative", op)
 	}
 
 	// These functions are where we use storage, so if they are being
@@ -102,13 +112,22 @@ func NewInterceptingListener(
 		return nil, fmt.Errorf("(%s) storage is nil but not all function options are non-nil", op)
 	}
 
+	handshakeTimeout := nodeenrollment.DefaultTlsHandshakeTimeout
+	if config.TlsHandshakeTimeout > 0 {
+		handshakeTimeout = config.TlsHandshakeTimeout
+	}
+
+	listenerCtx, cancel := context.WithCancel(config.Context)
+
 	l := &InterceptingListener{
-		ctx:                          config.Context,
+		ctx:                          listenerCtx,
+		cancel:                       cancel,
 		storage:                      config.Storage,
 		baseLn:                       config.BaseListener,
 		baseTlsConf:                  config.BaseTlsConfiguration,
 		fetchCredsFn:                 config.FetchCredsFunc,
 		generateServerCertificatesFn: config.GenerateServerCertificatesFunc,
+		handshakeTimeout:             handshakeTimeout,
 		options:                      config.Options,
 	}
 
@@ -168,8 +187,8 @@ func NewInterceptingListener(
 //
 // If it's temporary, continue on and accept the next connection.
 //
-// What's returned is a protocol.Conn; it contains an embedded *tls.Conn as the
-// Conn variable, if needed.
+// What's returned is a protocol.Conn, which wraps the underlying *tls.Conn and
+// coordinates the server-side handshake lazily.
 //
 // Supported options: WithLogger
 func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
@@ -199,36 +218,44 @@ func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 			GetConfigForClient: l.getTlsConfigForClient(&clientInfo),
 		})
 
-		// Force a handshake to run our logic
-		if err := tlsConn.HandshakeContext(l.ctx); err != nil {
-			// If there is an error close the connection
-			if closeErr := tlsConn.Close(); closeErr != nil {
-				err = errors.Join(err, fmt.Errorf("error closing connection: %w", closeErr))
+		protoConn, err := newConn(tlsConn, func(c *Conn) error {
+			handshakeCtx := l.ctx
+			var cancel context.CancelFunc
+			if l.handshakeTimeout > 0 {
+				handshakeCtx, cancel = context.WithTimeout(l.ctx, l.handshakeTimeout)
+				defer cancel()
 			}
-			// Return a temp error so we don't close the listener
-			err := fmt.Errorf("error tls handshaking server side: %w", err)
-			opts.WithLogger.Error(err.Error(), "op", op)
-			return nil, temperror.New(fmt.Errorf("(%s) %s", op, err.Error()))
+
+			err := tlsConn.HandshakeContext(handshakeCtx)
+			c.setClientInfo(clientInfo.nextProtos, clientInfo.clientState)
+			if err != nil {
+				if closeErr := tlsConn.Close(); closeErr != nil {
+					err = errors.Join(err, fmt.Errorf("error closing connection: %w", closeErr))
+				}
+				err := fmt.Errorf("error tls handshaking server side: %w", err)
+				opts.WithLogger.Error(err.Error(), "op", op)
+				return temperror.New(fmt.Errorf("(%s) %s", op, err.Error()))
+			}
+
+			if strings.HasPrefix(tlsConn.ConnectionState().NegotiatedProtocol, nodeenrollment.FetchNodeCredsNextProtoV1Prefix) {
+				err := errors.New("fetch handled, awaiting authorization or auth connection")
+				if closeErr := tlsConn.Close(); closeErr != nil {
+					err = errors.Join(err, fmt.Errorf("error closing connection: %w", closeErr))
+				}
+				opts.WithLogger.Error(err.Error(), "op", op)
+				return temperror.New(fmt.Errorf("(%s) %s", op, err.Error()))
+			}
+
+			return nil
+		})
+		if err != nil {
+			return nil, err
 		}
 
-		// Now that we've performed the handshake, see if it's a fetch. If so,
-		// we want to close the connection and return a temp error either way so
-		// that the node either retries with new creds or tries again to fetch later.
-		if strings.HasPrefix(tlsConn.ConnectionState().NegotiatedProtocol, nodeenrollment.FetchNodeCredsNextProtoV1Prefix) {
-			err := errors.New("fetch handled, awaiting authorization or auth connection")
-			// If we got here we've already sent back the creds, so close the
-			// connection and return a temp error so we keep the listener alive
-			if closeErr := tlsConn.Close(); closeErr != nil {
-				err = errors.Join(err, fmt.Errorf("error closing connection: %w", closeErr))
-			}
-			opts.WithLogger.Error(err.Error(), "op", op)
-			return nil, temperror.New(fmt.Errorf("(%s) %s", op, err.Error()))
-		}
-
-		return NewConn(tlsConn,
-			nodeenrollment.WithExtraAlpnProtos(clientInfo.nextProtos),
-			nodeenrollment.WithState(clientInfo.clientState),
-		)
+		// this will start the tls handshake in a goroutine, calls to Read/Write will block
+		// until the handshake is complete, so it is safe to return here
+		protoConn.startHandshake()
+		return protoConn, nil
 	}
 }
 
@@ -240,5 +267,8 @@ func (l *InterceptingListener) Addr() net.Addr {
 
 // Close satisfies the net.Listener interface and closes the base listener
 func (l *InterceptingListener) Close() error {
+	if l.cancel != nil {
+		l.cancel()
+	}
 	return l.baseLn.Close()
 }

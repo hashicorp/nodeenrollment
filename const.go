@@ -35,6 +35,9 @@ const (
 	// to two weeks. Rotations should happen at roughly half this.
 	DefaultCertificateLifetime = time.Hour * 24 * 14
 
+	// DefaultTlsHandshakeTimeout is the default timeout for TLS handshakes
+	DefaultTlsHandshakeTimeout = time.Minute
+
 	// This is the default time that an server-led activation token is alive
 	DefaultMaximumServerLedActivationTokenLifetime = time.Hour * 24 * 14
 
