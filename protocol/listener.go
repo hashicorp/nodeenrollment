@@ -229,11 +229,16 @@ func (l *InterceptingListener) Accept() (conn net.Conn, retErr error) {
 			err := tlsConn.HandshakeContext(handshakeCtx)
 			c.setClientInfo(clientInfo.nextProtos, clientInfo.clientState)
 			if err != nil {
+				// Get remote address before closing
+				clientAddr := conn.RemoteAddr().String()
+
 				if closeErr := tlsConn.Close(); closeErr != nil {
 					err = errors.Join(err, fmt.Errorf("error closing connection: %w", closeErr))
 				}
 				err := fmt.Errorf("error tls handshaking server side: %w", err)
-				opts.WithLogger.Error(err.Error(), "op", op)
+				opts.WithLogger.Error(err.Error(),
+					"op", op,
+					"client_addr", clientAddr)
 				return temperror.New(fmt.Errorf("(%s) %s", op, err.Error()))
 			}
 
