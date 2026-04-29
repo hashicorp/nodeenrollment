@@ -109,12 +109,9 @@ func authorizeNodeCommon(
 		EncryptionPublicKeyBytes:         reqInfo.EncryptionPublicKeyBytes,
 		EncryptionPublicKeyType:          reqInfo.EncryptionPublicKeyType,
 		RegistrationNonce:                reqInfo.Nonce,
+		RegistrationChallenge:            reqInfo.RegistrationChallenge,
 		State:                            opts.WithState,
 		WrappingRegistrationFlowInfo:     reqInfo.WrappingRegistrationFlowInfo,
-	}
-	// This may be nil for backwards compat
-	if reqInfo.RegistrationChallenge != nil {
-		nodeInfo.RegistrationChallenge = reqInfo.RegistrationChallenge
 	}
 
 	certPubKeyRaw, err := x509.ParsePKIXPublicKey(nodeInfo.CertificatePublicKeyPkix)

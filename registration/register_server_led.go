@@ -184,9 +184,24 @@ func validateServerLedActivationToken(
 		return nil, fmt.Errorf("(%s) activation token from lookup is nil: %w", op, nodeenrollment.ErrNotFound)
 	}
 
-	if len(tokenEntry.ServerEncryptionPrivateKeyBytes) != 0 {
-		if len(reqInfo.EncryptionPublicKeyBytes) == 0 {
-			return nil, fmt.Errorf("(%s) missing encryption public key bytes in token nonce", op)
+	if len(tokenEntry.ServerEncryptionPrivateKeyBytes) != 0 && len(reqInfo.EncryptedRegistrationChallenge) != 0 {
+		// If we have server encryption private key bytes already it's the new
+		// updated protocol with the encrypted challenge; if not, it's the
+		// legacy protocol where we just check the nonce directly. In the new
+		// protocol, we require the encrypted challenge and encryption public
+		// key bytes to be present in the request, and we decrypt the challenge
+		// and validate it against the stored value. In the legacy protocol, we
+		// just validate that the nonce from the request matches the stored
+		// challenge nonce.
+		switch {
+		case len(reqInfo.EncryptionPublicKeyBytes) == 0:
+			return nil, fmt.Errorf("(%s) missing encryption public key bytes in req", op)
+		case len(reqInfo.EncryptedRegistrationChallenge) == 0:
+			return nil, fmt.Errorf("(%s) missing encrypted registration challenge req", op)
+		case tokenEntry.RegistrationChallenge == nil:
+			return nil, fmt.Errorf("(%s) missing registration challenge in activation token entry", op)
+		case tokenEntry.RegistrationChallenge.Challenge == nil:
+			return nil, fmt.Errorf("(%s) missing registration challenge nonce in activation token entry", op)
 		}
 		// Create a temp node information struct for easy decryption
 		ni := &types.NodeInformation{
@@ -198,6 +213,9 @@ func validateServerLedActivationToken(
 		var challenge types.RegistrationChallenge
 		if err := nodeenrollment.DecryptMessage(ctx, reqInfo.EncryptedRegistrationChallenge, ni, &challenge); err != nil {
 			return nil, fmt.Errorf("(%s) error decrypting registration challenge: %w", op, err)
+		}
+		if challenge.Challenge == nil {
+			return nil, fmt.Errorf("(%s) decrypted registration challenge nonce is nil", op)
 		}
 		// Validate challenge
 		if subtle.ConstantTimeCompare(challenge.Challenge, tokenEntry.RegistrationChallenge.Challenge) != 1 {

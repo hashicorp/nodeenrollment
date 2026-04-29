@@ -197,15 +197,19 @@ func FetchNodeCredentials(
 		}
 
 	case reqInfo.EncryptedRegistrationChallenge != nil ||
-		len(reqInfo.Nonce) > 0:
+		len(reqInfo.ActivationTokenId) > 0:
 		// In this case it is a server-led activation token, which is a proto
 		// marshal and may vary in size, so expect that
 		tokenNonce := new(types.ServerLedActivationTokenNonce)
-		if err := proto.Unmarshal(reqInfo.Nonce, tokenNonce); err != nil {
-			if strings.Contains(err.Error(), "cannot parse invalid wire-format data") {
-				return nil, fmt.Errorf("(%s) invalid registration nonce: %w", op, err)
+		if len(reqInfo.ActivationTokenId) > 0 {
+			tokenNonce.ActivationTokenId = reqInfo.ActivationTokenId
+		} else {
+			if err := proto.Unmarshal(reqInfo.Nonce, tokenNonce); err != nil {
+				if strings.Contains(err.Error(), "cannot parse invalid wire-format data") {
+					return nil, fmt.Errorf("(%s) invalid registration nonce: %w", op, err)
+				}
+				return nil, fmt.Errorf("(%s) error unmarshaling server-led activation token: %w", op, err)
 			}
-			return nil, fmt.Errorf("(%s) error unmarshaling server-led activation token: %w", op, err)
 		}
 		nodeInfo, err = validateServerLedActivationToken(ctx, storage, reqInfo, tokenNonce, opt...)
 		if err != nil {
