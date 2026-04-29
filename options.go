@@ -50,7 +50,9 @@ type Options struct {
 	WithExtraAlpnProtos                                   []string
 	WithReinitializeRoots                                 bool
 	WithActivationToken                                   string
-	WithRegistrationChallenge                             bool
+	WithPrivateKey                                        []byte
+	WithPrivateKeyType                                    uint
+	WithNoRegistrationChallenge                           bool
 	WithMaximumServerLedActivationTokenLifetime           time.Duration
 	WithNativeConns                                       bool
 	WithLogger                                            hclog.Logger
@@ -243,11 +245,23 @@ func WithActivationToken(with string) Option {
 	}
 }
 
-// WithRegistrationChallenge causes the FetchNodeCredentialsRequest function to
-// include a challenge
-func WithRegistrationChallenge(with bool) Option {
+// WithPrivateKey allows indicating a private key to be used for signing
+func WithPrivateKey(withKey []byte, withType uint) Option {
 	return func(o *Options) error {
-		o.WithRegistrationChallenge = with
+		o.WithPrivateKey = withKey
+		o.WithPrivateKeyType = withType
+		return nil
+	}
+}
+
+// WithNoRegistrationChallenge, if set to true, indicates that the request
+// should not require a registration challenge. It's a negative because it's
+// only in internal cases where you'd want this; for client code you'd want the
+// registration challenge included as part of the bundle to submit for
+// registration. However, when attempting a fetch, this should not be included.
+func WithNoRegistrationChallenge(with bool) Option {
+	return func(o *Options) error {
+		o.WithNoRegistrationChallenge = with
 		return nil
 	}
 }

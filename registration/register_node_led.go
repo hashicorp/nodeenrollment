@@ -5,7 +5,6 @@ package registration
 
 import (
 	"context"
-	"crypto"
 	"crypto/ecdh"
 	"crypto/ed25519"
 	"crypto/subtle"
@@ -177,8 +176,7 @@ func FetchNodeCredentials(
 			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 
-	case reqInfo.EncryptedRegistrationChallenge == nil ||
-		len(reqInfo.Nonce) == nodeenrollment.NonceSize:
+	case len(reqInfo.Nonce) == nodeenrollment.NonceSize || (len(reqInfo.Nonce) == 0 && reqInfo.EncryptedRegistrationChallenge == nil):
 		// This is our normal fetch case with node-led activation
 		keyId, err := nodeenrollment.KeyIdFromPkix(reqInfo.CertificatePublicKeyPkix)
 		if err != nil {
@@ -197,7 +195,7 @@ func FetchNodeCredentials(
 		}
 
 	case reqInfo.EncryptedRegistrationChallenge != nil ||
-		len(reqInfo.ActivationTokenId) > 0:
+		len(reqInfo.Nonce) > 0:
 		// In this case it is a server-led activation token, which is a proto
 		// marshal and may vary in size, so expect that
 		tokenNonce := new(types.ServerLedActivationTokenNonce)
@@ -279,26 +277,10 @@ func FetchNodeCredentials(
 		return nil, fmt.Errorf("(%s) error encrypting message: %w", op, err)
 	}
 
-	rootCerts, err := types.LoadRootCertificates(ctx, storage, opt...)
-	if err != nil {
-		return nil, fmt.Errorf("(%s) error fetching current root certificates: %w", op, err)
-	}
-
-	_, signer, err := rootCerts.Current.SigningParams(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("(%s) error getting signing params: %w", op, err)
-	}
-
-	sigBytes, err := signer.Sign(opts.WithRandomReader, encryptedBytes, crypto.Hash(0))
-	if err != nil {
-		return nil, fmt.Errorf("(%s) error signing request data message: %w", op, err)
-	}
-
 	return &types.FetchNodeCredentialsResponse{
-		EncryptedNodeCredentials:          encryptedBytes,
-		EncryptedNodeCredentialsSignature: sigBytes,
-		ServerEncryptionPublicKeyBytes:    serverEncryptionPublicKey.Bytes(),
-		ServerEncryptionPublicKeyType:     nodeInfo.ServerEncryptionPrivateKeyType,
+		EncryptedNodeCredentials:       encryptedBytes,
+		ServerEncryptionPublicKeyBytes: serverEncryptionPublicKey.Bytes(),
+		ServerEncryptionPublicKeyType:  nodeInfo.ServerEncryptionPrivateKeyType,
 	}, nil
 }
 

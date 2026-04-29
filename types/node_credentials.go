@@ -447,9 +447,11 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		CertificatePublicKeyType:         n.CertificatePrivateKeyType,
 		PreviousCertificatePublicKeyPkix: n.PreviousCertificatePublicKeyPkix,
 		EncryptionPublicKeyType:          KEYTYPE_X25519,
-		RegistrationChallenge:            n.RegistrationChallenge,
 		NotBefore:                        timestamppb.New(now),
 		NotAfter:                         timestamppb.New(now.Add(nodeenrollment.DefaultFetchCredentialsLifetime)),
+	}
+	if !opts.WithNoRegistrationChallenge {
+		reqInfo.RegistrationChallenge = n.RegistrationChallenge
 	}
 
 	encryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(n.EncryptionPrivateKeyBytes)

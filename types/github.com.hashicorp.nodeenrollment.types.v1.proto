@@ -273,8 +273,7 @@ message FetchNodeCredentialsResponse {
   bytes   server_encryption_public_key_bytes = 12 [json_name="encryption_public_key_bytes"];
   KEYTYPE server_encryption_public_key_type  = 13 [json_name="encryption_public_key_type"];
 
-  bytes encrypted_node_credentials           = 40 [json_name="encrypted_node_credentials"];
-  bytes encrypted_node_credentials_signature = 41 [json_name="encrypted_node_credentials_signature"];
+  bytes encrypted_node_credentials = 40 [json_name="encrypted_node_credentials"];
 }
 
 // RotateNodeCredentialsRequest is the message used when a node wants to rotate
@@ -394,6 +393,4 @@ message ServerLedActivationTokenNonce {
 
   bytes   server_encryption_public_key_bytes = 12 [json_name="server_encryption_public_key_bytes"];
   KEYTYPE server_encryption_public_key_type  = 13 [json_name="server_encryption_public_key_type"];
-  bytes   signer_public_key_pkix             = 14 [json_name="signer_public_key_pkix"];
-  KEYTYPE signer_public_key_type             = 15 [json_name="signer_public_key_type"];
 }

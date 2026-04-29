@@ -171,8 +171,11 @@ func authorizeNodeCommon(
 		}
 	}
 
-	// Create server encryption keys
-	{
+	// Create server encryption keys. In the newer server-led flow these may already exist.
+	if len(opts.WithPrivateKey) > 0 && types.KEYTYPE(opts.WithPrivateKeyType) != types.KEYTYPE_UNSPECIFIED {
+		nodeInfo.ServerEncryptionPrivateKeyBytes = opts.WithPrivateKey
+		nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE(opts.WithPrivateKeyType)
+	} else {
 		nodeInfo.ServerEncryptionPrivateKeyBytes = make([]byte, curve25519.ScalarSize)
 		n, err := opts.WithRandomReader.Read(nodeInfo.ServerEncryptionPrivateKeyBytes)
 		switch {

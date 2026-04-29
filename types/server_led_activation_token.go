@@ -161,19 +161,21 @@ func LoadServerLedActivationToken(ctx context.Context, storage nodeenrollment.St
 		}
 		token.CreationTimeMarshaled = pt
 
-		blobInfo = new(wrapping.BlobInfo)
-		if err := proto.Unmarshal(token.ServerEncryptionPrivateKeyBytes, blobInfo); err != nil {
-			return nil, fmt.Errorf("(%s) error unmarshaling encryption private key bytes blob info: %w", op, err)
+		if len(token.ServerEncryptionPrivateKeyBytes) != 0 {
+			blobInfo = new(wrapping.BlobInfo)
+			if err := proto.Unmarshal(token.ServerEncryptionPrivateKeyBytes, blobInfo); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling encryption private key bytes blob info: %w", op, err)
+			}
+			pt, err = opts.WithStorageWrapper.Decrypt(
+				ctx,
+				blobInfo,
+				wrapping.WithAad([]byte(id)),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error decrypting private key bytes: %w", op, err)
+			}
+			token.ServerEncryptionPrivateKeyBytes = pt
 		}
-		pt, err = opts.WithStorageWrapper.Decrypt(
-			ctx,
-			blobInfo,
-			wrapping.WithAad([]byte(id)),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("(%s) error decrypting private key bytes: %w", op, err)
-		}
-		token.ServerEncryptionPrivateKeyBytes = pt
 
 		if len(token.EncryptedRegistrationChallenge) != 0 {
 			token.RegistrationChallenge = &RegistrationChallenge{}

@@ -32,7 +32,7 @@ func TestAuthorizeNode(t *testing.T) {
 	// This happens on the node
 	nodeCreds, err := types.NewNodeCredentials(ctx, memStorage)
 	require.NoError(t, err)
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithRegistrationChallenge(true))
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
 	require.NoError(t, err)
 	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)
@@ -138,7 +138,7 @@ func TestAuthorizeNodeCommon_DuplicateStore(t *testing.T) {
 	// This happens on the node
 	nodeCreds, err := types.NewNodeCredentials(ctx, memStorage)
 	require.NoError(t, err)
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithRegistrationChallenge(true))
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
 	require.NoError(t, err)
 	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)

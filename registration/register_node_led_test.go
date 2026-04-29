@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto"
 	"crypto/ecdh"
-	"crypto/ed25519"
 	"crypto/x509"
 	"testing"
 	"time"
@@ -32,7 +31,7 @@ func TestValidateFetchRequest(t *testing.T) {
 	storage, err := inmem.New(ctx)
 	require.NoError(t, err)
 
-	roots, err := rotation.RotateRootCertificates(ctx, storage)
+	_, err = rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
 	// This happens on the node
@@ -75,7 +74,7 @@ func TestValidateFetchRequest(t *testing.T) {
 	// Create and register an "interim" node that is used for wrapping for the rewrapping test
 	interimNodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
-	interimReq, err := interimNodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithRegistrationChallenge(true))
+	interimReq, err := interimNodeCreds.CreateFetchNodeCredentialsRequest(ctx)
 	require.NoError(t, err)
 	_, err = registration.AuthorizeNode(ctx, storage, interimReq)
 	require.NoError(t, err)
@@ -372,14 +371,8 @@ func TestValidateFetchRequest(t *testing.T) {
 			}
 			checkNodeInfo := &types.NodeInformation{Id: checkNodeInfoId}
 			require.NotNil(resp.EncryptedNodeCredentials)
-			require.NotNil(resp.EncryptedNodeCredentialsSignature)
 			require.NotNil(resp.ServerEncryptionPublicKeyBytes)
 			require.Equal(types.KEYTYPE_X25519, resp.ServerEncryptionPublicKeyType)
-
-			// Now check the signature
-			caKey, err := x509.ParsePKIXPublicKey(roots.Current.PublicKeyPkix)
-			require.NoError(err)
-			require.True(ed25519.Verify(caKey.(ed25519.PublicKey), resp.EncryptedNodeCredentials, resp.EncryptedNodeCredentialsSignature))
 
 			// Now decrypt
 			require.NoError(localStorage.Load(ctx, checkNodeInfo))
@@ -403,13 +396,13 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 	storage, err := inmem.New(ctx)
 	require.NoError(t, err)
 
-	roots, err := rotation.RotateRootCertificates(ctx, storage)
+	_, err = rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
 	// This happens on the node
 	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
-	authzFetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithRegistrationChallenge(true))
+	authzFetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
 	require.NoError(t, err)
 	// Get a new req without the registration challenge
 	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
@@ -470,14 +463,8 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 			// Now run other checks depending on which path we took
 			checkNodeInfo := &types.NodeInformation{Id: baseNodeInfo.Id}
 			require.NotNil(resp.EncryptedNodeCredentials)
-			require.NotNil(resp.EncryptedNodeCredentialsSignature)
 			require.NotNil(resp.ServerEncryptionPublicKeyBytes)
 			require.Equal(types.KEYTYPE_X25519, resp.ServerEncryptionPublicKeyType)
-
-			// Now check the signature
-			caKey, err := x509.ParsePKIXPublicKey(roots.Current.PublicKeyPkix)
-			require.NoError(err)
-			require.True(ed25519.Verify(caKey.(ed25519.PublicKey), resp.EncryptedNodeCredentials, resp.EncryptedNodeCredentialsSignature))
 
 			// Now decrypt
 			require.NoError(storage.Load(ctx, checkNodeInfo))

@@ -106,15 +106,6 @@ func CreateServerLedActivationToken(
 		tokenNonce.ServerEncryptionPublicKeyBytes = encryptionPrivateKey.PublicKey().Bytes()
 		tokenNonce.ServerEncryptionPublicKeyType = types.KEYTYPE_X25519
 	}
-	// Add signer information to validate fetch bundle
-	{
-		rootCerts, err := types.LoadRootCertificates(ctx, storage, opt...)
-		if err != nil {
-			return "", "", fmt.Errorf("(%s) error fetching current root certificates: %w", op, err)
-		}
-		tokenNonce.SignerPublicKeyPkix = rootCerts.Current.PublicKeyPkix
-		tokenNonce.SignerPublicKeyType = rootCerts.Current.PrivateKeyType
-	}
 
 	// Now generate the returned value that will be transmitted by marshaling the token
 	returnedTokenBytes, err := proto.Marshal(tokenNonce)
@@ -221,6 +212,7 @@ func validateServerLedActivationToken(
 		if subtle.ConstantTimeCompare(challenge.Challenge, tokenEntry.RegistrationChallenge.Challenge) != 1 {
 			return nil, fmt.Errorf("(%s) invalid registration challenge nonce", op)
 		}
+		opt = append(opt, nodeenrollment.WithPrivateKey(ni.ServerEncryptionPrivateKeyBytes, uint(ni.ServerEncryptionPrivateKeyType)))
 	}
 
 	// Validate the time since creation

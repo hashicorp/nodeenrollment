@@ -38,7 +38,7 @@ func TestRotateNodeCredentials(t *testing.T) {
 	require.NoError(t, err)
 	currentNodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
-	req, err := currentNodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithRegistrationChallenge(true))
+	req, err := currentNodeCreds.CreateFetchNodeCredentialsRequest(ctx)
 	require.NoError(t, err)
 	currentNodeInfo, err := registration.AuthorizeNode(ctx, storage, req)
 	require.NoError(t, err)
@@ -59,7 +59,7 @@ func TestRotateNodeCredentials(t *testing.T) {
 		require.NoError(t, err)
 
 		// Get a signed request from the new credentials
-		fetchReq, err := newNodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithRegistrationChallenge(true))
+		fetchReq, err := newNodeCreds.CreateFetchNodeCredentialsRequest(ctx)
 		require.NoError(t, err)
 
 		// Encrypt the values to the server
