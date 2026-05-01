@@ -200,6 +200,7 @@ func validateServerLedActivationToken(
 			ServerEncryptionPrivateKeyType:  tokenEntry.ServerEncryptionPrivateKeyType,
 			EncryptionPublicKeyBytes:        reqInfo.EncryptionPublicKeyBytes,
 			EncryptionPublicKeyType:         reqInfo.EncryptionPublicKeyType,
+			CertificatePublicKeyPkix:        reqInfo.CertificatePublicKeyPkix,
 		}
 		var challenge types.RegistrationChallenge
 		if err := nodeenrollment.DecryptMessage(ctx, reqInfo.EncryptedRegistrationChallenge, ni, &challenge); err != nil {

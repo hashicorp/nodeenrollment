@@ -185,7 +185,7 @@ func attemptFetch(ctx context.Context, nonTlsConn net.Conn, creds *types.NodeCre
 		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
-	opt = append(opt, nodeenrollment.WithNoRegistrationChallenge(true))
+	opt = append(opt, nodeenrollment.WithoutRegistrationChallenge(true))
 	req, err := creds.CreateFetchNodeCredentialsRequest(ctx, opt...)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error creating fetch request: %w", op, err)

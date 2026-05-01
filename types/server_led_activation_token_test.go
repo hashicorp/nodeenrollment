@@ -150,6 +150,17 @@ func TestServerLedActivationToken_StoreLoad(t *testing.T) {
 			loadWrapper:         invalidWrapper,
 			loadWantErrContains: "message authentication failed",
 		},
+		{
+			// Old server-led tokens have no ServerEncryptionPrivateKeyBytes or
+			// RegistrationChallenge. New load code must handle them gracefully.
+			name: "load-valid-old-style-no-encryption-key",
+			storeSetupFn: func(s *types.ServerLedActivationToken) (*types.ServerLedActivationToken, string) {
+				s.ServerEncryptionPrivateKeyBytes = nil
+				s.ServerEncryptionPrivateKeyType = types.KEYTYPE_UNSPECIFIED
+				s.RegistrationChallenge = nil
+				return s, ""
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -5,8 +5,10 @@ package registration_test
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/x509"
 	"strings"
 	"testing"
 
@@ -53,17 +55,189 @@ func TestServerLedRegistration(t *testing.T) {
 	nonce, err := base58.FastBase58Decoding(strings.TrimPrefix(token, nodeenrollment.ServerLedActivationTokenPrefix))
 	require.NoError(err)
 
-	// We should now look for a ServerLedActivationToken value in storage and validate it
+	// Decode the tokenNonce to verify new protocol fields are present.
 	tokenNonce := new(types.ServerLedActivationTokenNonce)
 	require.NoError(proto.Unmarshal(nonce, tokenNonce))
+
+	// New protocol: activation token ID and server encryption public key must
+	// be present in the nonce given to the node.
+	assert.NotEmpty(tokenNonce.ActivationTokenId)
+	assert.Equal(tokenId, tokenNonce.ActivationTokenId)
+	assert.NotEmpty(tokenNonce.ServerEncryptionPublicKeyBytes)
+	assert.Equal(types.KEYTYPE_X25519, tokenNonce.ServerEncryptionPublicKeyType)
+	// Legacy fields must still be present for backwards compatibility.
+	assert.NotEmpty(tokenNonce.Nonce)
+	assert.NotEmpty(tokenNonce.HmacKeyBytes)
+
 	hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
 	idBytes := hm.Sum(tokenNonce.Nonce)
 	assert.Equal(tokenId, base58.FastBase58Encoding(idBytes))
-	tokenEntry, err := types.LoadServerLedActivationToken(ctx, storage, base58.FastBase58Encoding(idBytes), nodeenrollment.WithStorageWrapper(wrapper))
+
+	tokenEntry, err := types.LoadServerLedActivationToken(ctx, storage, tokenId, nodeenrollment.WithStorageWrapper(wrapper))
 	require.NoError(err)
 	require.NotNil(tokenEntry)
 	assert.NotEmpty(tokenEntry.Id)
 	assert.NotNil(tokenEntry.CreationTime)
 	assert.NotEmpty(tokenEntry.CreationTimeMarshaled)
 	assert.Empty(tokenEntry.WrappingKeyId)
+	// New protocol: server encryption private key and challenge must be stored.
+	assert.NotEmpty(tokenEntry.ServerEncryptionPrivateKeyBytes)
+	assert.Equal(types.KEYTYPE_X25519, tokenEntry.ServerEncryptionPrivateKeyType)
+	assert.NotNil(tokenEntry.RegistrationChallenge)
+	assert.NotEmpty(tokenEntry.RegistrationChallenge.Challenge)
+	// The challenge stored on the server should equal the nonce sent to the node.
+	assert.Equal(tokenNonce.Nonce, tokenEntry.RegistrationChallenge.Challenge)
+}
+
+// TestServerLedRegistration_EndToEnd exercises the full new-protocol
+// server-led flow: token creation → node creates encrypted challenge →
+// FetchNodeCredentials validates → HandleFetchNodeCredentialsResponse succeeds.
+func TestServerLedRegistration_EndToEnd(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	storage, err := inmem.New(ctx)
+	require.NoError(t, err)
+
+	_, err = rotation.RotateRootCertificates(ctx, storage)
+	require.NoError(t, err)
+
+	tokenId, activationToken, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{})
+	require.NoError(t, err)
+	assert.NotEmpty(t, tokenId)
+
+	// Node side: create credentials and a fetch request using the activation token.
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
+	require.NoError(t, err)
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx,
+		nodeenrollment.WithActivationToken(activationToken),
+	)
+	require.NoError(t, err)
+
+	// Server side: FetchNodeCredentials validates the encrypted challenge and
+	// authorizes the node.
+	resp, err := registration.FetchNodeCredentials(ctx, storage, fetchReq)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NotEmpty(t, resp.EncryptedNodeCredentials)
+
+	// Node side: process the response. For server-led, HandleFetchNodeCredentialsResponse
+	// does not re-check the challenge (the server already validated it).
+	updatedCreds, err := nodeCreds.HandleFetchNodeCredentialsResponse(ctx, storage, resp,
+		nodeenrollment.WithActivationToken(activationToken),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, updatedCreds)
+	assert.Len(t, updatedCreds.CertificateBundles, 2)
+	assert.Nil(t, updatedCreds.RegistrationChallenge)
+}
+
+// TestServerLedRegistration_BadChallenge verifies that FetchNodeCredentials
+// rejects a request that carries a tampered EncryptedRegistrationChallenge.
+func TestServerLedRegistration_BadChallenge(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	storage, err := inmem.New(ctx)
+	require.NoError(t, err)
+
+	_, err = rotation.RotateRootCertificates(ctx, storage)
+	require.NoError(t, err)
+
+	_, activationToken, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{})
+	require.NoError(t, err)
+
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
+	require.NoError(t, err)
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx,
+		nodeenrollment.WithActivationToken(activationToken),
+	)
+	require.NoError(t, err)
+
+	// Tamper with the EncryptedRegistrationChallenge inside the bundle.
+	var info types.FetchNodeCredentialsInfo
+	require.NoError(t, proto.Unmarshal(fetchReq.Bundle, &info))
+	if len(info.EncryptedRegistrationChallenge) > 10 {
+		info.EncryptedRegistrationChallenge[5] ^= 0xff
+		info.EncryptedRegistrationChallenge[9] ^= 0xff
+	} else {
+		info.EncryptedRegistrationChallenge = []byte("notvalidencrypted")
+	}
+	fetchReq.Bundle, err = proto.Marshal(&info)
+	require.NoError(t, err)
+	// Re-sign with the node's key (simulating a local modification, not a
+	// wire-level tamper, so the signature still validates).
+	certPrivKeyRaw, err := x509.ParsePKCS8PrivateKey(nodeCreds.CertificatePrivateKeyPkcs8)
+	require.NoError(t, err)
+	certPrivKey := certPrivKeyRaw.(ed25519.PrivateKey)
+	fetchReq.BundleSignature = ed25519.Sign(certPrivKey, fetchReq.Bundle)
+
+	_, err = registration.FetchNodeCredentials(ctx, storage, fetchReq)
+	require.Error(t, err)
+	// Should fail during challenge decryption or validation.
+	assert.True(t,
+		strings.Contains(err.Error(), "decrypting registration challenge") ||
+			strings.Contains(err.Error(), "invalid registration challenge"),
+		"unexpected error: %v", err,
+	)
+}
+
+// TestServerLedRegistration_OldWorkerBackwardsCompat verifies that an
+// old-style server-led request (Nonce = marshaled proto tokenNonce, no
+// EncryptedRegistrationChallenge, no ActivationTokenId) is correctly routed
+// to the server-led path and succeeds on a new server.
+func TestServerLedRegistration_OldWorkerBackwardsCompat(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	storage, err := inmem.New(ctx)
+	require.NoError(t, err)
+
+	_, err = rotation.RotateRootCertificates(ctx, storage)
+	require.NoError(t, err)
+
+	tokenId, activationToken, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{})
+	require.NoError(t, err)
+	assert.NotEmpty(t, tokenId)
+
+	// Old worker: base58-decode the whole token and stuff it into Nonce, just
+	// like old client code did (ignoring new fields it doesn't know about).
+	rawNonce, err := base58.FastBase58Decoding(strings.TrimPrefix(activationToken, nodeenrollment.ServerLedActivationTokenPrefix))
+	require.NoError(t, err)
+
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
+	require.NoError(t, err)
+
+	// Build a new-style request but override it to look like an old one.
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	require.NoError(t, err)
+	var info types.FetchNodeCredentialsInfo
+	require.NoError(t, proto.Unmarshal(fetchReq.Bundle, &info))
+	// Old worker puts raw bytes in Nonce, not in ActivationTokenId/EncryptedRegistrationChallenge.
+	info.Nonce = rawNonce
+	info.ActivationTokenId = ""
+	info.EncryptedRegistrationChallenge = nil
+	info.RegistrationChallenge = nil
+	fetchReq.Bundle, err = proto.Marshal(&info)
+	require.NoError(t, err)
+	certPrivKeyRaw2, err := x509.ParsePKCS8PrivateKey(nodeCreds.CertificatePrivateKeyPkcs8)
+	require.NoError(t, err)
+	certPrivKey2 := certPrivKeyRaw2.(ed25519.PrivateKey)
+	fetchReq.BundleSignature = ed25519.Sign(certPrivKey2, fetchReq.Bundle)
+
+	// FetchNodeCredentials must route this to the server-led path (not node-led)
+	// and succeed without challenge validation (old protocol path).
+	resp, err := registration.FetchNodeCredentials(ctx, storage, fetchReq)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NotEmpty(t, resp.EncryptedNodeCredentials)
+
+	// Load the stored node info and decrypt the response to confirm success.
+	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
+	require.NoError(t, err)
+	storedInfo := &types.NodeInformation{Id: keyId}
+	require.NoError(t, storage.Load(ctx, storedInfo))
+	var receivedCreds types.NodeCredentials
+	require.NoError(t, nodeenrollment.DecryptMessage(ctx, resp.EncryptedNodeCredentials, storedInfo, &receivedCreds))
+	assert.Len(t, receivedCreds.CertificateBundles, 2)
 }

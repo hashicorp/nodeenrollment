@@ -545,6 +545,17 @@ func TestNodeCredentials_CreateFetchNodeCredentialsServerLed(t *testing.T) {
 			},
 		},
 		{
+			// WithoutRegistrationChallenge suppresses the RegistrationChallenge
+			// in the bundle so a MITM cannot read it (node-led fetch step).
+			name: "valid-no-registration-challenge",
+			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+				return nodeCreds, ""
+			},
+			opts: []nodeenrollment.Option{
+				nodeenrollment.WithoutRegistrationChallenge(true),
+			},
+		},
+		{
 			name: "valid-with-wrapper",
 			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
 				return nodeCreds, ""
@@ -618,6 +629,16 @@ func TestNodeCredentials_CreateFetchNodeCredentialsServerLed(t *testing.T) {
 				assert.Equal(n.RegistrationNonce, regInfo.Nonce)
 				assert.EqualValues(applicationSpecificParamsMap, regInfo.ApplicationSpecificParams.AsMap())
 			}
+
+			if opts.WithoutRegistrationChallenge {
+				// Fetch step: RegistrationChallenge must not be included in the
+				// bundle so a MITM cannot read and forge it.
+				assert.Nil(fetchInfo.RegistrationChallenge)
+			} else if opts.WithActivationToken == "" && nodeenrollment.IsNil(opts.WithRegistrationWrapper) {
+				// Authorization step or plain node-led: challenge should be present.
+				assert.NotNil(fetchInfo.RegistrationChallenge)
+				assert.NotEmpty(fetchInfo.RegistrationChallenge.Challenge)
+			}
 		})
 	}
 }
@@ -686,6 +707,7 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 		nodeCredsSetupFn func(*types.NodeCredentials) (*types.NodeCredentials, string)
 		respSetupFn      func(*types.FetchNodeCredentialsResponse) (*types.FetchNodeCredentialsResponse, string)
 		wantErrContains  string
+		opts             []nodeenrollment.Option
 	}{
 		{
 			name: "invalid-nodecreds-nil",
@@ -743,14 +765,86 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 			name:    "valid",
 			storage: storage,
 		},
+		{
+			// Node-led path: server response has no EncryptedRegistrationChallenge.
+			name: "invalid-missing-encrypted-challenge",
+			respSetupFn: func(in *types.FetchNodeCredentialsResponse) (*types.FetchNodeCredentialsResponse, string) {
+				// Re-create serverNodeCreds without EncryptedRegistrationChallenge.
+				noChallengeCreds := &types.NodeCredentials{
+					ServerEncryptionPublicKeyBytes: serverPubKey.Bytes(),
+					ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
+					RegistrationNonce:              nodeCreds.RegistrationNonce,
+					EncryptedRegistrationChallenge: nil,
+					CertificateBundles:             serverNodeCreds.CertificateBundles,
+				}
+				enc, err := nodeenrollment.EncryptMessage(ctx, noChallengeCreds, nodeInfo)
+				require.NoError(t, err)
+				return &types.FetchNodeCredentialsResponse{
+					ServerEncryptionPublicKeyBytes: serverPubKey.Bytes(),
+					ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
+					EncryptedNodeCredentials:       enc,
+				}, "expected encrypted registration challenge in server response but it was nil"
+			},
+			storage: storage,
+		},
+		{
+			// Node-led path: server response has a challenge that doesn't match.
+			name: "invalid-wrong-challenge",
+			respSetupFn: func(in *types.FetchNodeCredentialsResponse) (*types.FetchNodeCredentialsResponse, string) {
+				wrongChallenge, err := nodeenrollment.EncryptMessage(ctx, &types.RegistrationChallenge{
+					Challenge: []byte("this is not the right challenge!"),
+				}, nodeInfo)
+				require.NoError(t, err)
+				wrongCreds := &types.NodeCredentials{
+					ServerEncryptionPublicKeyBytes: serverPubKey.Bytes(),
+					ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
+					RegistrationNonce:              nodeCreds.RegistrationNonce,
+					EncryptedRegistrationChallenge: wrongChallenge,
+					CertificateBundles:             serverNodeCreds.CertificateBundles,
+				}
+				enc, err := nodeenrollment.EncryptMessage(ctx, wrongCreds, nodeInfo)
+				require.NoError(t, err)
+				return &types.FetchNodeCredentialsResponse{
+					ServerEncryptionPublicKeyBytes: serverPubKey.Bytes(),
+					ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
+					EncryptedNodeCredentials:       enc,
+				}, "challenge does not match"
+			},
+			storage: storage,
+		},
+		{
+			// Server-led path: WithActivationToken skips challenge validation entirely.
+			name: "valid-server-led-no-challenge-check",
+			respSetupFn: func(in *types.FetchNodeCredentialsResponse) (*types.FetchNodeCredentialsResponse, string) {
+				// Build response without EncryptedRegistrationChallenge.
+				noChallengeCreds := &types.NodeCredentials{
+					ServerEncryptionPublicKeyBytes: serverPubKey.Bytes(),
+					ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
+					RegistrationNonce:              nodeCreds.RegistrationNonce,
+					EncryptedRegistrationChallenge: nil,
+					CertificateBundles:             serverNodeCreds.CertificateBundles,
+				}
+				enc, err := nodeenrollment.EncryptMessage(ctx, noChallengeCreds, nodeInfo)
+				require.NoError(t, err)
+				return &types.FetchNodeCredentialsResponse{
+					ServerEncryptionPublicKeyBytes: serverPubKey.Bytes(),
+					ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
+					EncryptedNodeCredentials:       enc,
+				}, ""
+			},
+			storage: storage,
+			opts:    []nodeenrollment.Option{nodeenrollment.WithActivationToken("sometoken")},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require, assert := require.New(t), assert.New(t)
-			n := nodeCreds
+			// Always clone to prevent tests from mutating shared state (e.g.,
+			// HandleFetchNodeCredentialsResponse clears RegistrationChallenge on success).
+			n := proto.Clone(nodeCreds).(*types.NodeCredentials)
 			var wantNodeCredsErrContains string
 			if tt.nodeCredsSetupFn != nil {
-				n, wantNodeCredsErrContains = tt.nodeCredsSetupFn(proto.Clone(nodeCreds).(*types.NodeCredentials))
+				n, wantNodeCredsErrContains = tt.nodeCredsSetupFn(n)
 			}
 
 			f := fetchNodeCredsResp
@@ -759,7 +853,7 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 				f, wantFetchRespErrContains = tt.respSetupFn(proto.Clone(f).(*types.FetchNodeCredentialsResponse))
 			}
 
-			_, err = n.HandleFetchNodeCredentialsResponse(ctx, tt.storage, f)
+			_, err = n.HandleFetchNodeCredentialsResponse(ctx, tt.storage, f, tt.opts...)
 			if tt.wantErrContains != "" {
 				require.Error(err)
 				assert.Contains(err.Error(), tt.wantErrContains)

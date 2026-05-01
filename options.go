@@ -52,7 +52,7 @@ type Options struct {
 	WithActivationToken                                   string
 	WithPrivateKey                                        []byte
 	WithPrivateKeyType                                    uint
-	WithNoRegistrationChallenge                           bool
+	WithoutRegistrationChallenge                          bool
 	WithMaximumServerLedActivationTokenLifetime           time.Duration
 	WithNativeConns                                       bool
 	WithLogger                                            hclog.Logger
@@ -254,14 +254,14 @@ func WithPrivateKey(withKey []byte, withType uint) Option {
 	}
 }
 
-// WithNoRegistrationChallenge, if set to true, indicates that the request
+// WithoutRegistrationChallenge, if set to true, indicates that the request
 // should not require a registration challenge. It's a negative because it's
 // only in internal cases where you'd want this; for client code you'd want the
 // registration challenge included as part of the bundle to submit for
 // registration. However, when attempting a fetch, this should not be included.
-func WithNoRegistrationChallenge(with bool) Option {
+func WithoutRegistrationChallenge(with bool) Option {
 	return func(o *Options) error {
-		o.WithNoRegistrationChallenge = with
+		o.WithoutRegistrationChallenge = with
 		return nil
 	}
 }

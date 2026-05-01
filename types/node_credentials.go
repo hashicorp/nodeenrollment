@@ -450,7 +450,7 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		NotBefore:                        timestamppb.New(now),
 		NotAfter:                         timestamppb.New(now.Add(nodeenrollment.DefaultFetchCredentialsLifetime)),
 	}
-	if !opts.WithNoRegistrationChallenge {
+	if !opts.WithoutRegistrationChallenge {
 		reqInfo.RegistrationChallenge = n.RegistrationChallenge
 	}
 
