@@ -104,7 +104,7 @@ func Dial(
 			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
 
-		fetchResp, err := attemptFetch(ctx, nonTlsConn, creds, opt...)
+		fetchResp, err := attemptFetch(ctx, storage, nonTlsConn, creds, opt...)
 		closeErr := nonTlsConn.Close()
 		if closeErr != nil {
 			err = errors.Join(err, fmt.Errorf("(%s) error closing initial connection: %w", op, closeErr))
@@ -168,7 +168,7 @@ func Dial(
 // handshake, reading the resulting response
 //
 // If not authorized, returns nodeenrollment.ErrNotAuthorized
-func attemptFetch(ctx context.Context, nonTlsConn net.Conn, creds *types.NodeCredentials, opt ...nodeenrollment.Option) (*types.FetchNodeCredentialsResponse, error) {
+func attemptFetch(ctx context.Context, storage nodeenrollment.Storage, nonTlsConn net.Conn, creds *types.NodeCredentials, opt ...nodeenrollment.Option) (*types.FetchNodeCredentialsResponse, error) {
 	const op = "nodeenrollment.protocol.attemptFetch"
 
 	switch {
@@ -185,7 +185,8 @@ func attemptFetch(ctx context.Context, nonTlsConn net.Conn, creds *types.NodeCre
 		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
-	req, err := creds.CreateFetchNodeCredentialsRequest(ctx, opt...)
+	opt = append(opt, nodeenrollment.WithoutRegistrationChallenge(true))
+	req, err := creds.CreateFetchNodeCredentialsRequest(ctx, storage, opt...)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error creating fetch request: %w", op, err)
 	}
