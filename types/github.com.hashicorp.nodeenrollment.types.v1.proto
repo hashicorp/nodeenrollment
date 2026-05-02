@@ -369,8 +369,8 @@ message ServerLedActivationToken {
   KEYTYPE server_encryption_private_key_type  = 13 [json_name="server_encryption_private_key_type"];
 
   // Stored challenge information
-  RegistrationChallenge registration_challenge           = 23 [json_name="registration_challenge"];
-  bytes                 encrypted_registration_challenge = 24 [json_name="encrypted_registration_challenge"];
+  RegistrationChallenge registration_challenge       = 23 [json_name="registration_challenge"];
+  bytes                 registration_challenge_bytes = 24 [json_name="registration_challenge_bytes"];
 
   // If set, the key ID of the wrapping key used to encrypt the private keys
   string wrapping_key_id = 30 [json_name="wrapping_key_id"];

@@ -1636,8 +1636,8 @@ type ServerLedActivationToken struct {
 	ServerEncryptionPrivateKeyBytes []byte  `protobuf:"bytes,12,opt,name=server_encryption_private_key_bytes,proto3" json:"server_encryption_private_key_bytes,omitempty"`
 	ServerEncryptionPrivateKeyType  KEYTYPE `protobuf:"varint,13,opt,name=server_encryption_private_key_type,proto3,enum=github.com.hashicorp.nodeenrollment.types.v1.KEYTYPE" json:"server_encryption_private_key_type,omitempty"`
 	// Stored challenge information
-	RegistrationChallenge          *RegistrationChallenge `protobuf:"bytes,23,opt,name=registration_challenge,proto3" json:"registration_challenge,omitempty"`
-	EncryptedRegistrationChallenge []byte                 `protobuf:"bytes,24,opt,name=encrypted_registration_challenge,proto3" json:"encrypted_registration_challenge,omitempty"`
+	RegistrationChallenge      *RegistrationChallenge `protobuf:"bytes,23,opt,name=registration_challenge,proto3" json:"registration_challenge,omitempty"`
+	RegistrationChallengeBytes []byte                 `protobuf:"bytes,24,opt,name=registration_challenge_bytes,proto3" json:"registration_challenge_bytes,omitempty"`
 	// If set, the key ID of the wrapping key used to encrypt the private keys
 	WrappingKeyId string `protobuf:"bytes,30,opt,name=wrapping_key_id,proto3" json:"wrapping_key_id,omitempty"`
 	// State is data that the implementor of a Store can use to round-trip data
@@ -1720,9 +1720,9 @@ func (x *ServerLedActivationToken) GetRegistrationChallenge() *RegistrationChall
 	return nil
 }
 
-func (x *ServerLedActivationToken) GetEncryptedRegistrationChallenge() []byte {
+func (x *ServerLedActivationToken) GetRegistrationChallengeBytes() []byte {
 	if x != nil {
-		return x.EncryptedRegistrationChallenge
+		return x.RegistrationChallengeBytes
 	}
 	return nil
 }
@@ -1948,7 +1948,7 @@ const file_types_github_com_hashicorp_nodeenrollment_types_v1_proto_rawDesc = ""
 	"\x1ccertificate_private_key_type\x18\x05 \x01(\x0e25.github.com.hashicorp.nodeenrollment.types.v1.KEYTYPER\x1ccertificate_private_key_type\x12q\n" +
 	"\x13certificate_bundles\x18\x06 \x03(\v2?.github.com.hashicorp.nodeenrollment.types.v1.CertificateBundleR\x13certificate_bundles\x12;\n" +
 	"\fclient_state\x182 \x01(\v2\x17.google.protobuf.StructR\fclient_state\"\x1e\n" +
-	"\x1cServerLedRegistrationRequest\"\xa2\x05\n" +
+	"\x1cServerLedRegistrationRequest\"\x9a\x05\n" +
 	"\x18ServerLedActivationToken\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12@\n" +
 	"\rcreation_time\x18\n" +
@@ -1956,8 +1956,8 @@ const file_types_github_com_hashicorp_nodeenrollment_types_v1_proto_rawDesc = ""
 	"\x17creation_time_marshaled\x18\v \x01(\fR\x17creation_time_marshaled\x12P\n" +
 	"#server_encryption_private_key_bytes\x18\f \x01(\fR#server_encryption_private_key_bytes\x12\x85\x01\n" +
 	"\"server_encryption_private_key_type\x18\r \x01(\x0e25.github.com.hashicorp.nodeenrollment.types.v1.KEYTYPER\"server_encryption_private_key_type\x12{\n" +
-	"\x16registration_challenge\x18\x17 \x01(\v2C.github.com.hashicorp.nodeenrollment.types.v1.RegistrationChallengeR\x16registration_challenge\x12J\n" +
-	" encrypted_registration_challenge\x18\x18 \x01(\fR encrypted_registration_challenge\x12(\n" +
+	"\x16registration_challenge\x18\x17 \x01(\v2C.github.com.hashicorp.nodeenrollment.types.v1.RegistrationChallengeR\x16registration_challenge\x12B\n" +
+	"\x1cregistration_challenge_bytes\x18\x18 \x01(\fR\x1cregistration_challenge_bytes\x12(\n" +
 	"\x0fwrapping_key_id\x18\x1e \x01(\tR\x0fwrapping_key_id\x12-\n" +
 	"\x05state\x182 \x01(\v2\x17.google.protobuf.StructR\x05state\"\xe5\x02\n" +
 	"\x1dServerLedActivationTokenNonce\x12\x14\n" +
