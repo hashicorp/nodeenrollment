@@ -175,45 +175,62 @@ func validateServerLedActivationToken(
 		return nil, fmt.Errorf("(%s) activation token from lookup is nil: %w", op, nodeenrollment.ErrNotFound)
 	}
 
-	if len(tokenEntry.ServerEncryptionPrivateKeyBytes) != 0 && len(reqInfo.EncryptedRegistrationChallenge) != 0 {
-		// If we have server encryption private key bytes already it's the new
-		// updated protocol with the encrypted challenge; if not, it's the
-		// legacy protocol where we just check the nonce directly. In the new
-		// protocol, we require the encrypted challenge and encryption public
-		// key bytes to be present in the request, and we decrypt the challenge
-		// and validate it against the stored value. In the legacy protocol, we
-		// just validate that the nonce from the request matches the stored
-		// challenge nonce.
+	if tokenEntry.RegistrationChallenge != nil {
 		switch {
-		case len(reqInfo.EncryptionPublicKeyBytes) == 0:
-			return nil, fmt.Errorf("(%s) missing encryption public key bytes in req", op)
-		case len(reqInfo.EncryptedRegistrationChallenge) == 0:
-			return nil, fmt.Errorf("(%s) missing encrypted registration challenge req", op)
-		case tokenEntry.RegistrationChallenge == nil:
-			return nil, fmt.Errorf("(%s) missing registration challenge in activation token entry", op)
-		case tokenEntry.RegistrationChallenge.Challenge == nil:
+		case len(tokenEntry.RegistrationChallenge.Challenge) == 0:
 			return nil, fmt.Errorf("(%s) missing registration challenge nonce in activation token entry", op)
 		}
-		// Create a temp node information struct for easy decryption
-		ni := &types.NodeInformation{
-			ServerEncryptionPrivateKeyBytes: tokenEntry.ServerEncryptionPrivateKeyBytes,
-			ServerEncryptionPrivateKeyType:  tokenEntry.ServerEncryptionPrivateKeyType,
-			EncryptionPublicKeyBytes:        reqInfo.EncryptionPublicKeyBytes,
-			EncryptionPublicKeyType:         reqInfo.EncryptionPublicKeyType,
-			CertificatePublicKeyPkix:        reqInfo.CertificatePublicKeyPkix,
+
+		if len(reqInfo.EncryptedRegistrationChallenge) > 0 {
+			// New protocol: validate proof of the stored challenge encrypted to
+			// the server's activation-token key.
+			switch {
+			case len(tokenEntry.ServerEncryptionPrivateKeyBytes) == 0:
+				return nil, fmt.Errorf("(%s) missing server encryption private key bytes in activation token entry", op)
+			case len(reqInfo.EncryptionPublicKeyBytes) == 0:
+				return nil, fmt.Errorf("(%s) missing encryption public key bytes in req", op)
+			}
+			ni := &types.NodeInformation{
+				ServerEncryptionPrivateKeyBytes: tokenEntry.ServerEncryptionPrivateKeyBytes,
+				ServerEncryptionPrivateKeyType:  tokenEntry.ServerEncryptionPrivateKeyType,
+				EncryptionPublicKeyBytes:        reqInfo.EncryptionPublicKeyBytes,
+				EncryptionPublicKeyType:         reqInfo.EncryptionPublicKeyType,
+				CertificatePublicKeyPkix:        reqInfo.CertificatePublicKeyPkix,
+			}
+			var challenge types.RegistrationChallenge
+			if err := nodeenrollment.DecryptMessage(ctx, reqInfo.EncryptedRegistrationChallenge, ni, &challenge); err != nil {
+				return nil, fmt.Errorf("(%s) error decrypting registration challenge: %w", op, err)
+			}
+			if len(challenge.Challenge) == 0 {
+				return nil, fmt.Errorf("(%s) decrypted registration challenge nonce is empty", op)
+			}
+			if subtle.ConstantTimeCompare(challenge.Challenge, tokenEntry.RegistrationChallenge.Challenge) != 1 {
+				return nil, fmt.Errorf("(%s) invalid registration challenge nonce", op)
+			}
+		} else {
+			// Legacy worker fallback for controller-first upgrades: require the
+			// full legacy token material and validate it against the stored
+			// challenge. The public activation token ID alone is not sufficient.
+			switch {
+			case len(tokenNonce.Nonce) == 0:
+				return nil, fmt.Errorf("(%s) missing legacy token nonce", op)
+			case len(tokenNonce.HmacKeyBytes) == 0:
+				return nil, fmt.Errorf("(%s) missing legacy token hmac key bytes", op)
+			}
+			hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
+			idBytes := hm.Sum(tokenNonce.Nonce)
+			legacyActivationTokenId := base58.FastBase58Encoding(idBytes)
+			if subtle.ConstantTimeCompare([]byte(legacyActivationTokenId), []byte(activationTokenId)) != 1 {
+				return nil, fmt.Errorf("(%s) invalid legacy activation token id", op)
+			}
+			if subtle.ConstantTimeCompare(tokenNonce.Nonce, tokenEntry.RegistrationChallenge.Challenge) != 1 {
+				return nil, fmt.Errorf("(%s) invalid legacy registration challenge nonce", op)
+			}
 		}
-		var challenge types.RegistrationChallenge
-		if err := nodeenrollment.DecryptMessage(ctx, reqInfo.EncryptedRegistrationChallenge, ni, &challenge); err != nil {
-			return nil, fmt.Errorf("(%s) error decrypting registration challenge: %w", op, err)
+
+		if len(tokenEntry.ServerEncryptionPrivateKeyBytes) > 0 && tokenEntry.ServerEncryptionPrivateKeyType != types.KEYTYPE_UNSPECIFIED {
+			opt = append(opt, nodeenrollment.WithPrivateKey(tokenEntry.ServerEncryptionPrivateKeyBytes, uint(tokenEntry.ServerEncryptionPrivateKeyType)))
 		}
-		if challenge.Challenge == nil {
-			return nil, fmt.Errorf("(%s) decrypted registration challenge nonce is nil", op)
-		}
-		// Validate challenge
-		if subtle.ConstantTimeCompare(challenge.Challenge, tokenEntry.RegistrationChallenge.Challenge) != 1 {
-			return nil, fmt.Errorf("(%s) invalid registration challenge nonce", op)
-		}
-		opt = append(opt, nodeenrollment.WithPrivateKey(ni.ServerEncryptionPrivateKeyBytes, uint(ni.ServerEncryptionPrivateKeyType)))
 	}
 
 	// Validate the time since creation

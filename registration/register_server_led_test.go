@@ -182,6 +182,51 @@ func TestServerLedRegistration_BadChallenge(t *testing.T) {
 	)
 }
 
+// TestServerLedRegistration_TokenIdOnlyRejected verifies that observing the
+// activation token ID is not enough to redeem a new-protocol server-led token.
+func TestServerLedRegistration_TokenIdOnlyRejected(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	storage, err := inmem.New(ctx)
+	require.NoError(t, err)
+
+	_, err = rotation.RotateRootCertificates(ctx, storage)
+	require.NoError(t, err)
+
+	tokenId, _, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{})
+	require.NoError(t, err)
+	require.NotEmpty(t, tokenId)
+
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
+	require.NoError(t, err)
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	require.NoError(t, err)
+
+	tokenNonce, err := proto.Marshal(&types.ServerLedActivationTokenNonce{
+		ActivationTokenId: tokenId,
+	})
+	require.NoError(t, err)
+
+	var info types.FetchNodeCredentialsInfo
+	require.NoError(t, proto.Unmarshal(fetchReq.Bundle, &info))
+	info.Nonce = tokenNonce
+	info.ActivationTokenId = ""
+	info.EncryptedRegistrationChallenge = nil
+	info.RegistrationChallenge = nil
+	fetchReq.Bundle, err = proto.Marshal(&info)
+	require.NoError(t, err)
+
+	certPrivKeyRaw, err := x509.ParsePKCS8PrivateKey(nodeCreds.CertificatePrivateKeyPkcs8)
+	require.NoError(t, err)
+	certPrivKey := certPrivKeyRaw.(ed25519.PrivateKey)
+	fetchReq.BundleSignature = ed25519.Sign(certPrivKey, fetchReq.Bundle)
+
+	_, err = registration.FetchNodeCredentials(ctx, storage, fetchReq)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing legacy token nonce")
+}
+
 // TestServerLedRegistration_OldWorkerBackwardsCompat verifies that an
 // old-style server-led request (Nonce = marshaled proto tokenNonce, no
 // EncryptedRegistrationChallenge, no ActivationTokenId) is correctly routed
@@ -226,7 +271,7 @@ func TestServerLedRegistration_OldWorkerBackwardsCompat(t *testing.T) {
 	fetchReq.BundleSignature = ed25519.Sign(certPrivKey2, fetchReq.Bundle)
 
 	// FetchNodeCredentials must route this to the server-led path (not node-led)
-	// and succeed without challenge validation (old protocol path).
+	// and succeed via the legacy nonce/HMAC fallback.
 	resp, err := registration.FetchNodeCredentials(ctx, storage, fetchReq)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
