@@ -901,7 +901,6 @@ type WrappingRegistrationFlowInfo struct {
 	state                     protoimpl.MessageState `protogen:"open.v1"`
 	CertificatePublicKeyPkix  []byte                 `protobuf:"bytes,2,opt,name=certificate_public_key_pkix,proto3" json:"certificate_public_key_pkix,omitempty"`
 	Nonce                     []byte                 `protobuf:"bytes,20,opt,name=nonce,proto3" json:"nonce,omitempty"`
-	RegistrationChallenge     []byte                 `protobuf:"bytes,23,opt,name=registration_challenge,proto3" json:"registration_challenge,omitempty"`
 	ApplicationSpecificParams *structpb.Struct       `protobuf:"bytes,50,opt,name=application_specific_params,json=applicationSpecificParams,proto3" json:"application_specific_params,omitempty"`
 	unknownFields             protoimpl.UnknownFields
 	sizeCache                 protoimpl.SizeCache
@@ -947,13 +946,6 @@ func (x *WrappingRegistrationFlowInfo) GetCertificatePublicKeyPkix() []byte {
 func (x *WrappingRegistrationFlowInfo) GetNonce() []byte {
 	if x != nil {
 		return x.Nonce
-	}
-	return nil
-}
-
-func (x *WrappingRegistrationFlowInfo) GetRegistrationChallenge() []byte {
-	if x != nil {
-		return x.RegistrationChallenge
 	}
 	return nil
 }
@@ -1895,11 +1887,10 @@ const file_types_github_com_hashicorp_nodeenrollment_types_v1_proto_rawDesc = ""
 	" encrypted_registration_challenge\x18\x18 \x01(\fR encrypted_registration_challenge\x12(\n" +
 	"\x0fwrapping_key_id\x18\x1e \x01(\tR\x0fwrapping_key_id\x12-\n" +
 	"\x05state\x182 \x01(\v2\x17.google.protobuf.StructR\x05state\x12u\n" +
-	"\x17previous_encryption_key\x18< \x01(\v2;.github.com.hashicorp.nodeenrollment.types.v1.EncryptionKeyR\x17previous_encryption_key\"\x87\x02\n" +
+	"\x17previous_encryption_key\x18< \x01(\v2;.github.com.hashicorp.nodeenrollment.types.v1.EncryptionKeyR\x17previous_encryption_key\"\xcf\x01\n" +
 	"\x1cWrappingRegistrationFlowInfo\x12@\n" +
 	"\x1bcertificate_public_key_pkix\x18\x02 \x01(\fR\x1bcertificate_public_key_pkix\x12\x14\n" +
-	"\x05nonce\x18\x14 \x01(\fR\x05nonce\x126\n" +
-	"\x16registration_challenge\x18\x17 \x01(\fR\x16registration_challenge\x12W\n" +
+	"\x05nonce\x18\x14 \x01(\fR\x05nonce\x12W\n" +
 	"\x1bapplication_specific_params\x182 \x01(\v2\x17.google.protobuf.StructR\x19applicationSpecificParams\"\xce\b\n" +
 	"\x18FetchNodeCredentialsInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12@\n" +
@@ -1923,11 +1914,11 @@ const file_types_github_com_hashicorp_nodeenrollment_types_v1_proto_rawDesc = ""
 	"\x06bundle\x18\x1c \x01(\fR\x06bundle\x12*\n" +
 	"\x10bundle_signature\x18\x1d \x01(\fR\x10bundle_signature\x12\\\n" +
 	")rewrapped_wrapping_registration_flow_info\x18  \x01(\fR)rewrapped_wrapping_registration_flow_info\x12,\n" +
-	"\x11rewrapping_key_id\x18! \x01(\tR\x11rewrapping_key_id\"\xa5\x02\n" +
+	"\x11rewrapping_key_id\x18! \x01(\tR\x11rewrapping_key_id\"\xab\x02\n" +
 	"\x1cFetchNodeCredentialsResponse\x12G\n" +
 	"\"server_encryption_public_key_bytes\x18\f \x01(\fR\x1bencryption_public_key_bytes\x12|\n" +
 	"!server_encryption_public_key_type\x18\r \x01(\x0e25.github.com.hashicorp.nodeenrollment.types.v1.KEYTYPER\x1aencryption_public_key_type\x12>\n" +
-	"\x1aencrypted_node_credentials\x18( \x01(\fR\x1aencrypted_node_credentials\"\xd6\x01\n" +
+	"\x1aencrypted_node_credentials\x18( \x01(\fR\x1aencrypted_node_credentialsJ\x04\b)\x10*\"\xd6\x01\n" +
 	"\x1cRotateNodeCredentialsRequest\x12@\n" +
 	"\x1bcertificate_public_key_pkix\x18\x02 \x01(\fR\x1bcertificate_public_key_pkix\x12\x18\n" +
 	"\anode_id\x18\a \x01(\tR\anode_id\x12Z\n" +

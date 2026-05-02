@@ -199,8 +199,7 @@ message NodeCredentials {
 message WrappingRegistrationFlowInfo {
   bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
 
-  bytes nonce                  = 20;
-  bytes registration_challenge = 23 [json_name="registration_challenge"];
+  bytes nonce = 20;
 
   google.protobuf.Struct application_specific_params = 50;
 }
@@ -274,6 +273,8 @@ message FetchNodeCredentialsResponse {
   KEYTYPE server_encryption_public_key_type  = 13 [json_name="encryption_public_key_type"];
 
   bytes encrypted_node_credentials = 40 [json_name="encrypted_node_credentials"];
+
+  reserved 41;
 }
 
 // RotateNodeCredentialsRequest is the message used when a node wants to rotate

@@ -238,6 +238,9 @@ func LoadNodeCredentials(ctx context.Context, storage nodeenrollment.Storage, id
 			if err != nil {
 				return nil, fmt.Errorf("(%s) error decrypting registration nonce: %w", op, err)
 			}
+			if nodeCreds.RegistrationChallenge == nil {
+				nodeCreds.RegistrationChallenge = &RegistrationChallenge{}
+			}
 			if err := proto.Unmarshal(pt, nodeCreds.RegistrationChallenge); err != nil {
 				return nil, fmt.Errorf("(%s) error unmarshaling registration challenge: %w", op, err)
 			}
@@ -572,8 +575,15 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
-	n.ServerEncryptionPublicKeyBytes = input.ServerEncryptionPublicKeyBytes
-	n.ServerEncryptionPublicKeyType = input.ServerEncryptionPublicKeyType
+	// If it's been set already by CreateFetchNodeCredentialsRequest (in the new
+	// protocol), don't overwrite it, but if not then set it from the input
+	// (legacy)
+	if len(n.ServerEncryptionPublicKeyBytes) == 0 {
+		n.ServerEncryptionPublicKeyBytes = input.ServerEncryptionPublicKeyBytes
+		n.ServerEncryptionPublicKeyType = input.ServerEncryptionPublicKeyType
+	} else if subtle.ConstantTimeCompare(n.ServerEncryptionPublicKeyBytes, input.ServerEncryptionPublicKeyBytes) == 0 {
+		return nil, fmt.Errorf("(%s) server encryption public key in response does not match expected value", op)
+	}
 
 	newNodeCreds := new(NodeCredentials)
 	if err := nodeenrollment.DecryptMessage(
