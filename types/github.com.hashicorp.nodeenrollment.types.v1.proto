@@ -96,8 +96,10 @@ message NodeInformation {
   bytes   server_encryption_private_key_bytes = 12 [json_name="server_encryption_private_key_bytes"];
   KEYTYPE server_encryption_private_key_type  = 13 [json_name="server_encryption_private_key_type"];
 
-  bytes                 registration_nonce     = 20 [json_name="registration_nonce"];
-  RegistrationChallenge registration_challenge = 23 [json_name="registration_challenge"];
+  bytes                 registration_nonce               = 20 [json_name="registration_nonce"];
+  RegistrationChallenge registration_challenge           = 23 [json_name="registration_challenge"];
+  bytes                 encrypted_registration_challenge = 24 [json_name="encrypted_registration_challenge"];
+
   // This will be populated with with any decrypted values that came in as a
   // result of this flow
   WrappingRegistrationFlowInfo wrapping_registration_flow_info = 22 [json_name="wrapping_registration_flow_info"];
@@ -262,12 +264,6 @@ message FetchNodeCredentialsRequest {
 // certificates and other server-provided information, with the encryption key
 // derived from a DH operation on the node's submitted public key and the
 // server's private key corresponding to the given public encryption key.
-//
-// The encrypted node credentials are signed with the current root certificate
-// key. This is an optional step that can be taken by the node if it has
-// pre-distributed CA certificates to validate the signature on the encrypted
-// node credentials. This mostly is a guard against the failure of an operator
-// to actually validate the key ID that they are authorizing.
 message FetchNodeCredentialsResponse {
   bytes   server_encryption_public_key_bytes = 12 [json_name="encryption_public_key_bytes"];
   KEYTYPE server_encryption_public_key_type  = 13 [json_name="encryption_public_key_type"];

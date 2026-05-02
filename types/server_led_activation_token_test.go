@@ -56,7 +56,8 @@ func TestServerLedActivationToken_StoreLoad(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 32, num)
 	hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
-	idBytes := hm.Sum(tokenNonce.Nonce)
+	hm.Write(tokenNonce.Nonce)
+	idBytes := hm.Sum(nil)
 	tokenEntry.Id = base58.FastBase58Encoding(idBytes)
 
 	tokenEntry.RegistrationChallenge = &types.RegistrationChallenge{
@@ -222,4 +223,39 @@ func TestServerLedActivationToken_StoreLoad(t *testing.T) {
 			assert.Empty(cmp.Diff(s, loaded, protocmp.Transform()))
 		})
 	}
+}
+
+func TestServerLedActivationToken_StoreLoad_WrappedRegistrationChallengeNotPlaintext(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	storage, err := inmem.New(ctx)
+	require.NoError(t, err)
+
+	privKey := make([]byte, curve25519.ScalarSize)
+	n, err := rand.Read(privKey)
+	require.NoError(t, err)
+	require.Equal(t, curve25519.ScalarSize, n)
+
+	tokenEntry := &types.ServerLedActivationToken{
+		Id:                              "wrapped-token",
+		CreationTime:                    timestamppb.Now(),
+		ServerEncryptionPrivateKeyBytes: privKey,
+		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
+		RegistrationChallenge:           &types.RegistrationChallenge{Challenge: []byte("server-led-registration-challenge")},
+	}
+
+	wrapper := aead.TestWrapper(t)
+	require.NoError(t, tokenEntry.Store(ctx, storage, nodeenrollment.WithStorageWrapper(wrapper)))
+
+	rawTokenEntry := &types.ServerLedActivationToken{Id: tokenEntry.Id}
+	require.NoError(t, storage.Load(ctx, rawTokenEntry))
+	assert.Nil(t, rawTokenEntry.RegistrationChallenge)
+	assert.NotEmpty(t, rawTokenEntry.RegistrationChallengeBytes)
+
+	loadedTokenEntry, err := types.LoadServerLedActivationToken(ctx, storage, tokenEntry.Id, nodeenrollment.WithStorageWrapper(wrapper))
+	require.NoError(t, err)
+	require.NotNil(t, loadedTokenEntry.RegistrationChallenge)
+	assert.Equal(t, tokenEntry.RegistrationChallenge.Challenge, loadedTokenEntry.RegistrationChallenge.Challenge)
+	assert.Empty(t, loadedTokenEntry.RegistrationChallengeBytes)
 }

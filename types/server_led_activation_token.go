@@ -100,6 +100,7 @@ func (s *ServerLedActivationToken) Store(ctx context.Context, storage nodeenroll
 		if err != nil {
 			return fmt.Errorf("(%s) error marshaling wrapped registration challenge: %w", op, err)
 		}
+		tokenToStore.RegistrationChallenge = nil
 	}
 
 	if err := storage.Store(ctx, tokenToStore); err != nil {

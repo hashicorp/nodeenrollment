@@ -39,10 +39,10 @@ func TestValidateFetchRequest(t *testing.T) {
 	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
 	// authzReq includes the challenge (used for AuthorizeNode)
-	authzReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	authzReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage)
 	require.NoError(t, err)
 	// fetchReq omits the challenge from the bundle (used for FetchNodeCredentials)
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithoutRegistrationChallenge(true))
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage, nodeenrollment.WithoutRegistrationChallenge(true))
 	require.NoError(t, err)
 	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)
@@ -55,7 +55,7 @@ func TestValidateFetchRequest(t *testing.T) {
 	require.NoError(t, err)
 	serverLedNodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
-	serverLedFetchReq, err := serverLedNodeCreds.CreateFetchNodeCredentialsRequest(ctx,
+	serverLedFetchReq, err := serverLedNodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage,
 		nodeenrollment.WithActivationToken(serverLedActivationToken),
 	)
 	require.NoError(t, err)
@@ -69,7 +69,7 @@ func TestValidateFetchRequest(t *testing.T) {
 	require.NoError(t, err)
 	wrappingNodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
-	wrappingFetchReq, err := wrappingNodeCreds.CreateFetchNodeCredentialsRequest(ctx,
+	wrappingFetchReq, err := wrappingNodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage,
 		nodeenrollment.WithRegistrationWrapper(registrationWrapper),
 		nodeenrollment.WithWrappingRegistrationFlowApplicationSpecificParams(mapOpt),
 	)
@@ -79,11 +79,11 @@ func TestValidateFetchRequest(t *testing.T) {
 	// Create and register an "interim" node used for the rewrapping test
 	interimNodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
-	interimAuthzReq, err := interimNodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	interimAuthzReq, err := interimNodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage)
 	require.NoError(t, err)
 	_, err = registration.AuthorizeNode(ctx, storage, interimAuthzReq)
 	require.NoError(t, err)
-	interimFetchReq, err := interimNodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithoutRegistrationChallenge(true))
+	interimFetchReq, err := interimNodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage, nodeenrollment.WithoutRegistrationChallenge(true))
 	require.NoError(t, err)
 	interimFetchResp, err := registration.FetchNodeCredentials(ctx, storage, interimFetchReq)
 	require.NoError(t, err)
@@ -422,13 +422,13 @@ func TestNodeLedRegistration_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	// Authorization request carries the challenge so the server can store it.
-	authzReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	authzReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage)
 	require.NoError(t, err)
 	_, err = registration.AuthorizeNode(ctx, storage, authzReq)
 	require.NoError(t, err)
 
 	// Fetch request omits the challenge from the bundle.
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithoutRegistrationChallenge(true))
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage, nodeenrollment.WithoutRegistrationChallenge(true))
 	require.NoError(t, err)
 	resp, err := registration.FetchNodeCredentials(ctx, storage, fetchReq)
 	require.NoError(t, err)
@@ -461,12 +461,12 @@ func TestNodeLedRegistration_ChallengeMismatch(t *testing.T) {
 	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
 
-	authzReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	authzReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage)
 	require.NoError(t, err)
 	_, err = registration.AuthorizeNode(ctx, storage, authzReq)
 	require.NoError(t, err)
 
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithoutRegistrationChallenge(true))
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage, nodeenrollment.WithoutRegistrationChallenge(true))
 	require.NoError(t, err)
 	_, err = registration.FetchNodeCredentials(ctx, storage, fetchReq)
 	require.NoError(t, err)
@@ -540,7 +540,7 @@ func TestNodeLedRegistration_OldProtocolBackwardsCompat(t *testing.T) {
 	nodeCreds.RegistrationNonce = oldNonce
 	nodeCreds.RegistrationChallenge = nil
 
-	oldReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithoutRegistrationChallenge(true))
+	oldReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage, nodeenrollment.WithoutRegistrationChallenge(true))
 	require.NoError(t, err)
 
 	// Inject the nonce into the bundle manually (simulating old client code).
@@ -577,6 +577,47 @@ func TestNodeLedRegistration_OldProtocolBackwardsCompat(t *testing.T) {
 	assert.Nil(t, receivedCreds.EncryptedRegistrationChallenge)
 }
 
+func TestNodeLedRegistration_OldPendingRegistrationAfterWorkerUpgrade(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	storage, err := inmem.New(ctx)
+	require.NoError(t, err)
+
+	_, err = rotation.RotateRootCertificates(ctx, storage)
+	require.NoError(t, err)
+
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
+	require.NoError(t, err)
+
+	oldNonce := make([]byte, nodeenrollment.NonceSize)
+	_, err = rand.Read(oldNonce)
+	require.NoError(t, err)
+	nodeCreds.RegistrationNonce = oldNonce
+	nodeCreds.RegistrationChallenge = nil
+
+	authzReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage)
+	require.NoError(t, err)
+	var info types.FetchNodeCredentialsInfo
+	require.NoError(t, proto.Unmarshal(authzReq.Bundle, &info))
+	require.Equal(t, oldNonce, info.Nonce)
+	require.Nil(t, info.RegistrationChallenge)
+
+	_, err = registration.AuthorizeNode(ctx, storage, authzReq)
+	require.NoError(t, err)
+
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage, nodeenrollment.WithoutRegistrationChallenge(true))
+	require.NoError(t, err)
+	resp, err := registration.FetchNodeCredentials(ctx, storage, fetchReq)
+	require.NoError(t, err)
+
+	updatedCreds, err := nodeCreds.HandleFetchNodeCredentialsResponse(ctx, storage, resp)
+	require.NoError(t, err)
+	assert.Len(t, updatedCreds.CertificateBundles, 2)
+	assert.Nil(t, updatedCreds.RegistrationNonce)
+	assert.Nil(t, updatedCreds.RegistrationChallenge)
+}
+
 func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -591,10 +632,10 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
 	// authzFetchReq carries the challenge for the server to store
-	authzFetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	authzFetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage)
 	require.NoError(t, err)
 	// fetchReq omits the challenge from the bundle (new protocol)
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithoutRegistrationChallenge(true))
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage, nodeenrollment.WithoutRegistrationChallenge(true))
 	require.NoError(t, err)
 	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)

@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestServerLedRegistration(t *testing.T) {
@@ -70,8 +71,12 @@ func TestServerLedRegistration(t *testing.T) {
 	assert.NotEmpty(tokenNonce.HmacKeyBytes)
 
 	hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
-	idBytes := hm.Sum(tokenNonce.Nonce)
+	hm.Write(tokenNonce.Nonce)
+	idBytes := hm.Sum(nil)
 	assert.Equal(tokenId, base58.FastBase58Encoding(idBytes))
+	decodedTokenId, err := base58.FastBase58Decoding(tokenId)
+	require.NoError(err)
+	assert.Len(decodedTokenId, sha256.Size)
 
 	tokenEntry, err := types.LoadServerLedActivationToken(ctx, storage, tokenId, nodeenrollment.WithStorageWrapper(wrapper))
 	require.NoError(err)
@@ -109,7 +114,7 @@ func TestServerLedRegistration_EndToEnd(t *testing.T) {
 	// Node side: create credentials and a fetch request using the activation token.
 	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx,
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage,
 		nodeenrollment.WithActivationToken(activationToken),
 	)
 	require.NoError(t, err)
@@ -132,6 +137,39 @@ func TestServerLedRegistration_EndToEnd(t *testing.T) {
 	assert.Nil(t, updatedCreds.RegistrationChallenge)
 }
 
+func TestServerLedRegistration_ReloadedCredentialsRejectMismatchedServerKey(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	storage, err := inmem.New(ctx)
+	require.NoError(t, err)
+
+	_, err = rotation.RotateRootCertificates(ctx, storage)
+	require.NoError(t, err)
+
+	_, activationToken, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{})
+	require.NoError(t, err)
+
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
+	require.NoError(t, err)
+	_, err = nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage,
+		nodeenrollment.WithActivationToken(activationToken),
+	)
+	require.NoError(t, err)
+
+	reloadedCreds, err := types.LoadNodeCredentials(ctx, storage, nodeenrollment.CurrentId)
+	require.NoError(t, err)
+	require.NotEmpty(t, reloadedCreds.ServerEncryptionPublicKeyBytes)
+
+	_, err = reloadedCreds.HandleFetchNodeCredentialsResponse(ctx, storage, &types.FetchNodeCredentialsResponse{
+		ServerEncryptionPublicKeyBytes: []byte("unexpected-server-key"),
+		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
+		EncryptedNodeCredentials:       []byte("not-empty"),
+	}, nodeenrollment.WithActivationToken(activationToken))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "server encryption public key in response does not match expected value")
+}
+
 // TestServerLedRegistration_BadChallenge verifies that FetchNodeCredentials
 // rejects a request that carries a tampered EncryptedRegistrationChallenge.
 func TestServerLedRegistration_BadChallenge(t *testing.T) {
@@ -149,7 +187,7 @@ func TestServerLedRegistration_BadChallenge(t *testing.T) {
 
 	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx,
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage,
 		nodeenrollment.WithActivationToken(activationToken),
 	)
 	require.NoError(t, err)
@@ -200,7 +238,7 @@ func TestServerLedRegistration_TokenIdOnlyRejected(t *testing.T) {
 
 	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage)
 	require.NoError(t, err)
 
 	tokenNonce, err := proto.Marshal(&types.ServerLedActivationTokenNonce{
@@ -225,6 +263,100 @@ func TestServerLedRegistration_TokenIdOnlyRejected(t *testing.T) {
 	_, err = registration.FetchNodeCredentials(ctx, storage, fetchReq)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing legacy token nonce")
+}
+
+func TestServerLedRegistration_OldStoredTokenIdOnlyRejected(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	storage, err := inmem.New(ctx)
+	require.NoError(t, err)
+
+	_, err = rotation.RotateRootCertificates(ctx, storage)
+	require.NoError(t, err)
+
+	tokenNonce := &types.ServerLedActivationTokenNonce{
+		Nonce:        []byte("legacy-token-nonce"),
+		HmacKeyBytes: []byte("legacy-token-hmac-key"),
+	}
+	legacyTokenId := legacyServerLedTokenIdForTest(tokenNonce)
+	require.NoError(t, (&types.ServerLedActivationToken{
+		Id:           legacyTokenId,
+		CreationTime: timestamppb.Now(),
+	}).Store(ctx, storage))
+
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
+	require.NoError(t, err)
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage)
+	require.NoError(t, err)
+	idOnlyTokenNonce, err := proto.Marshal(&types.ServerLedActivationTokenNonce{
+		ActivationTokenId: legacyTokenId,
+	})
+	require.NoError(t, err)
+
+	var info types.FetchNodeCredentialsInfo
+	require.NoError(t, proto.Unmarshal(fetchReq.Bundle, &info))
+	info.Nonce = idOnlyTokenNonce
+	info.ActivationTokenId = ""
+	info.EncryptedRegistrationChallenge = nil
+	info.RegistrationChallenge = nil
+	fetchReq.Bundle, err = proto.Marshal(&info)
+	require.NoError(t, err)
+
+	certPrivKeyRaw, err := x509.ParsePKCS8PrivateKey(nodeCreds.CertificatePrivateKeyPkcs8)
+	require.NoError(t, err)
+	certPrivKey := certPrivKeyRaw.(ed25519.PrivateKey)
+	fetchReq.BundleSignature = ed25519.Sign(certPrivKey, fetchReq.Bundle)
+
+	_, err = registration.FetchNodeCredentials(ctx, storage, fetchReq)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing legacy token nonce")
+}
+
+func TestServerLedRegistration_OldStoredTokenBackwardsCompat(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	storage, err := inmem.New(ctx)
+	require.NoError(t, err)
+
+	_, err = rotation.RotateRootCertificates(ctx, storage)
+	require.NoError(t, err)
+
+	tokenNonce := &types.ServerLedActivationTokenNonce{
+		Nonce:        []byte("legacy-token-nonce"),
+		HmacKeyBytes: []byte("legacy-token-hmac-key"),
+	}
+	legacyTokenId := legacyServerLedTokenIdForTest(tokenNonce)
+	require.NoError(t, (&types.ServerLedActivationToken{
+		Id:           legacyTokenId,
+		CreationTime: timestamppb.Now(),
+	}).Store(ctx, storage))
+	rawTokenNonce, err := proto.Marshal(tokenNonce)
+	require.NoError(t, err)
+
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
+	require.NoError(t, err)
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage)
+	require.NoError(t, err)
+
+	var info types.FetchNodeCredentialsInfo
+	require.NoError(t, proto.Unmarshal(fetchReq.Bundle, &info))
+	info.Nonce = rawTokenNonce
+	info.ActivationTokenId = ""
+	info.EncryptedRegistrationChallenge = nil
+	info.RegistrationChallenge = nil
+	fetchReq.Bundle, err = proto.Marshal(&info)
+	require.NoError(t, err)
+
+	certPrivKeyRaw, err := x509.ParsePKCS8PrivateKey(nodeCreds.CertificatePrivateKeyPkcs8)
+	require.NoError(t, err)
+	certPrivKey := certPrivKeyRaw.(ed25519.PrivateKey)
+	fetchReq.BundleSignature = ed25519.Sign(certPrivKey, fetchReq.Bundle)
+
+	resp, err := registration.FetchNodeCredentials(ctx, storage, fetchReq)
+	require.NoError(t, err)
+	require.NotEmpty(t, resp.EncryptedNodeCredentials)
 }
 
 // TestServerLedRegistration_OldWorkerBackwardsCompat verifies that an
@@ -254,7 +386,7 @@ func TestServerLedRegistration_OldWorkerBackwardsCompat(t *testing.T) {
 	require.NoError(t, err)
 
 	// Build a new-style request but override it to look like an old one.
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage)
 	require.NoError(t, err)
 	var info types.FetchNodeCredentialsInfo
 	require.NoError(t, proto.Unmarshal(fetchReq.Bundle, &info))
@@ -285,4 +417,9 @@ func TestServerLedRegistration_OldWorkerBackwardsCompat(t *testing.T) {
 	var receivedCreds types.NodeCredentials
 	require.NoError(t, nodeenrollment.DecryptMessage(ctx, resp.EncryptedNodeCredentials, storedInfo, &receivedCreds))
 	assert.Len(t, receivedCreds.CertificateBundles, 2)
+}
+
+func legacyServerLedTokenIdForTest(tokenNonce *types.ServerLedActivationTokenNonce) string {
+	hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
+	return base58.FastBase58Encoding(hm.Sum(tokenNonce.Nonce))
 }

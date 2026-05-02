@@ -229,6 +229,32 @@ func TestNodeCredentials_StoreLoad(t *testing.T) {
 	}
 }
 
+func TestNodeCredentials_StoreLoad_WrappedRegistrationChallengeNotPlaintext(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	storage, err := inmem.New(ctx)
+	require.NoError(t, err)
+
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage, nodeenrollment.WithSkipStorage(true))
+	require.NoError(t, err)
+	require.NotNil(t, nodeCreds.RegistrationChallenge)
+
+	wrapper := aead.TestWrapper(t)
+	require.NoError(t, nodeCreds.Store(ctx, storage, nodeenrollment.WithStorageWrapper(wrapper)))
+
+	rawNodeCreds := &types.NodeCredentials{Id: string(nodeenrollment.CurrentId)}
+	require.NoError(t, storage.Load(ctx, rawNodeCreds))
+	assert.Nil(t, rawNodeCreds.RegistrationChallenge)
+	assert.NotEmpty(t, rawNodeCreds.EncryptedRegistrationChallenge)
+
+	loadedNodeCreds, err := types.LoadNodeCredentials(ctx, storage, nodeenrollment.CurrentId, nodeenrollment.WithStorageWrapper(wrapper))
+	require.NoError(t, err)
+	require.NotNil(t, loadedNodeCreds.RegistrationChallenge)
+	assert.Equal(t, nodeCreds.RegistrationChallenge.Challenge, loadedNodeCreds.RegistrationChallenge.Challenge)
+	assert.Empty(t, loadedNodeCreds.EncryptedRegistrationChallenge)
+}
+
 func TestNodeCredentials_X25519(t *testing.T) {
 	t.Parallel()
 
@@ -578,7 +604,7 @@ func TestNodeCredentials_CreateFetchNodeCredentialsServerLed(t *testing.T) {
 			opts, err := nodeenrollment.GetOpts(tt.opts...)
 			require.NoError(err)
 
-			out, err := n.CreateFetchNodeCredentialsRequest(ctx, tt.opts...)
+			out, err := n.CreateFetchNodeCredentialsRequest(ctx, storage, tt.opts...)
 			if wantErrContains != "" {
 				require.Error(err)
 				assert.Contains(err.Error(), wantErrContains)

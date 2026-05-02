@@ -9,6 +9,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"time"
 
@@ -83,9 +84,7 @@ func CreateServerLedActivationToken(
 		}
 		// Now, we're going to hmac the nonce; an encoding of the hmac value will
 		// give us the ID for storage of the activation token entry.
-		hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
-		idBytes := hm.Sum(tokenNonce.Nonce)
-		tokenEntry.Id = base58.FastBase58Encoding(idBytes)
+		tokenEntry.Id = serverLedActivationTokenId(tokenNonce.Nonce, tokenNonce.HmacKeyBytes)
 	}
 	// Generate the server-side encryption key that will be used with this node
 	{
@@ -127,6 +126,27 @@ func CreateServerLedActivationToken(
 	return tokenEntry.Id, fmt.Sprintf("%s%s", nodeenrollment.ServerLedActivationTokenPrefix, base58.FastBase58Encoding(returnedTokenBytes)), nil
 }
 
+func serverLedActivationTokenId(nonce, hmacKey []byte) string {
+	hm := hmac.New(sha256.New, hmacKey)
+	hm.Write(nonce)
+	return base58.FastBase58Encoding(hm.Sum(nil))
+}
+
+func legacyServerLedActivationTokenId(nonce, hmacKey []byte) string {
+	hm := hmac.New(sha256.New, hmacKey)
+	return base58.FastBase58Encoding(hm.Sum(nonce))
+}
+
+func serverLedActivationTokenIdMatches(id string, tokenNonce *types.ServerLedActivationTokenNonce) bool {
+	if tokenNonce == nil || len(tokenNonce.Nonce) == 0 || len(tokenNonce.HmacKeyBytes) == 0 {
+		return false
+	}
+	if subtle.ConstantTimeCompare([]byte(serverLedActivationTokenId(tokenNonce.Nonce, tokenNonce.HmacKeyBytes)), []byte(id)) == 1 {
+		return true
+	}
+	return subtle.ConstantTimeCompare([]byte(legacyServerLedActivationTokenId(tokenNonce.Nonce, tokenNonce.HmacKeyBytes)), []byte(id)) == 1
+}
+
 // validateServerLedActivationToken validates that a token found in a fetch
 // request is valid. It returns the authorized NodeInformation.
 //
@@ -162,11 +182,18 @@ func validateServerLedActivationToken(
 	activationTokenId := tokenNonce.ActivationTokenId
 	if activationTokenId == "" {
 		// Generate the ID from the token values for lookup
-		hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
-		idBytes := hm.Sum(tokenNonce.Nonce)
-		activationTokenId = base58.FastBase58Encoding(idBytes)
+		activationTokenId = serverLedActivationTokenId(tokenNonce.Nonce, tokenNonce.HmacKeyBytes)
 	}
 	tokenEntry, err := types.LoadServerLedActivationToken(ctx, storage, activationTokenId, opt...)
+	if err != nil && errors.Is(err, nodeenrollment.ErrNotFound) && len(tokenNonce.Nonce) > 0 && len(tokenNonce.HmacKeyBytes) > 0 {
+		legacyActivationTokenId := legacyServerLedActivationTokenId(tokenNonce.Nonce, tokenNonce.HmacKeyBytes)
+		if legacyActivationTokenId != activationTokenId {
+			tokenEntry, err = types.LoadServerLedActivationToken(ctx, storage, legacyActivationTokenId, opt...)
+			if err == nil {
+				activationTokenId = legacyActivationTokenId
+			}
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error looking up activation token: %w", op, err)
 	}
@@ -217,10 +244,7 @@ func validateServerLedActivationToken(
 			case len(tokenNonce.HmacKeyBytes) == 0:
 				return nil, fmt.Errorf("(%s) missing legacy token hmac key bytes", op)
 			}
-			hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
-			idBytes := hm.Sum(tokenNonce.Nonce)
-			legacyActivationTokenId := base58.FastBase58Encoding(idBytes)
-			if subtle.ConstantTimeCompare([]byte(legacyActivationTokenId), []byte(activationTokenId)) != 1 {
+			if !serverLedActivationTokenIdMatches(activationTokenId, tokenNonce) {
 				return nil, fmt.Errorf("(%s) invalid legacy activation token id", op)
 			}
 			if subtle.ConstantTimeCompare(tokenNonce.Nonce, tokenEntry.RegistrationChallenge.Challenge) != 1 {
@@ -230,6 +254,18 @@ func validateServerLedActivationToken(
 
 		if len(tokenEntry.ServerEncryptionPrivateKeyBytes) > 0 && tokenEntry.ServerEncryptionPrivateKeyType != types.KEYTYPE_UNSPECIFIED {
 			opt = append(opt, nodeenrollment.WithPrivateKey(tokenEntry.ServerEncryptionPrivateKeyBytes, uint(tokenEntry.ServerEncryptionPrivateKeyType)))
+		}
+	} else {
+		// Old stored server-led activation tokens do not have a challenge. They
+		// must still prove possession of the full legacy token material; the
+		// storage ID alone is public and must not authorize registration.
+		switch {
+		case len(tokenNonce.Nonce) == 0:
+			return nil, fmt.Errorf("(%s) missing legacy token nonce", op)
+		case len(tokenNonce.HmacKeyBytes) == 0:
+			return nil, fmt.Errorf("(%s) missing legacy token hmac key bytes", op)
+		case !serverLedActivationTokenIdMatches(activationTokenId, tokenNonce):
+			return nil, fmt.Errorf("(%s) invalid legacy activation token id", op)
 		}
 	}
 

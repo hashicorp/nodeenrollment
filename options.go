@@ -258,7 +258,9 @@ func WithPrivateKey(withKey []byte, withType uint) Option {
 // should not require a registration challenge. It's a negative because it's
 // only in internal cases where you'd want this; for client code you'd want the
 // registration challenge included as part of the bundle to submit for
-// registration. However, when attempting a fetch, this should not be included.
+// registration. However, when attempting an initial credential fetch, this
+// should not be included. The dialer code makes sure this is the case; client
+// code, including during rotation, should never set this.
 func WithoutRegistrationChallenge(with bool) Option {
 	return func(o *Options) error {
 		o.WithoutRegistrationChallenge = with

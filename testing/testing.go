@@ -29,11 +29,11 @@ func CommonTestParams(t *testing.T, opt ...nodeenrollment.Option) (context.Conte
 
 	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
-	authzFetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	authzFetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage)
 	require.NoError(t, err)
 	_, err = registration.AuthorizeNode(ctx, storage, authzFetchReq)
 	require.NoError(t, err)
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeenrollment.WithoutRegistrationChallenge(true))
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage, nodeenrollment.WithoutRegistrationChallenge(true))
 	require.NoError(t, err)
 	fetchResp, err := registration.FetchNodeCredentials(ctx, storage, fetchReq)
 	require.NoError(t, err)
