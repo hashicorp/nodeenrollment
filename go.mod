@@ -6,7 +6,7 @@ require (
 	github.com/armon/go-radix v1.0.0
 	github.com/google/go-cmp v0.7.0
 	github.com/hashicorp/go-hclog v1.6.3
-	github.com/hashicorp/go-kms-wrapping/v2 v2.0.21
+	github.com/hashicorp/go-kms-wrapping/v2 v2.0.22
 	github.com/mr-tron/base58 v1.3.0
 	github.com/sethvargo/go-diceware v0.5.0
 	github.com/stretchr/testify v1.11.1
