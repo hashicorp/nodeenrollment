@@ -18,7 +18,6 @@ import (
 	"github.com/hashicorp/go-kms-wrapping/v2/aead"
 	"github.com/hashicorp/nodeenrollment"
 	"github.com/hashicorp/nodeenrollment/registration"
-	"github.com/hashicorp/nodeenrollment/rotation"
 	"github.com/hashicorp/nodeenrollment/storage/file"
 	"github.com/hashicorp/nodeenrollment/storage/inmem"
 	"github.com/hashicorp/nodeenrollment/types"
@@ -477,9 +476,6 @@ func TestNodeCredentials_CreateFetchNodeCredentialsServerLed(t *testing.T) {
 	ctx := context.Background()
 
 	storage, err := inmem.New(ctx)
-	require.NoError(t, err)
-
-	_, err = rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
 	// Generate a suitable root
