@@ -256,11 +256,13 @@ func WithPrivateKey(withKey []byte, withType uint) Option {
 
 // WithoutRegistrationChallenge, if set to true, indicates that the request
 // should not require a registration challenge. It's a negative because it's
-// only in internal cases where you'd want this; for client code you'd want the
-// registration challenge included as part of the bundle to submit for
-// registration. However, when attempting an initial credential fetch, this
-// should not be included. The dialer code makes sure this is the case; client
-// code, including during rotation, should never set this.
+// only in special, internal cases where you'd want this; for client code you'd
+// want the registration challenge included as part of the bundle to submit for
+// registration. However, when attempting an initial credential fetch, a
+// registration challenge should not be included to not leak the challenge to an
+// observer. The dialer code makes sure this is the case by always setting up
+// the request with this WithoutRegistrationChallenge option. Client code,
+// including during rotation, should never set this.
 func WithoutRegistrationChallenge(with bool) Option {
 	return func(o *Options) error {
 		o.WithoutRegistrationChallenge = with
