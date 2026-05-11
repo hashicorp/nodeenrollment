@@ -516,6 +516,17 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		} else {
 			n.ServerEncryptionPublicKeyBytes = tokenNonce.ServerEncryptionPublicKeyBytes
 			n.ServerEncryptionPublicKeyType = tokenNonce.ServerEncryptionPublicKeyType
+			if len(n.ServerEncryptionPublicKeyBytes) == 0 {
+				return nil, fmt.Errorf("(%s) server-led activation token includes server encryption key info but node credentials is missing server encryption public key bytes", op)
+			}
+			switch n.ServerEncryptionPublicKeyType {
+			case KEYTYPE_X25519:
+				if len(n.ServerEncryptionPublicKeyBytes) != curve25519.PointSize {
+					return nil, fmt.Errorf("(%s) server-led activation token includes server encryption key info but node credentials has invalid server encryption public key bytes length %d", op, len(n.ServerEncryptionPublicKeyBytes))
+				}
+			default:
+				return nil, fmt.Errorf("(%s) server-led activation token includes server encryption key info but node credentials has unknown server encryption public key type %q", op, n.ServerEncryptionPublicKeyType)
+			}
 			reqInfo.ActivationTokenId = tokenNonce.ActivationTokenId
 			challenge := new(RegistrationChallenge)
 			challenge.Challenge = tokenNonce.Nonce
