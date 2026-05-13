@@ -202,6 +202,48 @@ func TestNodeInformation_StoreLoad(t *testing.T) {
 	}
 }
 
+func TestNodeInformation_StoreLoad_WrappedRegistrationChallengeNotPlaintext(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	storage, err := inmem.New(ctx)
+	require.NoError(t, err)
+
+	privKey := make([]byte, curve25519.ScalarSize)
+	n, err := rand.Read(privKey)
+	require.NoError(t, err)
+	require.Equal(t, curve25519.ScalarSize, n)
+
+	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	pubKeyPkix, err := x509.MarshalPKIXPublicKey(pubKey)
+	require.NoError(t, err)
+	nodeId, err := nodeenrollment.KeyIdFromPkix(pubKeyPkix)
+	require.NoError(t, err)
+
+	nodeInfo := &types.NodeInformation{
+		Id:                              nodeId,
+		CertificatePublicKeyPkix:        pubKeyPkix,
+		ServerEncryptionPrivateKeyBytes: privKey,
+		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
+		RegistrationChallenge:           &types.RegistrationChallenge{Challenge: []byte("node-info-registration-challenge")},
+	}
+
+	wrapper := aead.TestWrapper(t)
+	require.NoError(t, nodeInfo.Store(ctx, storage, nodeenrollment.WithStorageWrapper(wrapper)))
+
+	rawNodeInfo := &types.NodeInformation{Id: nodeInfo.Id}
+	require.NoError(t, storage.Load(ctx, rawNodeInfo))
+	assert.Nil(t, rawNodeInfo.RegistrationChallenge)
+	assert.NotEmpty(t, rawNodeInfo.EncryptedRegistrationChallenge)
+
+	loadedNodeInfo, err := types.LoadNodeInformation(ctx, storage, nodeInfo.Id, nodeenrollment.WithStorageWrapper(wrapper))
+	require.NoError(t, err)
+	require.NotNil(t, loadedNodeInfo.RegistrationChallenge)
+	assert.Equal(t, nodeInfo.RegistrationChallenge.Challenge, loadedNodeInfo.RegistrationChallenge.Challenge)
+	assert.Empty(t, loadedNodeInfo.EncryptedRegistrationChallenge)
+}
+
 func TestNodeInformations_LoadById(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

@@ -49,9 +49,15 @@ func AuthorizeNode(
 	case err != nil:
 		return nil, fmt.Errorf("(%s) error during fetch request validation: %w", op, err)
 
-	case len(reqInfo.Nonce) != nodeenrollment.NonceSize:
+	case len(reqInfo.Nonce) == 0 &&
+		(reqInfo.RegistrationChallenge == nil || len(reqInfo.RegistrationChallenge.Challenge) == 0) &&
+		len(reqInfo.EncryptedRegistrationChallenge) == 0:
+		return nil, fmt.Errorf("(%s) authorize node request must contain a nonce or a registration challenge", op)
+
+	case len(reqInfo.Nonce) != 0 && len(reqInfo.Nonce) != nodeenrollment.NonceSize:
 		// Not a normal request, possibly one containing server-led activation
-		// token, which should not use this path
+		// token, which should not use this path. Zero nonce is fine as it means
+		// using the new protocol.
 		return nil, fmt.Errorf("(%s) server-led activation tokens cannot be used with node-led authorize call", op)
 
 	default:
@@ -103,6 +109,7 @@ func authorizeNodeCommon(
 		EncryptionPublicKeyBytes:         reqInfo.EncryptionPublicKeyBytes,
 		EncryptionPublicKeyType:          reqInfo.EncryptionPublicKeyType,
 		RegistrationNonce:                reqInfo.Nonce,
+		RegistrationChallenge:            reqInfo.RegistrationChallenge,
 		State:                            opts.WithState,
 		WrappingRegistrationFlowInfo:     reqInfo.WrappingRegistrationFlowInfo,
 	}
@@ -164,8 +171,11 @@ func authorizeNodeCommon(
 		}
 	}
 
-	// Create server encryption keys
-	{
+	// Create server encryption keys. In the newer server-led flow these may already exist.
+	if len(opts.WithPrivateKey) > 0 && types.KEYTYPE(opts.WithPrivateKeyType) != types.KEYTYPE_UNSPECIFIED {
+		nodeInfo.ServerEncryptionPrivateKeyBytes = opts.WithPrivateKey
+		nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE(opts.WithPrivateKeyType)
+	} else {
 		nodeInfo.ServerEncryptionPrivateKeyBytes = make([]byte, curve25519.ScalarSize)
 		n, err := opts.WithRandomReader.Read(nodeInfo.ServerEncryptionPrivateKeyBytes)
 		switch {
@@ -184,7 +194,8 @@ func authorizeNodeCommon(
 			// and handle receiving duplicate reqInfo by returning the stored nodeInfo
 			var dre *types.DuplicateRecordError
 			if errors.As(err, &dre) || errors.As(err, &types.DuplicateRecordError{}) {
-				loadNodeInfo, err := types.LoadNodeInformation(ctx, storage, nodeInfo.Id)
+				var loadNodeInfo *types.NodeInformation
+				loadNodeInfo, err = types.LoadNodeInformation(ctx, storage, nodeInfo.Id)
 				if err == nil {
 					return loadNodeInfo, nil
 				}

@@ -23,16 +23,16 @@ func TestAuthorizeNode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	memStorage, err := inmem.New(ctx)
+	storage, err := inmem.New(ctx)
 	require.NoError(t, err)
 
-	_, err = rotation.RotateRootCertificates(ctx, memStorage)
+	_, err = rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
 	// This happens on the node
-	nodeCreds, err := types.NewNodeCredentials(ctx, memStorage)
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage)
 	require.NoError(t, err)
 	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)
@@ -79,11 +79,11 @@ func TestAuthorizeNode(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			require, assert := require.New(t), assert.New(t)
 
-			storage := memStorage
 			var wantErrContains string
+			localStorage := storage
 
 			if tt.storageNil {
-				storage = nil
+				localStorage = nil
 				wantErrContains = "nil storage" // this doesn't overlap in test cases
 			}
 
@@ -91,7 +91,7 @@ func TestAuthorizeNode(t *testing.T) {
 				wantErrContains = "existing node"
 			}
 
-			_, err := registration.AuthorizeNode(ctx, storage, fetchReq)
+			_, err := registration.AuthorizeNode(ctx, localStorage, fetchReq)
 			switch wantErrContains {
 			case "":
 				require.NoError(err)
@@ -102,7 +102,7 @@ func TestAuthorizeNode(t *testing.T) {
 			}
 
 			checkNodeInfo := &types.NodeInformation{Id: nodeInfo.Id}
-			require.NoError(storage.Load(ctx, checkNodeInfo))
+			require.NoError(localStorage.Load(ctx, checkNodeInfo))
 			require.NotNil(checkNodeInfo)
 			assert.Equal(nodeInfo.Id, checkNodeInfo.Id)
 			assert.NotEmpty(checkNodeInfo.CertificatePublicKeyPkix)
@@ -120,7 +120,7 @@ func TestAuthorizeNode(t *testing.T) {
 			assert.Equal(types.KEYTYPE_X25519, checkNodeInfo.EncryptionPublicKeyType)
 			assert.NotEmpty(checkNodeInfo.ServerEncryptionPrivateKeyBytes)
 			assert.Equal(types.KEYTYPE_X25519, checkNodeInfo.ServerEncryptionPrivateKeyType)
-			assert.Len(checkNodeInfo.RegistrationNonce, nodeenrollment.NonceSize)
+			assert.NotNil(checkNodeInfo.RegistrationChallenge)
 		})
 	}
 }
@@ -129,16 +129,16 @@ func TestAuthorizeNodeCommon_DuplicateStore(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	memStorage, err := testing2.New(ctx)
+	storage, err := testing2.New(ctx)
 	require.NoError(t, err)
 
-	_, err = rotation.RotateRootCertificates(ctx, memStorage)
+	_, err = rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
 	// This happens on the node
-	nodeCreds, err := types.NewNodeCredentials(ctx, memStorage)
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
 	require.NoError(t, err)
-	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx)
+	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage)
 	require.NoError(t, err)
 	keyId, err := nodeenrollment.KeyIdFromPkix(nodeCreds.CertificatePublicKeyPkix)
 	require.NoError(t, err)
@@ -161,12 +161,12 @@ func TestAuthorizeNodeCommon_DuplicateStore(t *testing.T) {
 		State:                    state,
 	}
 
-	fetchInfo, _ := registration.ValidateFetchRequestCommon(ctx, memStorage, fetchReq)
-	_, err = registration.AuthorizeNodeCommon(ctx, memStorage, fetchInfo)
+	fetchInfo, _ := registration.ValidateFetchRequestCommon(ctx, storage, fetchReq)
+	_, err = registration.AuthorizeNodeCommon(ctx, storage, fetchInfo)
 	require.NoError(t, err)
 
 	checkNodeInfo := &types.NodeInformation{Id: nodeInfo.Id}
-	require.NoError(t, memStorage.Load(ctx, checkNodeInfo))
+	require.NoError(t, storage.Load(ctx, checkNodeInfo))
 	require.NotNil(t, checkNodeInfo)
 	assert.Equal(t, nodeInfo.Id, checkNodeInfo.Id)
 	assert.NotEmpty(t, checkNodeInfo.CertificatePublicKeyPkix)
@@ -184,10 +184,9 @@ func TestAuthorizeNodeCommon_DuplicateStore(t *testing.T) {
 	assert.Equal(t, types.KEYTYPE_X25519, checkNodeInfo.EncryptionPublicKeyType)
 	assert.NotEmpty(t, checkNodeInfo.ServerEncryptionPrivateKeyBytes)
 	assert.Equal(t, types.KEYTYPE_X25519, checkNodeInfo.ServerEncryptionPrivateKeyType)
-	assert.Len(t, checkNodeInfo.RegistrationNonce, nodeenrollment.NonceSize)
 
 	// Simulate a withWrapper case where we might hit authorizeNodeCommon a second time
-	returnedNodeInfo, err := registration.AuthorizeNodeCommon(ctx, memStorage, fetchInfo)
+	returnedNodeInfo, err := registration.AuthorizeNodeCommon(ctx, storage, fetchInfo)
 	require.NoError(t, err)
 	require.Equal(t, checkNodeInfo, returnedNodeInfo)
 	require.Equal(t, checkNodeInfo.ServerEncryptionPrivateKeyBytes, returnedNodeInfo.ServerEncryptionPrivateKeyBytes)
