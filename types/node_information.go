@@ -58,6 +58,26 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 				return fmt.Errorf("(%s) error marshaling wrapped private key: %w", op, err)
 			}
 		}
+
+		if infoToStore.RegistrationChallenge != nil {
+			marshaledRegistrationChallenge, err := proto.Marshal(infoToStore.RegistrationChallenge)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling registration challenge: %w", op, err)
+			}
+			blobInfo, err := opts.WithStorageWrapper.Encrypt(
+				ctx,
+				marshaledRegistrationChallenge,
+				wrapping.WithAad(infoToStore.CertificatePublicKeyPkix),
+			)
+			if err != nil {
+				return fmt.Errorf("(%s) error wrapping registration challenge: %w", op, err)
+			}
+			infoToStore.EncryptedRegistrationChallenge, err = proto.Marshal(blobInfo)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling wrapped registration challenge: %w", op, err)
+			}
+			infoToStore.RegistrationChallenge = nil
+		}
 	}
 
 	if err := storage.Store(ctx, infoToStore); err != nil {
@@ -160,6 +180,24 @@ func decryptForLoad(ctx context.Context, nodeInfo *NodeInformation, opt ...nodee
 				return nil, fmt.Errorf("(%s) error decrypting private key: %w", op, err)
 			}
 			nodeInfo.ServerEncryptionPrivateKeyBytes = pt
+		}
+
+		if len(nodeInfo.EncryptedRegistrationChallenge) > 0 {
+			blobInfo := new(wrapping.BlobInfo)
+			if err := proto.Unmarshal(nodeInfo.EncryptedRegistrationChallenge, blobInfo); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling encrypted registration challenge blob info: %w", op, err)
+			}
+			pt, err := opts.WithStorageWrapper.Decrypt(ctx, blobInfo, wrapping.WithAad(nodeInfo.CertificatePublicKeyPkix))
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error decrypting encrypted registration challenge: %w", op, err)
+			}
+			nodeInfo.EncryptedRegistrationChallenge = pt
+			regChallenge := new(RegistrationChallenge)
+			if err := proto.Unmarshal(nodeInfo.EncryptedRegistrationChallenge, regChallenge); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling decrypted registration challenge: %w", op, err)
+			}
+			nodeInfo.RegistrationChallenge = regChallenge
+			nodeInfo.EncryptedRegistrationChallenge = nil
 		}
 
 		nodeInfo.WrappingKeyId = ""
