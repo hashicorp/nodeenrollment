@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ecdh"
 	"crypto/ed25519"
+	"crypto/mlkem"
 	"crypto/rand"
 	"crypto/x509"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"github.com/hashicorp/nodeenrollment/storage/file"
 	"github.com/hashicorp/nodeenrollment/storage/inmem"
 	"github.com/hashicorp/nodeenrollment/types"
+	nodetesting "github.com/hashicorp/nodeenrollment/testing"
 	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -300,7 +302,7 @@ func TestNodeCredentials_X25519(t *testing.T) {
 			name: "invalid-bad-privkey-type",
 			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
 				nodeCreds.EncryptionPrivateKeyType = types.KEYTYPE_ED25519
-				return nodeCreds, "private key type is not known"
+				return nodeCreds, "invalid private key type"
 			},
 		},
 		{
@@ -314,7 +316,7 @@ func TestNodeCredentials_X25519(t *testing.T) {
 			name: "invalid-bad-pubkey-type",
 			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
 				nodeCreds.ServerEncryptionPublicKeyType = types.KEYTYPE_ED25519
-				return nodeCreds, "public key type is not known"
+				return nodeCreds, "invalid public key type"
 			},
 		},
 		{
@@ -421,51 +423,154 @@ func TestNodeCredentials_X25519(t *testing.T) {
 	}
 }
 
+func TestNodeCredentials_CurrentSharedEncryptionKey(t *testing.T) {
+	t.Parallel()
+	curve := ecdh.X25519()
+
+	privKey, err := curve.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	peerKey, err := curve.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	certPubKey, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	pubKeyPkix, err := x509.MarshalPKIXPublicKey(certPubKey)
+	require.NoError(t, err)
+
+	nodeCreds := &types.NodeCredentials{
+		EncryptionPrivateKeyBytes:      privKey.Bytes(),
+		EncryptionPrivateKeyType:       types.KEYTYPE_X25519,
+		ServerEncryptionPublicKeyBytes: peerKey.PublicKey().Bytes(),
+		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
+		CertificatePublicKeyPkix:       pubKeyPkix,
+	}
+
+	currentKey, err := nodeCreds.CurrentSharedEncryptionKey()
+	require.NoError(t, err)
+
+	keyId, sharedKey, err := nodeCreds.X25519EncryptionKey()
+	require.NoError(t, err)
+	assert.Equal(t, keyId, currentKey.KeyId)
+	assert.Equal(t, uint(types.KEYTYPE_X25519), currentKey.KeyType)
+	assert.Equal(t, sharedKey, currentKey.SharedKey)
+
+	oldPrivKey, err := curve.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	oldPeerKey, err := curve.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	oldCertPubKey, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	oldPubKeyPkix, err := x509.MarshalPKIXPublicKey(oldCertPubKey)
+	require.NoError(t, err)
+
+	oldNodeCreds := &types.NodeCredentials{
+		EncryptionPrivateKeyBytes:      oldPrivKey.Bytes(),
+		EncryptionPrivateKeyType:       types.KEYTYPE_X25519,
+		ServerEncryptionPublicKeyBytes: oldPeerKey.PublicKey().Bytes(),
+		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
+		CertificatePublicKeyPkix:       oldPubKeyPkix,
+	}
+	require.NoError(t, nodeCreds.SetPreviousEncryptionKey(oldNodeCreds))
+
+	previousKey, err := nodeCreds.PreviousSharedEncryptionKey()
+	require.NoError(t, err)
+
+	previousKeyId, previousSharedKey, err := nodeCreds.PreviousX25519EncryptionKey()
+	require.NoError(t, err)
+	assert.Equal(t, previousKeyId, previousKey.KeyId)
+	assert.Equal(t, uint(types.KEYTYPE_X25519), previousKey.KeyType)
+	assert.Equal(t, previousSharedKey, previousKey.SharedKey)
+}
+
+func TestNodeCredentials_SetPreviousEncryptionKey_MLKEM1024(t *testing.T) {
+	t.Parallel()
+
+	oldCertPubKey, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	oldPubKeyPkix, err := x509.MarshalPKIXPublicKey(oldCertPubKey)
+	require.NoError(t, err)
+
+	oldSharedKey := []byte("old-mlkem-shared-key")
+	oldNodeCreds := &types.NodeCredentials{
+		EncryptionPrivateKeyType: types.KEYTYPE_MLKEM1024,
+		CertificatePublicKeyPkix: oldPubKeyPkix,
+		MlkemParameters: &types.MLKEMParameters{
+			SharedKey: oldSharedKey,
+		},
+	}
+
+	newNodeCreds := &types.NodeCredentials{}
+	require.NoError(t, newNodeCreds.SetPreviousEncryptionKey(oldNodeCreds))
+
+	require.NotNil(t, newNodeCreds.PreviousEncryptionKey)
+	assert.Equal(t, types.KEYTYPE_MLKEM1024, newNodeCreds.PreviousEncryptionKey.PrivateKeyType)
+	require.NotNil(t, newNodeCreds.PreviousEncryptionKey.MlkemParameters)
+	assert.Equal(t, oldSharedKey, newNodeCreds.PreviousEncryptionKey.MlkemParameters.SharedKey)
+
+	previousKey, err := newNodeCreds.PreviousSharedEncryptionKey()
+	require.NoError(t, err)
+	assert.Equal(t, uint(types.KEYTYPE_MLKEM1024), previousKey.KeyType)
+	assert.Equal(t, oldSharedKey, previousKey.SharedKey)
+}
+
 func TestNodeCredentials_New(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 
-	storage, err := inmem.New(ctx)
-	require.NoError(t, err)
+	for _, kt := range nodetesting.TestKeyTypeVariants() {
+		t.Run(kt.Name, func(t *testing.T) {
+			t.Parallel()
 
-	tests := []struct {
-		name            string
-		storage         nodeenrollment.Storage
-		wantErrContains string
-	}{
-		{
-			name:    "valid",
-			storage: storage,
-		},
-		{
-			name:            "nil-storage",
-			wantErrContains: "storage is nil",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require, assert := require.New(t), assert.New(t)
-			n, err := types.NewNodeCredentials(ctx, tt.storage)
-			if tt.wantErrContains != "" {
-				require.Error(err)
-				assert.Contains(err.Error(), tt.wantErrContains)
-				return
+			storage, err := inmem.New(ctx)
+			require.NoError(t, err)
+
+			tests := []struct {
+				name            string
+				storage         nodeenrollment.Storage
+				wantErrContains string
+			}{
+				{
+					name:    "valid",
+					storage: storage,
+				},
+				{
+					name:            "nil-storage",
+					wantErrContains: "storage is nil",
+				},
 			}
-			require.NoError(err)
-			assert.NotEmpty(n.CertificatePrivateKeyPkcs8)
-			assert.Equal(types.KEYTYPE_ED25519, n.CertificatePrivateKeyType)
-			assert.NotEmpty(n.CertificatePublicKeyPkix)
-			assert.NotEmpty(n.EncryptionPrivateKeyBytes)
-			assert.Equal(types.KEYTYPE_X25519, n.EncryptionPrivateKeyType)
-			assert.Empty(n.RegistrationNonce)
-			require.NotNil(n.RegistrationChallenge)
-			assert.NotEmpty(n.RegistrationChallenge.Challenge)
-			assert.Empty(n.EncryptedRegistrationChallenge)
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					require, assert := require.New(t), assert.New(t)
+					n, err := types.NewNodeCredentials(ctx, tt.storage, kt.Opts...)
+					if tt.wantErrContains != "" {
+						require.Error(err)
+						assert.Contains(err.Error(), tt.wantErrContains)
+						return
+					}
+					require.NoError(err)
+					assert.NotEmpty(n.CertificatePrivateKeyPkcs8)
+					assert.Equal(types.KEYTYPE_ED25519, n.CertificatePrivateKeyType)
+					assert.NotEmpty(n.CertificatePublicKeyPkix)
+					if kt.KeyType == types.KEYTYPE_MLKEM1024 {
+						assert.Empty(n.EncryptionPrivateKeyBytes)
+						assert.Equal(types.KEYTYPE_MLKEM1024, n.EncryptionPrivateKeyType)
+						require.NotNil(n.MlkemParameters)
+						assert.NotEmpty(n.MlkemParameters.DecapsulationKey)
+					} else {
+						assert.NotEmpty(n.EncryptionPrivateKeyBytes)
+						assert.Equal(types.KEYTYPE_X25519, n.EncryptionPrivateKeyType)
+						assert.Nil(n.MlkemParameters)
+					}
+					assert.Empty(n.RegistrationNonce)
+					require.NotNil(n.RegistrationChallenge)
+					assert.NotEmpty(n.RegistrationChallenge.Challenge)
+					assert.Empty(n.EncryptedRegistrationChallenge)
 
-			testNodeCreds := &types.NodeCredentials{Id: n.Id}
-			require.NoError(tt.storage.Load(ctx, testNodeCreds))
-			assert.Empty(cmp.Diff(n, testNodeCreds, protocmp.Transform()))
+					testNodeCreds := &types.NodeCredentials{Id: n.Id}
+					require.NoError(tt.storage.Load(ctx, testNodeCreds))
+					assert.Empty(cmp.Diff(n, testNodeCreds, protocmp.Transform()))
+				})
+			}
 		})
 	}
 }
@@ -475,191 +580,207 @@ func TestNodeCredentials_CreateFetchNodeCredentialsServerLed(t *testing.T) {
 
 	ctx := context.Background()
 
-	storage, err := inmem.New(ctx)
-	require.NoError(t, err)
+	for _, kt := range nodetesting.TestKeyTypeVariants() {
+		t.Run(kt.Name, func(t *testing.T) {
+			t.Parallel()
 
-	// Generate a suitable root
-	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
-	require.NoError(t, err)
+			storage, err := inmem.New(ctx)
+			require.NoError(t, err)
 
-	wrapper := wrapping.NewTestWrapper([]byte("foobar"))
-	applicationSpecificParamsMap := map[string]any{"foo": "bar"}
-	mapOpt, err := structpb.NewStruct(applicationSpecificParamsMap)
-	require.NoError(t, err)
+			// Generate a suitable root
+			nodeCreds, err := types.NewNodeCredentials(ctx, storage, kt.Opts...)
+			require.NoError(t, err)
 
-	storageId, serverLedActivationToken, err := registration.CreateServerLedActivationToken(
-		ctx,
-		storage,
-		&types.ServerLedRegistrationRequest{},
-	)
-	require.NoError(t, err)
+			wrapper := wrapping.NewTestWrapper([]byte("foobar"))
+			applicationSpecificParamsMap := map[string]any{"foo": "bar"}
+			mapOpt, err := structpb.NewStruct(applicationSpecificParamsMap)
+			require.NoError(t, err)
 
-	tests := []struct {
-		name string
-		// Return a modified node information and a "want err contains" string
-		setupFn func(*types.NodeCredentials) (*types.NodeCredentials, string)
-		// Contains any options to pass into the function
-		opts []nodeenrollment.Option
-	}{
-		{
-			name: "invalid-nil",
-			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
-				return nil, "is nil"
-			},
-		},
-		{
-			name: "invalid-no-encryption-privkey-bytes",
-			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
-				nodeCreds.EncryptionPrivateKeyBytes = nil
-				return nodeCreds, "encryption private key is empty"
-			},
-		},
-		{
-			name: "invalid-no-certificate-pubkey-bytes",
-			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
-				nodeCreds.CertificatePublicKeyPkix = nil
-				return nodeCreds, "pkix public key is empty"
-			},
-		},
-		{
-			name: "invalid-no-certificate-privkey-bytes",
-			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
-				nodeCreds.CertificatePrivateKeyPkcs8 = nil
-				return nodeCreds, "pkcs8 private key is empty"
-			},
-		},
-		{
-			name: "invalid-nil-registration-challenge",
-			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
-				nodeCreds.RegistrationChallenge = nil
-				return nodeCreds, "registration challenge is missing"
-			},
-		},
-		{
-			name: "invalid-empty-registration-challenge",
-			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
-				nodeCreds.RegistrationChallenge.Challenge = nil
-				return nodeCreds, "registration challenge is empty"
-			},
-		},
-		{
-			name: "valid",
-			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
-				return nodeCreds, ""
-			},
-		},
-		{
-			name: "valid-bad-activation-token",
-			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
-				return nodeCreds, "error base58-decoding"
-			},
-			opts: []nodeenrollment.Option{
-				nodeenrollment.WithActivationToken(serverLedActivationToken[6 : len(serverLedActivationToken)-5]),
-			},
-		},
-		{
-			name: "valid-good-activation-token",
-			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
-				return nodeCreds, ""
-			},
-			opts: []nodeenrollment.Option{
-				nodeenrollment.WithActivationToken(serverLedActivationToken),
-			},
-		},
-		{
-			// WithoutRegistrationChallenge suppresses the RegistrationChallenge
-			// in the bundle so a MITM cannot read it (node-led fetch step).
-			name: "valid-no-registration-challenge",
-			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
-				return nodeCreds, ""
-			},
-			opts: []nodeenrollment.Option{
-				nodeenrollment.WithoutRegistrationChallenge(true),
-			},
-		},
-		{
-			name: "valid-with-wrapper",
-			setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
-				return nodeCreds, ""
-			},
-			opts: []nodeenrollment.Option{
-				nodeenrollment.WithRegistrationWrapper(wrapper),
-				nodeenrollment.WithWrappingRegistrationFlowApplicationSpecificParams(mapOpt),
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require, assert := require.New(t), assert.New(t)
-			n := nodeCreds
-			var wantErrContains string
-			if tt.setupFn != nil {
-				n, wantErrContains = tt.setupFn(proto.Clone(n).(*types.NodeCredentials))
+			storageId, serverLedActivationToken, err := registration.CreateServerLedActivationToken(
+				ctx,
+				storage,
+				&types.ServerLedRegistrationRequest{},
+				kt.Opts...,
+			)
+			require.NoError(t, err)
+
+			tests := []struct {
+				name string
+				// Return a modified node information and a "want err contains" string
+				setupFn func(*types.NodeCredentials) (*types.NodeCredentials, string)
+				// Contains any options to pass into the function
+				opts []nodeenrollment.Option
+			}{
+				{
+					name: "invalid-nil",
+					setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+						return nil, "is nil"
+					},
+				},
+				{
+					name: "invalid-no-encryption-privkey-bytes",
+					setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+						if kt.KeyType == types.KEYTYPE_MLKEM1024 {
+							nodeCreds.MlkemParameters.DecapsulationKey = nil
+							return nodeCreds, "mlkem private key bytes are empty"
+						}
+						nodeCreds.EncryptionPrivateKeyBytes = nil
+						return nodeCreds, "encryption private key is empty"
+					},
+				},
+				{
+					name: "invalid-no-certificate-pubkey-bytes",
+					setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+						nodeCreds.CertificatePublicKeyPkix = nil
+						return nodeCreds, "pkix public key is empty"
+					},
+				},
+				{
+					name: "invalid-no-certificate-privkey-bytes",
+					setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+						nodeCreds.CertificatePrivateKeyPkcs8 = nil
+						return nodeCreds, "pkcs8 private key is empty"
+					},
+				},
+				{
+					name: "invalid-nil-registration-challenge",
+					setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+						nodeCreds.RegistrationChallenge = nil
+						return nodeCreds, "registration challenge is missing"
+					},
+				},
+				{
+					name: "invalid-empty-registration-challenge",
+					setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+						nodeCreds.RegistrationChallenge.Challenge = nil
+						return nodeCreds, "registration challenge is empty"
+					},
+				},
+				{
+					name: "valid",
+					setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+						return nodeCreds, ""
+					},
+				},
+				{
+					name: "valid-bad-activation-token",
+					setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+						return nodeCreds, "error base58-decoding"
+					},
+					opts: []nodeenrollment.Option{
+						nodeenrollment.WithActivationToken(serverLedActivationToken[6 : len(serverLedActivationToken)-5]),
+					},
+				},
+				{
+					name: "valid-good-activation-token",
+					setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+						return nodeCreds, ""
+					},
+					opts: []nodeenrollment.Option{
+						nodeenrollment.WithActivationToken(serverLedActivationToken),
+					},
+				},
+				{
+					// WithoutRegistrationChallenge suppresses the RegistrationChallenge
+					// in the bundle so a MITM cannot read it (node-led fetch step).
+					name: "valid-no-registration-challenge",
+					setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+						return nodeCreds, ""
+					},
+					opts: []nodeenrollment.Option{
+						nodeenrollment.WithoutRegistrationChallenge(true),
+					},
+				},
+				{
+					name: "valid-with-wrapper",
+					setupFn: func(nodeCreds *types.NodeCredentials) (*types.NodeCredentials, string) {
+						return nodeCreds, ""
+					},
+					opts: []nodeenrollment.Option{
+						nodeenrollment.WithRegistrationWrapper(wrapper),
+						nodeenrollment.WithWrappingRegistrationFlowApplicationSpecificParams(mapOpt),
+					},
+				},
 			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					require, assert := require.New(t), assert.New(t)
+					n := nodeCreds
+					var wantErrContains string
+					if tt.setupFn != nil {
+						n, wantErrContains = tt.setupFn(proto.Clone(n).(*types.NodeCredentials))
+					}
 
-			opts, err := nodeenrollment.GetOpts(tt.opts...)
-			require.NoError(err)
+					opts, err := nodeenrollment.GetOpts(tt.opts...)
+					require.NoError(err)
 
-			out, err := n.CreateFetchNodeCredentialsRequest(ctx, storage, tt.opts...)
-			if wantErrContains != "" {
-				require.Error(err)
-				assert.Contains(err.Error(), wantErrContains)
-				return
-			}
+					out, err := n.CreateFetchNodeCredentialsRequest(ctx, storage, tt.opts...)
+					if wantErrContains != "" {
+						require.Error(err)
+						assert.Contains(err.Error(), wantErrContains)
+						return
+					}
 
-			require.NoError(err)
-			require.NotEmpty(out)
+					require.NoError(err)
+					require.NotEmpty(out)
 
-			// Now test the output
-			require.NotEmpty(out.Bundle)
-			require.NotEmpty(out.BundleSignature)
+					// Now test the output
+					require.NotEmpty(out.Bundle)
+					require.NotEmpty(out.BundleSignature)
 
-			var fetchInfo types.FetchNodeCredentialsInfo
-			require.NoError(proto.Unmarshal(out.Bundle, &fetchInfo))
+					var fetchInfo types.FetchNodeCredentialsInfo
+					require.NoError(proto.Unmarshal(out.Bundle, &fetchInfo))
 
-			require.NotEmpty(fetchInfo.CertificatePublicKeyPkix)
-			assert.Equal(types.KEYTYPE_ED25519, fetchInfo.CertificatePublicKeyType)
-			assert.NotEmpty(fetchInfo.EncryptionPublicKeyBytes)
-			assert.Equal(types.KEYTYPE_X25519, fetchInfo.EncryptionPublicKeyType)
-			assert.Negative(time.Until(fetchInfo.NotBefore.AsTime()))
-			assert.Positive(time.Until(fetchInfo.NotAfter.AsTime()))
+					require.NotEmpty(fetchInfo.CertificatePublicKeyPkix)
+					assert.Equal(types.KEYTYPE_ED25519, fetchInfo.CertificatePublicKeyType)
+					assert.Equal(kt.KeyType, fetchInfo.EncryptionPublicKeyType)
+					if kt.KeyType == types.KEYTYPE_X25519 {
+						assert.NotEmpty(fetchInfo.EncryptionPublicKeyBytes)
+					} else if opts.WithActivationToken == "" && nodeenrollment.IsNil(opts.WithRegistrationWrapper) {
+						require.NotNil(fetchInfo.MlkemParameters)
+						assert.NotEmpty(fetchInfo.MlkemParameters.EncapsulationKey)
+					}
+					assert.Negative(time.Until(fetchInfo.NotBefore.AsTime()))
+					assert.Positive(time.Until(fetchInfo.NotAfter.AsTime()))
 
-			pubKey, err := x509.ParsePKIXPublicKey(fetchInfo.CertificatePublicKeyPkix)
-			require.NoError(err)
-			assert.True(ed25519.Verify(pubKey.(ed25519.PublicKey), out.Bundle, out.BundleSignature))
+					pubKey, err := x509.ParsePKIXPublicKey(fetchInfo.CertificatePublicKeyPkix)
+					require.NoError(err)
+					assert.True(ed25519.Verify(pubKey.(ed25519.PublicKey), out.Bundle, out.BundleSignature))
 
-			if opts.WithActivationToken != "" {
-				if fetchInfo.ActivationTokenId == "" {
-					assert.Equal(serverLedActivationToken, fmt.Sprintf("%s%s", nodeenrollment.ServerLedActivationTokenPrefix, base58.FastBase58Encoding(fetchInfo.Nonce)))
-				} else {
-					assert.Equal(storageId, fetchInfo.ActivationTokenId)
-				}
-			} else {
-				assert.Equal(nodeCreds.RegistrationNonce, fetchInfo.Nonce)
-			}
+					if opts.WithActivationToken != "" {
+						if fetchInfo.ActivationTokenId == "" {
+							assert.Equal(serverLedActivationToken, fmt.Sprintf("%s%s", nodeenrollment.ServerLedActivationTokenPrefix, base58.FastBase58Encoding(fetchInfo.Nonce)))
+						} else {
+							assert.Equal(storageId, fetchInfo.ActivationTokenId)
+						}
+					} else {
+						assert.Equal(nodeCreds.RegistrationNonce, fetchInfo.Nonce)
+					}
 
-			if !nodeenrollment.IsNil(opts.WithRegistrationWrapper) {
-				require.NotEmpty(fetchInfo.WrappedRegistrationInfo)
-				encryptedRegInfo := new(wrapping.BlobInfo)
-				require.NoError(proto.Unmarshal(fetchInfo.WrappedRegistrationInfo, encryptedRegInfo))
-				regInfoBytes, err := opts.WithRegistrationWrapper.Decrypt(ctx, encryptedRegInfo)
-				require.NoError(err)
-				require.NotEmpty(regInfoBytes)
-				regInfo := new(types.WrappingRegistrationFlowInfo)
-				require.NoError(proto.Unmarshal(regInfoBytes, regInfo))
-				assert.EqualValues(fetchInfo.CertificatePublicKeyPkix, regInfo.CertificatePublicKeyPkix)
-				assert.Equal(n.RegistrationNonce, regInfo.Nonce)
-				assert.EqualValues(applicationSpecificParamsMap, regInfo.ApplicationSpecificParams.AsMap())
-			}
+					if !nodeenrollment.IsNil(opts.WithRegistrationWrapper) {
+						require.NotEmpty(fetchInfo.WrappedRegistrationInfo)
+						encryptedRegInfo := new(wrapping.BlobInfo)
+						require.NoError(proto.Unmarshal(fetchInfo.WrappedRegistrationInfo, encryptedRegInfo))
+						regInfoBytes, err := opts.WithRegistrationWrapper.Decrypt(ctx, encryptedRegInfo)
+						require.NoError(err)
+						require.NotEmpty(regInfoBytes)
+						regInfo := new(types.WrappingRegistrationFlowInfo)
+						require.NoError(proto.Unmarshal(regInfoBytes, regInfo))
+						assert.EqualValues(fetchInfo.CertificatePublicKeyPkix, regInfo.CertificatePublicKeyPkix)
+						assert.Equal(n.RegistrationNonce, regInfo.Nonce)
+						assert.EqualValues(applicationSpecificParamsMap, regInfo.ApplicationSpecificParams.AsMap())
+					}
 
-			if opts.WithoutRegistrationChallenge {
-				// Fetch step: RegistrationChallenge must not be included in the
-				// bundle so a MITM cannot read and forge it.
-				assert.Nil(fetchInfo.RegistrationChallenge)
-			} else if opts.WithActivationToken == "" && nodeenrollment.IsNil(opts.WithRegistrationWrapper) {
-				// Authorization step or plain node-led: challenge should be present.
-				assert.NotNil(fetchInfo.RegistrationChallenge)
-				assert.NotEmpty(fetchInfo.RegistrationChallenge.Challenge)
+					if opts.WithoutRegistrationChallenge {
+						// Fetch step: RegistrationChallenge must not be included in the
+						// bundle so a MITM cannot read and forge it.
+						assert.Nil(fetchInfo.RegistrationChallenge)
+					} else if opts.WithActivationToken == "" && nodeenrollment.IsNil(opts.WithRegistrationWrapper) {
+						// Authorization step or plain node-led: challenge should be present.
+						assert.NotNil(fetchInfo.RegistrationChallenge)
+						assert.NotEmpty(fetchInfo.RegistrationChallenge.Challenge)
+					}
+				})
 			}
 		})
 	}
@@ -674,7 +795,7 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 	require.NoError(t, err)
 
 	// Generate a suitable root
-	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage, nodeenrollment.WithEncryptionPrivateKeyType(uint(types.KEYTYPE_X25519)))
 	require.NoError(t, err)
 
 	// Create server keys
@@ -899,4 +1020,88 @@ func TestNodeCredentials_HandleFetchNodeCredentialsResponse(t *testing.T) {
 			assert.Equal(n.Id, string(nodeenrollment.CurrentId))
 		})
 	}
+}
+
+// TestHandleFetchNodeCredentialsResponse_MLKEM_CiphertextPersisted verifies
+// that after the first successful MLKEM fetch, the server's ciphertext is
+// persisted into n.MlkemParameters.Ciphertext. Without this, subsequent
+// fetches never enter the consistency-check branch and a different ciphertext
+// (i.e. a freshly encapsulated one) is silently accepted and
+// used to derive a new shared key on every call.
+func TestHandleFetchNodeCredentialsResponse_MLKEM_CiphertextPersisted(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	storage, err := inmem.New(ctx)
+	require.NoError(t, err)
+
+	// Create MLKEM1024 node credentials (the default key type).
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
+	require.NoError(t, err)
+	require.NotNil(t, nodeCreds.MlkemParameters)
+	require.NotEmpty(t, nodeCreds.MlkemParameters.DecapsulationKey)
+
+	// Recover the encapsulation key (public key) from the stored decapsulation key.
+	dk, err := mlkem.NewDecapsulationKey1024(nodeCreds.MlkemParameters.DecapsulationKey)
+	require.NoError(t, err)
+	ek := dk.EncapsulationKey()
+
+	// buildResp encrypts a minimal NodeCredentials payload under the given shared
+	// key and wraps it in a FetchNodeCredentialsResponse bearing the ciphertext.
+	buildResp := func(sharedKey, ciphertext []byte) *types.FetchNodeCredentialsResponse {
+		nodeInfo := &types.NodeInformation{
+			ServerEncryptionPrivateKeyType: types.KEYTYPE_MLKEM1024,
+			MlkemParameters:                &types.MLKEMParameters{SharedKey: sharedKey},
+			CertificatePublicKeyPkix:       nodeCreds.CertificatePublicKeyPkix,
+		}
+		payload := &types.NodeCredentials{
+			CertificateBundles: []*types.CertificateBundle{{
+				CertificateDer:   []byte("cert"),
+				CaCertificateDer: []byte("ca"),
+			}},
+		}
+		encryptedCreds, err := nodeenrollment.EncryptMessage(ctx, payload, nodeInfo)
+		require.NoError(t, err)
+		return &types.FetchNodeCredentialsResponse{
+			ServerEncryptionPublicKeyType: types.KEYTYPE_MLKEM1024,
+			MlkemCiphertext:               ciphertext,
+			EncryptedNodeCredentials:      encryptedCreds,
+		}
+	}
+
+	// --- First fetch ---
+	// The server encapsulates against the node's public key, producing a fresh
+	// shared key and ciphertext that it sends back in the response.
+	sharedKey1, ciphertext1 := ek.Encapsulate()
+
+	n := proto.Clone(nodeCreds).(*types.NodeCredentials)
+	_, err = n.HandleFetchNodeCredentialsResponse(
+		ctx, storage, buildResp(sharedKey1, ciphertext1),
+		nodeenrollment.WithActivationToken("tok"), // skips challenge validation
+		nodeenrollment.WithSkipStorage(true),
+	)
+	require.NoError(t, err, "first fetch must succeed")
+
+	// The ciphertext MUST be persisted so that the next response can be checked
+	// for consistency.
+	require.NotNil(t, n.MlkemParameters)
+	assert.Equal(t, ciphertext1, n.MlkemParameters.Ciphertext,
+		"ciphertext from first fetch must be persisted into MlkemParameters.Ciphertext")
+
+	// --- Second fetch with a *different* ciphertext ---
+	// A fresh encapsulation produces a different ciphertext (and a different
+	// shared key). Once the first ciphertext is persisted the function must
+	// detect the mismatch and return an error.
+	sharedKey2, ciphertext2 := ek.Encapsulate()
+	require.NotEqual(t, ciphertext1, ciphertext2,
+		"two independent encapsulations must produce distinct ciphertexts")
+
+	_, err = n.HandleFetchNodeCredentialsResponse(
+		ctx, storage, buildResp(sharedKey2, ciphertext2),
+		nodeenrollment.WithActivationToken("tok"),
+		nodeenrollment.WithSkipStorage(true),
+	)
+	require.Error(t, err, "second fetch with a different ciphertext must be rejected")
+	assert.Contains(t, err.Error(), "does not match expected value",
+		"error must identify the ciphertext mismatch")
 }

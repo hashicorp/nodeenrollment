@@ -13,6 +13,12 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+type EncryptionKeyMaterial struct {
+	KeyId     string
+	KeyType   uint
+	SharedKey []byte
+}
+
 // X25519KeyProducer is an interface that can be satisfied by an underlying type
 // that produces an encryption key via X25519, along with a key identifier used
 // for AAD and embedding in the wrapping data. If the ID is empty, it is simply
@@ -22,21 +28,21 @@ type X25519KeyProducer interface {
 	PreviousX25519EncryptionKey() (string, []byte, error)
 }
 
-// EncryptMessage takes any proto.Message and a valid key source that implements
-// X25519KeyProducer. Internally it uses an `aead` wrapper from go-kms-wrapping v2.
-// No options are currently supported but in the future non-AES-GCM encryption
-// types could be supported by the wrapper and chosen here.
-//
-// The resulting value from the wrapper is marshaled before being returned.
-//
-// Supported options: WithRandomReader
-func EncryptMessage(ctx context.Context, msg proto.Message, keySource X25519KeyProducer, opt ...Option) ([]byte, error) {
-	const op = "nodeenrollment.EncryptMessage"
-	switch {
-	case IsNil(msg):
-		return nil, fmt.Errorf("(%s) incoming message is nil", op)
-	case IsNil(keySource):
-		return nil, fmt.Errorf("(%s) incoming key source is nil", op)
+// KeyProducer exposes shared keys for current and previous encryption
+// material.
+type KeyProducer interface {
+	CurrentSharedEncryptionKey() (EncryptionKeyMaterial, error)
+	PreviousSharedEncryptionKey() (EncryptionKeyMaterial, error)
+}
+
+func encryptMessageWithKeyProducer(ctx context.Context, msg proto.Message, keySource KeyProducer, opt ...Option) ([]byte, error) {
+	const op = "nodeenrollment.encryptMessageWithKeyProducer"
+	selectedKey, err := keySource.CurrentSharedEncryptionKey()
+	if err != nil {
+		return nil, fmt.Errorf("(%s) error deriving shared encryption key: %w", op, err)
+	}
+	if len(selectedKey.SharedKey) == 0 {
+		return nil, fmt.Errorf("(%s) no shared encryption keys available", op)
 	}
 
 	opts, err := GetOpts(opt...)
@@ -44,16 +50,11 @@ func EncryptMessage(ctx context.Context, msg proto.Message, keySource X25519KeyP
 		return nil, fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
-	keyId, sharedKey, err := keySource.X25519EncryptionKey()
-	if err != nil {
-		return nil, fmt.Errorf("(%s) error deriving shared encryption key: %w", op, err)
-	}
-
 	aeadWrapper := aead.NewWrapper()
 	if _, err := aeadWrapper.SetConfig(
 		ctx,
-		wrapping.WithKeyId(keyId),
-		aead.WithKey(sharedKey),
+		wrapping.WithKeyId(selectedKey.KeyId),
+		aead.WithKey(selectedKey.SharedKey),
 		aead.WithRandomReader(opts.WithRandomReader),
 	); err != nil {
 		return nil, fmt.Errorf("(%s) error instantiating aead wrapper: %w", op, err)
@@ -65,8 +66,8 @@ func EncryptMessage(ctx context.Context, msg proto.Message, keySource X25519KeyP
 	}
 
 	var aadOpt wrapping.Option
-	if keyId != "" {
-		aadOpt = wrapping.WithAad([]byte(keyId))
+	if selectedKey.KeyId != "" {
+		aadOpt = wrapping.WithAad([]byte(selectedKey.KeyId))
 	}
 	blobInfo, err := aeadWrapper.Encrypt(ctx, marshaledMsg, aadOpt)
 	if err != nil {
@@ -81,8 +82,53 @@ func EncryptMessage(ctx context.Context, msg proto.Message, keySource X25519KeyP
 	return marshaledBlob, nil
 }
 
-// DecryptMessage takes any a value encrypted with EncryptMessage and a valid
-// key source that implements X25519KeyProducer and decrypts the message into the
+func decryptMessageWithKeyProducer(ctx context.Context, ct []byte, keySource KeyProducer, result proto.Message) error {
+	const op = "nodeenrollment.decryptMessageWithKeyProducer"
+	currentKey, err := keySource.CurrentSharedEncryptionKey()
+	if err != nil {
+		return fmt.Errorf("(%s) error deriving shared encryption key: %w", op, err)
+	}
+
+	err = decryptWithKey(ctx, currentKey.KeyId, ct, currentKey.SharedKey, result)
+	if err == nil {
+		return nil
+	}
+
+	previousKey, prevErr := keySource.PreviousSharedEncryptionKey()
+	if prevErr != nil || len(previousKey.SharedKey) == 0 {
+		return err
+	}
+
+	prevErr = decryptWithKey(ctx, previousKey.KeyId, ct, previousKey.SharedKey, result)
+	if prevErr != nil {
+		return errors.Join(err, fmt.Errorf("(%s) error decrypting with previous key: %w", op, prevErr))
+	}
+
+	return nil
+}
+
+// EncryptMessage takes any proto.Message and a valid key source that implements
+// KeyProducer. Internally it uses an `aead` wrapper from go-kms-wrapping v2.
+// No options are currently supported but in the future non-AES-GCM encryption
+// types could be supported by the wrapper and chosen here.
+//
+// The resulting value from the wrapper is marshaled before being returned.
+//
+// Supported options: WithRandomReader
+func EncryptMessage(ctx context.Context, msg proto.Message, keySource KeyProducer, opt ...Option) ([]byte, error) {
+	const op = "nodeenrollment.EncryptMessage"
+	switch {
+	case IsNil(msg):
+		return nil, fmt.Errorf("(%s) incoming message is nil", op)
+	case IsNil(keySource):
+		return nil, fmt.Errorf("(%s) incoming key source is nil", op)
+	}
+
+	return encryptMessageWithKeyProducer(ctx, msg, keySource, opt...)
+}
+
+// DecryptMessage takes a value encrypted with EncryptMessage and a valid
+// key source that implements KeyProducer and decrypts the message into the
 // given proto.Message. Internally it uses an `aead` wrapper from
 // go-kms-wrapping v2. No options are currently supported but in the future
 // non-AES-GCM decryption types could be supported by the wrapper and chosen
@@ -95,7 +141,7 @@ func EncryptMessage(ctx context.Context, msg proto.Message, keySource X25519KeyP
 // If decryption fails with the current key, and a prior key is present,
 // use that to try and decrypt the message in the case an older key
 // was used to encrypt the incoming message
-func DecryptMessage(ctx context.Context, ct []byte, keySource X25519KeyProducer, result proto.Message, _ ...Option) error {
+func DecryptMessage(ctx context.Context, ct []byte, keySource KeyProducer, result proto.Message, _ ...Option) error {
 	const op = "nodeenrollment.DecryptMessage"
 	switch {
 	case len(ct) == 0:
@@ -106,27 +152,7 @@ func DecryptMessage(ctx context.Context, ct []byte, keySource X25519KeyProducer,
 		return fmt.Errorf("(%s) incoming result message is nil", op)
 	}
 
-	keyId, sharedKey, err := keySource.X25519EncryptionKey()
-	if err != nil {
-		return fmt.Errorf("(%s) error deriving shared encryption key: %w", op, err)
-	}
-
-	err = decryptWithKey(ctx, keyId, ct, sharedKey, result)
-
-	// If decryption fails with the current key, try with the previous key, if present
-	if err != nil {
-		prevId, previousKey, prevErr := keySource.PreviousX25519EncryptionKey()
-		if prevErr != nil || previousKey == nil {
-			return err
-		}
-		prevErr = decryptWithKey(ctx, prevId, ct, previousKey, result)
-		if prevErr != nil {
-			err = errors.Join(err, fmt.Errorf("(%s) error decrypting with previous key: %w", op, prevErr))
-			return err
-		}
-	}
-
-	return nil
+	return decryptMessageWithKeyProducer(ctx, ct, keySource, result)
 }
 
 func decryptWithKey(ctx context.Context, keyId string, ct []byte, sharedKey []byte, result proto.Message) error {

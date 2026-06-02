@@ -4,6 +4,7 @@
 package nodeenrollment
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdh"
 	"crypto/rand"
@@ -22,6 +23,11 @@ type testNode struct {
 	keyId    string
 	priv     []byte
 	otherPub []byte
+}
+
+type orderedTestKeyProducer struct {
+	current  EncryptionKeyMaterial
+	previous EncryptionKeyMaterial
 }
 
 func (t testNode) X25519EncryptionKey() (string, []byte, error) {
@@ -44,7 +50,45 @@ func (t testNode) PreviousX25519EncryptionKey() (string, []byte, error) {
 	return "", nil, nil
 }
 
-var _ X25519KeyProducer = (*testNode)(nil)
+func (t testNode) CurrentSharedEncryptionKey() (EncryptionKeyMaterial, error) {
+	keyId, sharedKey, err := t.X25519EncryptionKey()
+	if err != nil {
+		return EncryptionKeyMaterial{}, err
+	}
+
+	return EncryptionKeyMaterial{
+		KeyId:     keyId,
+		SharedKey: sharedKey,
+	}, nil
+}
+
+func (t testNode) PreviousSharedEncryptionKey() (EncryptionKeyMaterial, error) {
+	keyId, sharedKey, err := t.PreviousX25519EncryptionKey()
+	if err != nil {
+		return EncryptionKeyMaterial{}, err
+	}
+	if sharedKey == nil {
+		return EncryptionKeyMaterial{}, nil
+	}
+
+	return EncryptionKeyMaterial{
+		KeyId:     keyId,
+		SharedKey: sharedKey,
+	}, nil
+}
+
+func (t orderedTestKeyProducer) CurrentSharedEncryptionKey() (EncryptionKeyMaterial, error) {
+	return t.current, nil
+}
+
+func (t orderedTestKeyProducer) PreviousSharedEncryptionKey() (EncryptionKeyMaterial, error) {
+	return t.previous, nil
+}
+
+var (
+	_ X25519KeyProducer = (*testNode)(nil)
+	_ KeyProducer       = (*testNode)(nil)
+)
 
 func Test_EncryptionDecryption(t *testing.T) {
 	t.Parallel()
@@ -80,8 +124,8 @@ func Test_EncryptionDecryption(t *testing.T) {
 		decryptId          string
 		encryptMsg         proto.Message
 		decryptMsg         proto.Message
-		encryptKeySource   X25519KeyProducer
-		decryptKeySource   X25519KeyProducer
+		encryptKeySource   KeyProducer
+		decryptKeySource   KeyProducer
 		encDecWrapper      wrapping.Wrapper
 		wantErrContains    string
 		wantEncErrContains string
@@ -212,4 +256,49 @@ func Test_EncryptionDecryption(t *testing.T) {
 			subtAssert.Empty(cmp.Diff(tt.encryptMsg, tt.decryptMsg, protocmp.Transform()))
 		})
 	}
+}
+
+func Test_encryptMessageWithKeyProducer_UsesCurrentKey(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	currentKey := bytes.Repeat([]byte{1}, 32)
+	msg := &wrapping.BlobInfo{
+		Ciphertext: []byte("foo"),
+		Iv:         []byte("bar"),
+		Hmac:       []byte("baz"),
+	}
+
+	ct, err := encryptMessageWithKeyProducer(ctx, msg, orderedTestKeyProducer{
+		current: EncryptionKeyMaterial{KeyId: "current", SharedKey: currentKey},
+	})
+	require.NoError(t, err)
+
+	decryptedMsg := new(wrapping.BlobInfo)
+	require.NoError(t, decryptWithKey(ctx, "current", ct, currentKey, decryptedMsg))
+	assert.Empty(t, cmp.Diff(msg, decryptedMsg, protocmp.Transform()))
+}
+
+func Test_decryptMessageWithKeyProducer_FallsBackToPreviousKeys(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	previousKey := bytes.Repeat([]byte{3}, 32)
+	currentKey := bytes.Repeat([]byte{4}, 32)
+	msg := &wrapping.BlobInfo{
+		Ciphertext: []byte("foo"),
+		Iv:         []byte("bar"),
+		Hmac:       []byte("baz"),
+	}
+
+	ct, err := encryptMessageWithKeyProducer(ctx, msg, orderedTestKeyProducer{
+		current: EncryptionKeyMaterial{KeyId: "previous", SharedKey: previousKey},
+	})
+	require.NoError(t, err)
+
+	decryptedMsg := new(wrapping.BlobInfo)
+	err = decryptMessageWithKeyProducer(ctx, ct, orderedTestKeyProducer{
+		current:  EncryptionKeyMaterial{KeyId: "current", SharedKey: currentKey},
+		previous: EncryptionKeyMaterial{KeyId: "previous", SharedKey: previousKey},
+	}, decryptedMsg)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff(msg, decryptedMsg, protocmp.Transform()))
 }

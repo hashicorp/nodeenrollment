@@ -471,7 +471,7 @@ func TestNodeInformation_X25519(t *testing.T) {
 			name: "invalid-bad-privkey-type",
 			setupFn: func(nodeInfo *types.NodeInformation) (*types.NodeInformation, string) {
 				nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE_ED25519
-				return nodeInfo, "private key type is not known"
+				return nodeInfo, "invalid private key type"
 			},
 		},
 		{
@@ -485,7 +485,7 @@ func TestNodeInformation_X25519(t *testing.T) {
 			name: "invalid-bad-pubkey-type",
 			setupFn: func(nodeInfo *types.NodeInformation) (*types.NodeInformation, string) {
 				nodeInfo.EncryptionPublicKeyType = types.KEYTYPE_ED25519
-				return nodeInfo, "public key type is not known"
+				return nodeInfo, "invalid public key type"
 			},
 		},
 		{
@@ -592,4 +592,93 @@ func TestNodeInformation_X25519(t *testing.T) {
 			assert.Empty(gocmp.Diff(message, decryptedMsg, protocmp.Transform()))
 		})
 	}
+}
+
+func TestNodeInformation_SetPreviousEncryptionKey_MLKEM1024(t *testing.T) {
+	t.Parallel()
+
+	oldCertPubKey, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	oldPubKeyPkix, err := x509.MarshalPKIXPublicKey(oldCertPubKey)
+	require.NoError(t, err)
+
+	oldSharedKey := []byte("old-mlkem-shared-key")
+	oldNodeInfo := &types.NodeInformation{
+		ServerEncryptionPrivateKeyType: types.KEYTYPE_MLKEM1024,
+		CertificatePublicKeyPkix:       oldPubKeyPkix,
+		MlkemParameters: &types.MLKEMParameters{
+			SharedKey: oldSharedKey,
+		},
+	}
+
+	newNodeInfo := &types.NodeInformation{}
+	require.NoError(t, newNodeInfo.SetPreviousEncryptionKey(oldNodeInfo))
+
+	require.NotNil(t, newNodeInfo.PreviousEncryptionKey)
+	assert.Equal(t, types.KEYTYPE_MLKEM1024, newNodeInfo.PreviousEncryptionKey.PrivateKeyType)
+	require.NotNil(t, newNodeInfo.PreviousEncryptionKey.MlkemParameters)
+	assert.Equal(t, oldSharedKey, newNodeInfo.PreviousEncryptionKey.MlkemParameters.SharedKey)
+
+	previousKey, err := newNodeInfo.PreviousSharedEncryptionKey()
+	require.NoError(t, err)
+	assert.Equal(t, uint(types.KEYTYPE_MLKEM1024), previousKey.KeyType)
+	assert.Equal(t, oldSharedKey, previousKey.SharedKey)
+}
+
+func TestNodeInformation_CurrentSharedEncryptionKey(t *testing.T) {
+	t.Parallel()
+	curve := ecdh.X25519()
+
+	privKey, err := curve.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	peerKey, err := curve.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	certPubKey, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	pubKeyPkix, err := x509.MarshalPKIXPublicKey(certPubKey)
+	require.NoError(t, err)
+
+	nodeInfo := &types.NodeInformation{
+		ServerEncryptionPrivateKeyBytes: privKey.Bytes(),
+		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
+		EncryptionPublicKeyBytes:        peerKey.PublicKey().Bytes(),
+		EncryptionPublicKeyType:         types.KEYTYPE_X25519,
+		CertificatePublicKeyPkix:        pubKeyPkix,
+	}
+
+	currentKey, err := nodeInfo.CurrentSharedEncryptionKey()
+	require.NoError(t, err)
+
+	keyId, sharedKey, err := nodeInfo.X25519EncryptionKey()
+	require.NoError(t, err)
+	assert.Equal(t, keyId, currentKey.KeyId)
+	assert.Equal(t, uint(types.KEYTYPE_X25519), currentKey.KeyType)
+	assert.Equal(t, sharedKey, currentKey.SharedKey)
+
+	oldPrivKey, err := curve.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	oldPeerKey, err := curve.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	oldCertPubKey, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	oldPubKeyPkix, err := x509.MarshalPKIXPublicKey(oldCertPubKey)
+	require.NoError(t, err)
+
+	oldNodeInfo := &types.NodeInformation{
+		ServerEncryptionPrivateKeyBytes: oldPrivKey.Bytes(),
+		ServerEncryptionPrivateKeyType:  types.KEYTYPE_X25519,
+		EncryptionPublicKeyBytes:        oldPeerKey.PublicKey().Bytes(),
+		EncryptionPublicKeyType:         types.KEYTYPE_X25519,
+		CertificatePublicKeyPkix:        oldPubKeyPkix,
+	}
+	require.NoError(t, nodeInfo.SetPreviousEncryptionKey(oldNodeInfo))
+
+	previousKey, err := nodeInfo.PreviousSharedEncryptionKey()
+	require.NoError(t, err)
+
+	previousKeyId, previousSharedKey, err := nodeInfo.PreviousX25519EncryptionKey()
+	require.NoError(t, err)
+	assert.Equal(t, previousKeyId, previousKey.KeyId)
+	assert.Equal(t, uint(types.KEYTYPE_X25519), previousKey.KeyType)
+	assert.Equal(t, previousSharedKey, previousKey.SharedKey)
 }

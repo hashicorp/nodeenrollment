@@ -18,6 +18,7 @@ import (
 	"github.com/hashicorp/nodeenrollment/rotation"
 	"github.com/hashicorp/nodeenrollment/storage/inmem"
 	"github.com/hashicorp/nodeenrollment/types"
+	nodetesting "github.com/hashicorp/nodeenrollment/testing"
 	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -64,8 +65,8 @@ func TestServerLedRegistration(t *testing.T) {
 	// be present in the nonce given to the node.
 	assert.NotEmpty(tokenNonce.ActivationTokenId)
 	assert.Equal(tokenId, tokenNonce.ActivationTokenId)
-	assert.NotEmpty(tokenNonce.ServerEncryptionPublicKeyBytes)
-	assert.Equal(types.KEYTYPE_X25519, tokenNonce.ServerEncryptionPublicKeyType)
+	assert.Empty(tokenNonce.ServerEncryptionPublicKeyBytes)
+	assert.Equal(types.KEYTYPE_MLKEM1024, tokenNonce.ServerEncryptionPublicKeyType)
 	// Legacy fields must still be present for backwards compatibility.
 	assert.NotEmpty(tokenNonce.Nonce)
 	assert.NotEmpty(tokenNonce.HmacKeyBytes)
@@ -86,8 +87,8 @@ func TestServerLedRegistration(t *testing.T) {
 	assert.NotEmpty(tokenEntry.CreationTimeMarshaled)
 	assert.Empty(tokenEntry.WrappingKeyId)
 	// New protocol: server encryption private key and challenge must be stored.
-	assert.NotEmpty(tokenEntry.ServerEncryptionPrivateKeyBytes)
-	assert.Equal(types.KEYTYPE_X25519, tokenEntry.ServerEncryptionPrivateKeyType)
+	assert.NotNil(tokenEntry.MlkemParameters)
+	assert.NotEmpty(tokenEntry.MlkemParameters.DecapsulationKey)
 	assert.NotNil(tokenEntry.RegistrationChallenge)
 	assert.NotEmpty(tokenEntry.RegistrationChallenge.Challenge)
 	// The challenge stored on the server should equal the nonce sent to the node.
@@ -141,33 +142,53 @@ func TestServerLedRegistration_ReloadedCredentialsRejectMismatchedServerKey(t *t
 	t.Parallel()
 	ctx := context.Background()
 
-	storage, err := inmem.New(ctx)
-	require.NoError(t, err)
+	for _, kt := range nodetesting.TestKeyTypeVariants() {
+		t.Run(kt.Name, func(t *testing.T) {
+			t.Parallel()
 
-	_, err = rotation.RotateRootCertificates(ctx, storage)
-	require.NoError(t, err)
+			storage, err := inmem.New(ctx)
+			require.NoError(t, err)
 
-	_, activationToken, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{})
-	require.NoError(t, err)
+			_, err = rotation.RotateRootCertificates(ctx, storage)
+			require.NoError(t, err)
 
-	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
-	require.NoError(t, err)
-	_, err = nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage,
-		nodeenrollment.WithActivationToken(activationToken),
-	)
-	require.NoError(t, err)
+			_, activationToken, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{}, kt.Opts...)
+			require.NoError(t, err)
 
-	reloadedCreds, err := types.LoadNodeCredentials(ctx, storage, nodeenrollment.CurrentId)
-	require.NoError(t, err)
-	require.NotEmpty(t, reloadedCreds.ServerEncryptionPublicKeyBytes)
+			nodeCreds, err := types.NewNodeCredentials(ctx, storage, kt.Opts...)
+			require.NoError(t, err)
+			_, err = nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage,
+				nodeenrollment.WithActivationToken(activationToken),
+			)
+			require.NoError(t, err)
 
-	_, err = reloadedCreds.HandleFetchNodeCredentialsResponse(ctx, storage, &types.FetchNodeCredentialsResponse{
-		ServerEncryptionPublicKeyBytes: []byte("unexpected-server-key"),
-		ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
-		EncryptedNodeCredentials:       []byte("not-empty"),
-	}, nodeenrollment.WithActivationToken(activationToken))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "server encryption public key in response does not match expected value")
+			reloadedCreds, err := types.LoadNodeCredentials(ctx, storage, nodeenrollment.CurrentId)
+			require.NoError(t, err)
+
+			if kt.KeyType == types.KEYTYPE_MLKEM1024 {
+				require.NotNil(t, reloadedCreds.MlkemParameters)
+				require.NotEmpty(t, reloadedCreds.MlkemParameters.Ciphertext)
+
+				_, err = reloadedCreds.HandleFetchNodeCredentialsResponse(ctx, storage, &types.FetchNodeCredentialsResponse{
+					ServerEncryptionPublicKeyType: types.KEYTYPE_MLKEM1024,
+					MlkemCiphertext:               []byte("unexpected-ciphertext"),
+					EncryptedNodeCredentials:      []byte("not-empty"),
+				}, nodeenrollment.WithActivationToken(activationToken))
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "server mlkem ciphertext in response does not match expected value")
+			} else {
+				require.NotEmpty(t, reloadedCreds.ServerEncryptionPublicKeyBytes)
+
+				_, err = reloadedCreds.HandleFetchNodeCredentialsResponse(ctx, storage, &types.FetchNodeCredentialsResponse{
+					ServerEncryptionPublicKeyBytes: []byte("unexpected-server-key"),
+					ServerEncryptionPublicKeyType:  types.KEYTYPE_X25519,
+					EncryptedNodeCredentials:       []byte("not-empty"),
+				}, nodeenrollment.WithActivationToken(activationToken))
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "server encryption public key in response does not match expected value")
+			}
+		})
+	}
 }
 
 // TestServerLedRegistration_BadChallenge verifies that FetchNodeCredentials
@@ -232,11 +253,13 @@ func TestServerLedRegistration_TokenIdOnlyRejected(t *testing.T) {
 	_, err = rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
-	tokenId, _, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{})
+	tokenId, _, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{},
+		nodeenrollment.WithEncryptionPrivateKeyType(uint(types.KEYTYPE_X25519)),
+	)
 	require.NoError(t, err)
 	require.NotEmpty(t, tokenId)
 
-	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage, nodeenrollment.WithEncryptionPrivateKeyType(uint(types.KEYTYPE_X25519)))
 	require.NoError(t, err)
 	fetchReq, err := nodeCreds.CreateFetchNodeCredentialsRequest(ctx, storage)
 	require.NoError(t, err)
@@ -373,7 +396,9 @@ func TestServerLedRegistration_OldWorkerBackwardsCompat(t *testing.T) {
 	_, err = rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
-	tokenId, activationToken, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{})
+	tokenId, activationToken, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{},
+		nodeenrollment.WithEncryptionPrivateKeyType(uint(types.KEYTYPE_X25519)),
+	)
 	require.NoError(t, err)
 	assert.NotEmpty(t, tokenId)
 
@@ -382,7 +407,7 @@ func TestServerLedRegistration_OldWorkerBackwardsCompat(t *testing.T) {
 	rawNonce, err := base58.FastBase58Decoding(strings.TrimPrefix(activationToken, nodeenrollment.ServerLedActivationTokenPrefix))
 	require.NoError(t, err)
 
-	nodeCreds, err := types.NewNodeCredentials(ctx, storage)
+	nodeCreds, err := types.NewNodeCredentials(ctx, storage, nodeenrollment.WithEncryptionPrivateKeyType(uint(types.KEYTYPE_X25519)))
 	require.NoError(t, err)
 
 	// Build a new-style request but override it to look like an old one.

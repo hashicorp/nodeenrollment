@@ -65,9 +65,11 @@ func validateFetchRequestCommon(
 		return nil, fmt.Errorf("(%s) empty node certificate public key", op)
 	case reqInfo.CertificatePublicKeyType != types.KEYTYPE_ED25519:
 		return nil, fmt.Errorf("(%s) unsupported node certificate public key type %v", op, reqInfo.CertificatePublicKeyType.String())
-	case len(reqInfo.EncryptionPublicKeyBytes) == 0:
+	case reqInfo.EncryptionPublicKeyType == types.KEYTYPE_X25519 && len(reqInfo.EncryptionPublicKeyBytes) == 0:
 		return nil, fmt.Errorf("(%s) empty node encryption public key", op)
-	case reqInfo.EncryptionPublicKeyType != types.KEYTYPE_X25519:
+	case reqInfo.EncryptionPublicKeyType == types.KEYTYPE_MLKEM1024 && reqInfo.MlkemParameters == nil:
+		return nil, fmt.Errorf("(%s) node encryption public key type mlkem1024 but mlkem parameters are nil", op)
+	case reqInfo.EncryptionPublicKeyType != types.KEYTYPE_X25519 && reqInfo.EncryptionPublicKeyType != types.KEYTYPE_MLKEM1024:
 		return nil, fmt.Errorf("(%s) unsupported node encryption public key type %v", op, reqInfo.EncryptionPublicKeyType.String())
 	case reqInfo.NotBefore.AsTime().Add(opts.WithNotBeforeClockSkew).After(now):
 		return nil, fmt.Errorf("(%s) validity period is after current time", op)
@@ -221,12 +223,7 @@ func FetchNodeCredentials(
 		return nil, fmt.Errorf("(%s) bad registration information during fetch", op)
 	}
 
-	serverEncryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(nodeInfo.ServerEncryptionPrivateKeyBytes)
-	if err != nil {
-		return nil, fmt.Errorf("(%s) error reading server private encryption key: %w", op, err)
-	}
-	serverEncryptionPublicKey := serverEncryptionPrivateKey.PublicKey()
-
+	var resp types.FetchNodeCredentialsResponse
 	// Run some validations
 
 	// We no longer use this, but _if_ it's already been provided, we will check it
@@ -240,15 +237,46 @@ func FetchNodeCredentials(
 		return nil, fmt.Errorf("(%s) mismatched certificate public keys between authorization and incoming fetch request", op)
 	}
 
-	if subtle.ConstantTimeCompare(nodeInfo.EncryptionPublicKeyBytes, reqInfo.EncryptionPublicKeyBytes) != 1 {
-		return nil, fmt.Errorf("(%s) mismatched encryption public keys between authorization and incoming fetch request", op)
+	nodeCreds := &types.NodeCredentials{
+		ServerEncryptionPublicKeyType: nodeInfo.ServerEncryptionPrivateKeyType,
+		RegistrationNonce:             nodeInfo.RegistrationNonce,
+		CertificateBundles:            nodeInfo.CertificateBundles,
 	}
 
-	nodeCreds := &types.NodeCredentials{
-		ServerEncryptionPublicKeyBytes: serverEncryptionPublicKey.Bytes(),
-		ServerEncryptionPublicKeyType:  nodeInfo.ServerEncryptionPrivateKeyType,
-		RegistrationNonce:              nodeInfo.RegistrationNonce,
-		CertificateBundles:             nodeInfo.CertificateBundles,
+	switch nodeInfo.ServerEncryptionPrivateKeyType {
+	case types.KEYTYPE_MLKEM1024:
+		if reqInfo.EncryptionPublicKeyType != types.KEYTYPE_MLKEM1024 {
+			return nil, fmt.Errorf("(%s) mismatched encryption key types between authorization and incoming fetch request", op)
+		}
+		if nodeInfo.MlkemParameters == nil {
+			return nil, fmt.Errorf("(%s) node information has mlkem encryption key type but mlkem parameters are nil", op)
+		}
+
+		if len(nodeInfo.MlkemParameters.SharedKey) == 0 {
+			return nil, fmt.Errorf("(%s) node information has mlkem encryption key type but shared key is empty", op)
+		}
+		if len(nodeInfo.MlkemParameters.Ciphertext) == 0 {
+			return nil, fmt.Errorf("(%s) node information has mlkem encryption key type but ciphertext is empty", op)
+		}
+		if reqInfo.MlkemParameters != nil && len(reqInfo.MlkemParameters.Ciphertext) > 0 {
+			if subtle.ConstantTimeCompare(nodeInfo.MlkemParameters.Ciphertext, reqInfo.MlkemParameters.Ciphertext) != 1 {
+				return nil, fmt.Errorf("(%s) mismatched mlkem ciphertext between authorization and incoming fetch request", op)
+			}
+		}
+		resp.MlkemCiphertext = nodeInfo.MlkemParameters.Ciphertext
+	case types.KEYTYPE_X25519:
+		serverEncryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(nodeInfo.ServerEncryptionPrivateKeyBytes)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error reading server private encryption key: %w", op, err)
+		}
+		if subtle.ConstantTimeCompare(nodeInfo.EncryptionPublicKeyBytes, reqInfo.EncryptionPublicKeyBytes) != 1 {
+			return nil, fmt.Errorf("(%s) mismatched encryption public keys between authorization and incoming fetch request", op)
+		}
+		pubKeyBytes := serverEncryptionPrivateKey.PublicKey().Bytes()
+		nodeCreds.ServerEncryptionPublicKeyBytes = pubKeyBytes
+		resp.ServerEncryptionPublicKeyBytes = pubKeyBytes
+	default:
+		return nil, fmt.Errorf("(%s) unsupported server encryption key type: %v", op, nodeInfo.ServerEncryptionPrivateKeyType.String())
 	}
 
 	// If it's node-led activation and there's a challenge, ensure we include
@@ -277,11 +305,9 @@ func FetchNodeCredentials(
 		return nil, fmt.Errorf("(%s) error encrypting message: %w", op, err)
 	}
 
-	return &types.FetchNodeCredentialsResponse{
-		EncryptedNodeCredentials:       encryptedBytes,
-		ServerEncryptionPublicKeyBytes: serverEncryptionPublicKey.Bytes(),
-		ServerEncryptionPublicKeyType:  nodeInfo.ServerEncryptionPrivateKeyType,
-	}, nil
+	resp.EncryptedNodeCredentials = encryptedBytes
+	resp.ServerEncryptionPublicKeyType = nodeInfo.ServerEncryptionPrivateKeyType
+	return &resp, nil
 }
 
 // DecryptWrappedRegistrationInfo is shared functionality for decrypting wrapped

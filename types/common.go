@@ -37,6 +37,31 @@ func ValidateMessage(msg proto.Message) error {
 	return nil
 }
 
+// DeriveSharedX25519EncryptionKey dispatches shared-key derivation based on the
+// provided key types.
+func DeriveSharedX25519EncryptionKey(privKey []byte, privKeyType KEYTYPE, pubKey []byte, pubKeyType KEYTYPE) ([]byte, error) {
+	const op = "nodeenrollment.types.DeriveSharedX25519EncryptionKey"
+	switch {
+	case len(privKey) == 0:
+		return nil, fmt.Errorf("(%s) private key bytes is empty", op)
+	case privKeyType == KEYTYPE_UNSPECIFIED:
+		return nil, fmt.Errorf("(%s) private key type is not known", op)
+	case len(pubKey) == 0:
+		return nil, fmt.Errorf("(%s) public key bytes is empty", op)
+	case pubKeyType == KEYTYPE_UNSPECIFIED:
+		return nil, fmt.Errorf("(%s) public key type is not known", op)
+	case privKeyType != pubKeyType:
+		return nil, fmt.Errorf("(%s) key types do not match", op)
+	}
+
+	switch privKeyType {
+	case KEYTYPE_X25519:
+		return deriveX25519EncryptionKey(privKey, pubKey)
+	default:
+		return nil, fmt.Errorf("(%s) invalid private key type %s for deriving x25519 encryption key", op, privKeyType.String())
+	}
+}
+
 // X25519EncryptionKey takes in public and private keys and performs the X25519
 // operation on them.
 //
@@ -49,13 +74,18 @@ func X25519EncryptionKey(privKey []byte, privKeyType KEYTYPE, pubKey []byte, pub
 	case len(privKey) == 0:
 		return nil, fmt.Errorf("(%s) private key bytes is empty", op)
 	case privKeyType != KEYTYPE_X25519:
-		return nil, fmt.Errorf("(%s) private key type is not known", op)
+		return nil, fmt.Errorf("(%s) invalid private key type %s for X25519 operation", op, privKeyType.String())
 	case len(pubKey) == 0:
 		return nil, fmt.Errorf("(%s) public key bytes is empty", op)
 	case pubKeyType != KEYTYPE_X25519:
-		return nil, fmt.Errorf("(%s) public key type is not known", op)
+		return nil, fmt.Errorf("(%s) invalid public key type %s for X25519 operation", op, pubKeyType.String())
 	}
 
+	return deriveX25519EncryptionKey(privKey, pubKey)
+}
+
+func deriveX25519EncryptionKey(privKey []byte, pubKey []byte) ([]byte, error) {
+	const op = "nodeenrollment.types.deriveX25519EncryptionKey"
 	curve := ecdh.X25519()
 	pub, err := curve.NewPublicKey(pubKey)
 	if err != nil {

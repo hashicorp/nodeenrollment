@@ -15,6 +15,7 @@ enum KEYTYPE {
   UNSPECIFIED = 0;
   ED25519     = 1;
   X25519      = 2;
+  MLKEM1024   = 3;
 }
 
 // CertificateBundle contains information about a certificate the its issuing
@@ -54,16 +55,34 @@ message RootCertificates {
   google.protobuf.Struct state = 50;
 }
 
+
+// MLKEM information, used for MLKEM keys. Depending on the flow, instances may
+// carry the decapsulation key (long-lived) and also store the ciphertext and
+// shared key derived for a given enrollment/activation.
+message MLKEMParameters {
+  bytes decapsulation_key = 1 [json_name="decapsulation_key"];
+  bytes encapsulation_key = 2 [json_name="encapsulation_key"];
+  bytes shared_key        = 3 [json_name="shared_key"];
+  bytes ciphertext        = 4 [json_name="ciphertext"];
+}
+
 // EncryptionKey contains the key information necessary to generate a sharedKey
 // NodeInformation and NodeCredentials will store their previous encryption key
 // using this message type
+//
+// Maybe TODO: convert current encryption keys to this structure as well
 message EncryptionKey {
-  string  key_id            = 1 [json_name="key_id"];
-  bytes   private_key_pkcs8 = 2 [json_name="private_key_pkcs8"];
-  KEYTYPE private_key_type  = 3 [json_name="private_key_type"];
+  // The key ID
+  string key_id = 1 [json_name="key_id"];
 
-  bytes   public_key_pkix = 4 [json_name="public_key_pkix"];
-  KEYTYPE public_key_type = 5 [json_name="public_key_type"];
+  // Private and public key bytes. These are only used for some key types.
+  bytes private_key_bytes = 2 [json_name="private_key_bytes"];
+  bytes public_key_bytes  = 4 [json_name="public_key_bytes"];
+
+  MLKEMParameters mlkem_parameters = 27 [json_name="mlkem_parameters"];
+
+  KEYTYPE private_key_type = 3 [json_name="private_key_type"];
+  KEYTYPE public_key_type  = 5 [json_name="public_key_type"];
 }
 
 // NodeInformation contains server-side information about a node: its
@@ -95,6 +114,8 @@ message NodeInformation {
   KEYTYPE encryption_public_key_type          = 11 [json_name="encryption_public_key_type"];
   bytes   server_encryption_private_key_bytes = 12 [json_name="server_encryption_private_key_bytes"];
   KEYTYPE server_encryption_private_key_type  = 13 [json_name="server_encryption_private_key_type"];
+  MLKEMParameters mlkem_parameters            = 27 [json_name="mlkem_parameters"];
+  bytes encrypted_mlkem_parameters            = 28 [json_name="encrypted_mlkem_parameters"];
 
   bytes                 registration_nonce               = 20 [json_name="registration_nonce"];
   RegistrationChallenge registration_challenge           = 23 [json_name="registration_challenge"];
@@ -145,6 +166,8 @@ message NodeCredentials {
 
   bytes   encryption_private_key_bytes = 10 [json_name="encryption_private_key_bytes"];
   KEYTYPE encryption_private_key_type  = 11 [json_name="encryption_private_key_type"];
+  MLKEMParameters mlkem_parameters = 27 [json_name="mlkem_parameters"];
+  bytes   encrypted_mlkem_parameters = 28 [json_name="encrypted_mlkem_parameters"];
 
   bytes   server_encryption_public_key_bytes = 12 [json_name="server_encryption_public_key_bytes"];
   KEYTYPE server_encryption_public_key_type  = 13 [json_name="server_encryption_public_key_type"];
@@ -225,6 +248,7 @@ message FetchNodeCredentialsInfo {
 
   bytes   encryption_public_key_bytes = 10 [json_name="encryption_public_key_bytes"];
   KEYTYPE encryption_public_key_type  = 11 [json_name="encryption_public_key_type"];
+  MLKEMParameters mlkem_parameters    = 27 [json_name="mlkem_parameters"];
 
   bytes nonce = 20;
   // Used in node-led as part of the activation token
@@ -267,6 +291,7 @@ message FetchNodeCredentialsRequest {
 message FetchNodeCredentialsResponse {
   bytes   server_encryption_public_key_bytes = 12 [json_name="encryption_public_key_bytes"];
   KEYTYPE server_encryption_public_key_type  = 13 [json_name="encryption_public_key_type"];
+  bytes mlkem_ciphertext = 27 [json_name="mlkem_ciphertext"];
 
   bytes encrypted_node_credentials = 40 [json_name="encrypted_node_credentials"];
 
@@ -363,6 +388,8 @@ message ServerLedActivationToken {
   // The private encryption key that will be used with the node after successful
   // activation
   bytes   server_encryption_private_key_bytes = 12 [json_name="server_encryption_private_key_bytes"];
+  MLKEMParameters mlkem_parameters    = 27 [json_name="mlkem_parameters"];
+  bytes  encrypted_mlkem_parameters = 28 [json_name="encrypted_mlkem_parameters"];
   KEYTYPE server_encryption_private_key_type  = 13 [json_name="server_encryption_private_key_type"];
 
   // Stored challenge information
@@ -390,4 +417,6 @@ message ServerLedActivationTokenNonce {
 
   bytes   server_encryption_public_key_bytes = 12 [json_name="server_encryption_public_key_bytes"];
   KEYTYPE server_encryption_public_key_type  = 13 [json_name="server_encryption_public_key_type"];
+
+  bytes mlkem_encapsulation_key_bytes = 27 [json_name="mlkem_encapsulation_key_bytes"];
 }
