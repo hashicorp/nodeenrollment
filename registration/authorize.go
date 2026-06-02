@@ -19,7 +19,13 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// AuthorizeNode authorizes a node via a registration request.
+// AuthorizeNode authorizes a node via a registration request. This is called by
+// consumers of the library to register a node with a node-led activation token
+// and during rotation flow. Note that validation of parameters does not happen
+// here (other than a signature check from calling validateFetchRequestCommon);
+// it only ensures that the request is complete. Validation happens in the
+// various node- or server-specific or wrapping-specific flows, which then
+// generally call authorizeNodeCommon directly.
 //
 // Note: THIS IS NOT A CONCURRENCY SAFE FUNCTION. In most cases, the given
 // storage should ensure concurrency safety; as examples, version numbers could
@@ -49,9 +55,8 @@ func AuthorizeNode(
 	case err != nil:
 		return nil, fmt.Errorf("(%s) error during fetch request validation: %w", op, err)
 
-	case len(reqInfo.Nonce) == 0 &&
-		(reqInfo.RegistrationChallenge == nil || len(reqInfo.RegistrationChallenge.Challenge) == 0) &&
-		len(reqInfo.EncryptedRegistrationChallenge) == 0:
+	case (len(reqInfo.Nonce) == 0 && len(reqInfo.EncryptedRegistrationChallenge) == 0) &&
+		(reqInfo.RegistrationChallenge == nil || len(reqInfo.RegistrationChallenge.Challenge) == 0):
 		return nil, fmt.Errorf("(%s) authorize node request must contain a nonce or a registration challenge", op)
 
 	case len(reqInfo.Nonce) != 0 && len(reqInfo.Nonce) != nodeenrollment.NonceSize:
