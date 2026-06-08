@@ -268,7 +268,7 @@ func WithEncryptionPrivateKeyType(withType uint) Option {
 // WithMlkemParameters allows passing existing MLKEM parameters
 func WithMlkemParameters(with proto.Message) Option {
 	return func(o *Options) error {
-		if with == nil {
+		if IsNil(with) {
 			return errors.New("mlkem parameters cannot be nil")
 		}
 		if with.ProtoReflect().Descriptor().FullName() != "github.com.hashicorp.nodeenrollment.types.v1.MLKEMParameters" {

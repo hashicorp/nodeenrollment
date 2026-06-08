@@ -13,6 +13,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// EncryptionKeyMaterial holds material for encryption post-derivation, so
+// regardless of X25519 or ML-KEM (or future types) this is the resulting
+// struct
 type EncryptionKeyMaterial struct {
 	KeyId     string
 	KeyType   uint
