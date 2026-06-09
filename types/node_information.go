@@ -289,6 +289,8 @@ func (n *NodeInformation) SetPreviousEncryptionKey(oldNodeInformation *NodeInfor
 	return nil
 }
 
+// CurrentSharedEncryptionKey uses the NodeInformation's values to produce a
+// shared encryption key, using the appropriate method based on the key type.
 func (n *NodeInformation) CurrentSharedEncryptionKey() (nodeenrollment.EncryptionKeyMaterial, error) {
 	const op = "nodeenrollment.types.(NodeInformation).CurrentSharedEncryptionKey"
 
@@ -329,6 +331,8 @@ func (n *NodeInformation) CurrentSharedEncryptionKey() (nodeenrollment.Encryptio
 	}, nil
 }
 
+// PreviousSharedEncryptionKey will produce the shared encryption key material
+// for this NodeInformation's previous key, if set.
 func (n *NodeInformation) PreviousSharedEncryptionKey() (nodeenrollment.EncryptionKeyMaterial, error) {
 	const op = "nodeenrollment.types.(NodeInformation).PreviousSharedEncryptionKey"
 
