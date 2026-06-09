@@ -294,6 +294,28 @@ func TestValidateFetchRequest(t *testing.T) {
 					},
 				},
 				{
+					// For MLKEM1024: a fetch request that declares X25519 encryption
+					// (which passes validateFetchRequestCommon) must be rejected by
+					// FetchNodeCredentials when the stored node uses MLKEM1024.
+					// For X25519: the unchanged fetch request succeeds after authorization.
+					name:             "invalid-mlkem-fetch-declares-x25519-key-type",
+					authzReqOverride: authzReq,
+					runAuthorization: true,
+					fetchSetupFn: func(t *testing.T, req *types.FetchNodeCredentialsRequest) (*types.FetchNodeCredentialsRequest, string) {
+						if kt.KeyType != types.KEYTYPE_MLKEM1024 {
+							return req, ""
+						}
+						x25519Key, err := ecdh.X25519().GenerateKey(rand.Reader)
+						require.NoError(t, err)
+						info := unMarshal(t, req)
+						info.EncryptionPublicKeyType = types.KEYTYPE_X25519
+						info.EncryptionPublicKeyBytes = x25519Key.PublicKey().Bytes()
+						info.MlkemParameters = nil
+						req.Bundle, req.BundleSignature = reMarshalAndSign(t, info, nodeCreds)
+						return req, "mismatched encryption key types"
+					},
+				},
+				{
 					// Node-led new protocol: authorize with challenge in request, fetch
 					// without challenge, expect encrypted challenge in response.
 					name:                   "valid-node-led",

@@ -46,6 +46,11 @@ func TestServerLedRegistration(t *testing.T) {
 	require.Error(err)
 	assert.Contains(err.Error(), "nil request")
 	assert.Empty(token)
+	// Ensure unsupported key type hits the default case
+	_, _, err = registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{},
+		nodeenrollment.WithEncryptionPrivateKeyType(uint(types.KEYTYPE_ED25519)))
+	require.Error(err)
+	assert.Contains(err.Error(), "unsupported encryption private key type")
 
 	wrapper := aead.TestWrapper(t)
 
