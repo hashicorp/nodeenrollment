@@ -17,8 +17,8 @@ import (
 	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/rotation"
 	"github.com/hashicorp/nodeenrollment/storage/inmem"
-	"github.com/hashicorp/nodeenrollment/types"
 	nodetesting "github.com/hashicorp/nodeenrollment/testing"
+	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,7 +54,7 @@ func TestServerLedRegistration(t *testing.T) {
 
 	wrapper := aead.TestWrapper(t)
 
-	tokenId, token, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{}, nodeenrollment.WithStorageWrapper(wrapper))
+	te, token, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{}, nodeenrollment.WithStorageWrapper(wrapper))
 	require.NoError(err)
 	assert.NotEmpty(token)
 	assert.True(strings.HasPrefix(token, nodeenrollment.ServerLedActivationTokenPrefix))
@@ -69,7 +69,7 @@ func TestServerLedRegistration(t *testing.T) {
 	// New protocol: activation token ID and server encryption public key must
 	// be present in the nonce given to the node.
 	assert.NotEmpty(tokenNonce.ActivationTokenId)
-	assert.Equal(tokenId, tokenNonce.ActivationTokenId)
+	assert.Equal(te.Id, tokenNonce.ActivationTokenId)
 	assert.Empty(tokenNonce.ServerEncryptionPublicKeyBytes)
 	assert.Equal(types.KEYTYPE_MLKEM1024, tokenNonce.ServerEncryptionPublicKeyType)
 	// Legacy fields must still be present for backwards compatibility.
@@ -79,12 +79,12 @@ func TestServerLedRegistration(t *testing.T) {
 	hm := hmac.New(sha256.New, tokenNonce.HmacKeyBytes)
 	hm.Write(tokenNonce.Nonce)
 	idBytes := hm.Sum(nil)
-	assert.Equal(tokenId, base58.FastBase58Encoding(idBytes))
-	decodedTokenId, err := base58.FastBase58Decoding(tokenId)
+	assert.Equal(te.Id, base58.FastBase58Encoding(idBytes))
+	decodedTokenId, err := base58.FastBase58Decoding(te.Id)
 	require.NoError(err)
 	assert.Len(decodedTokenId, sha256.Size)
 
-	tokenEntry, err := types.LoadServerLedActivationToken(ctx, storage, tokenId, nodeenrollment.WithStorageWrapper(wrapper))
+	tokenEntry, err := types.LoadServerLedActivationToken(ctx, storage, te.Id, nodeenrollment.WithStorageWrapper(wrapper))
 	require.NoError(err)
 	require.NotNil(tokenEntry)
 	assert.NotEmpty(tokenEntry.Id)
@@ -258,11 +258,11 @@ func TestServerLedRegistration_TokenIdOnlyRejected(t *testing.T) {
 	_, err = rotation.RotateRootCertificates(ctx, storage)
 	require.NoError(t, err)
 
-	tokenId, _, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{},
+	te, _, err := registration.CreateServerLedActivationToken(ctx, storage, &types.ServerLedRegistrationRequest{},
 		nodeenrollment.WithEncryptionPrivateKeyType(uint(types.KEYTYPE_X25519)),
 	)
 	require.NoError(t, err)
-	require.NotEmpty(t, tokenId)
+	require.NotEmpty(t, te.Id)
 
 	nodeCreds, err := types.NewNodeCredentials(ctx, storage, nodeenrollment.WithEncryptionPrivateKeyType(uint(types.KEYTYPE_X25519)))
 	require.NoError(t, err)
@@ -270,7 +270,7 @@ func TestServerLedRegistration_TokenIdOnlyRejected(t *testing.T) {
 	require.NoError(t, err)
 
 	tokenNonce, err := proto.Marshal(&types.ServerLedActivationTokenNonce{
-		ActivationTokenId: tokenId,
+		ActivationTokenId: te.Id,
 	})
 	require.NoError(t, err)
 

@@ -38,19 +38,19 @@ func CreateServerLedActivationToken(
 	storage nodeenrollment.Storage,
 	req *types.ServerLedRegistrationRequest,
 	opt ...nodeenrollment.Option,
-) (string, string, error) {
-	const op = "nodeenrollment.registration.RegisterViaServerLedFlow"
+) (*types.ServerLedActivationToken, string, error) {
+	const op = "nodeenrollment.registration.CreateServerLedActivationToken"
 
 	opts, err := nodeenrollment.GetOpts(opt...)
 	if err != nil {
-		return "", "", fmt.Errorf("(%s) error parsing options: %w", op, err)
+		return nil, "", fmt.Errorf("(%s) error parsing options: %w", op, err)
 	}
 
 	switch {
 	case req == nil:
-		return "", "", fmt.Errorf("(%s) nil request", op)
+		return nil, "", fmt.Errorf("(%s) nil request", op)
 	case !opts.WithSkipStorage && nodeenrollment.IsNil(storage):
-		return "", "", fmt.Errorf("(%s) nil storage", op)
+		return nil, "", fmt.Errorf("(%s) nil storage", op)
 	}
 
 	var (
@@ -64,9 +64,9 @@ func CreateServerLedActivationToken(
 		num, err := opts.WithRandomReader.Read(tokenNonce.Nonce)
 		switch {
 		case err != nil:
-			return "", "", fmt.Errorf("(%s) error generating nonce: %w", op, err)
+			return nil, "", fmt.Errorf("(%s) error generating nonce: %w", op, err)
 		case num != nodeenrollment.NonceSize:
-			return "", "", fmt.Errorf("(%s) read incorrect number of bytes for nonce, wanted %d, got %d", op, nodeenrollment.NonceSize, num)
+			return nil, "", fmt.Errorf("(%s) read incorrect number of bytes for nonce, wanted %d, got %d", op, nodeenrollment.NonceSize, num)
 		}
 		tokenEntry.RegistrationChallenge = &types.RegistrationChallenge{
 			Challenge: tokenNonce.Nonce,
@@ -79,9 +79,9 @@ func CreateServerLedActivationToken(
 		num, err := opts.WithRandomReader.Read(tokenNonce.HmacKeyBytes)
 		switch {
 		case err != nil:
-			return "", "", fmt.Errorf("(%s) error generating hmac key bytes: %w", op, err)
+			return nil, "", fmt.Errorf("(%s) error generating hmac key bytes: %w", op, err)
 		case num != 32:
-			return "", "", fmt.Errorf("(%s) read incorrect number of bytes for hmac key, wanted %d, got %d", op, nodeenrollment.NonceSize, num)
+			return nil, "", fmt.Errorf("(%s) read incorrect number of bytes for hmac key, wanted %d, got %d", op, nodeenrollment.NonceSize, num)
 		}
 		// Now, we're going to hmac the nonce; an encoding of the hmac value will
 		// give us the ID for storage of the activation token entry.
@@ -95,7 +95,7 @@ func CreateServerLedActivationToken(
 			opts.WithEncryptionPrivateKeyType == uint(types.KEYTYPE_UNSPECIFIED):
 			decapsulationKey, err := mlkem.GenerateKey1024()
 			if err != nil {
-				return "", "", fmt.Errorf("(%s) error generating mlkem decapsulation key: %w", op, err)
+				return nil, "", fmt.Errorf("(%s) error generating mlkem decapsulation key: %w", op, err)
 			}
 			tokenEntry.MlkemParameters = &types.MLKEMParameters{
 				DecapsulationKey: decapsulationKey.Bytes(),
@@ -108,26 +108,26 @@ func CreateServerLedActivationToken(
 			num, err := opts.WithRandomReader.Read(tokenEntry.ServerEncryptionPrivateKeyBytes)
 			switch {
 			case err != nil:
-				return "", "", fmt.Errorf("(%s) error reading random bytes to generate node encryption key: %w", op, err)
+				return nil, "", fmt.Errorf("(%s) error reading random bytes to generate node encryption key: %w", op, err)
 			case num != curve25519.ScalarSize:
-				return "", "", fmt.Errorf("(%s) wrong number of random bytes read when generating node encryption key, expected %d but got %d", op, curve25519.ScalarSize, num)
+				return nil, "", fmt.Errorf("(%s) wrong number of random bytes read when generating node encryption key, expected %d but got %d", op, curve25519.ScalarSize, num)
 			}
 			encryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(tokenEntry.ServerEncryptionPrivateKeyBytes)
 			if err != nil {
-				return "", "", fmt.Errorf("(%s) error reading node private encryption key: %w", op, err)
+				return nil, "", fmt.Errorf("(%s) error reading node private encryption key: %w", op, err)
 			}
 			tokenEntry.ServerEncryptionPrivateKeyType = types.KEYTYPE_X25519
 			tokenNonce.ServerEncryptionPublicKeyType = types.KEYTYPE_X25519
 			tokenNonce.ServerEncryptionPublicKeyBytes = encryptionPrivateKey.PublicKey().Bytes()
 		default:
-			return "", "", fmt.Errorf("(%s) unsupported encryption private key type: %s", op, types.KEYTYPE(opts.WithEncryptionPrivateKeyType).String())
+			return nil, "", fmt.Errorf("(%s) unsupported encryption private key type: %s", op, types.KEYTYPE(opts.WithEncryptionPrivateKeyType).String())
 		}
 	}
 
 	// Now generate the returned value that will be transmitted by marshaling the token
 	returnedTokenBytes, err := proto.Marshal(tokenNonce)
 	if err != nil {
-		return "", "", fmt.Errorf("(%s) error marshaling token nonce: %w", op, err)
+		return nil, "", fmt.Errorf("(%s) error marshaling token nonce: %w", op, err)
 	}
 
 	tokenEntry.CreationTime = timestamppb.Now()
@@ -137,11 +137,11 @@ func CreateServerLedActivationToken(
 		// At this point everything is generated and both messages are prepared;
 		// store the value
 		if err := tokenEntry.Store(ctx, storage, opt...); err != nil {
-			return "", "", fmt.Errorf("(%s) error storing activation token: %w", op, err)
+			return nil, "", fmt.Errorf("(%s) error storing activation token: %w", op, err)
 		}
 	}
 
-	return tokenEntry.Id, fmt.Sprintf("%s%s", nodeenrollment.ServerLedActivationTokenPrefix, base58.FastBase58Encoding(returnedTokenBytes)), nil
+	return tokenEntry, fmt.Sprintf("%s%s", nodeenrollment.ServerLedActivationTokenPrefix, base58.FastBase58Encoding(returnedTokenBytes)), nil
 }
 
 func serverLedActivationTokenId(nonce, hmacKey []byte) string {

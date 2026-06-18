@@ -21,8 +21,8 @@ import (
 	"github.com/hashicorp/nodeenrollment/registration"
 	"github.com/hashicorp/nodeenrollment/storage/file"
 	"github.com/hashicorp/nodeenrollment/storage/inmem"
-	"github.com/hashicorp/nodeenrollment/types"
 	nodetesting "github.com/hashicorp/nodeenrollment/testing"
+	"github.com/hashicorp/nodeenrollment/types"
 	"github.com/mr-tron/base58"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -596,13 +596,14 @@ func TestNodeCredentials_CreateFetchNodeCredentialsServerLed(t *testing.T) {
 			mapOpt, err := structpb.NewStruct(applicationSpecificParamsMap)
 			require.NoError(t, err)
 
-			storageId, serverLedActivationToken, err := registration.CreateServerLedActivationToken(
+			te, serverLedActivationToken, err := registration.CreateServerLedActivationToken(
 				ctx,
 				storage,
 				&types.ServerLedRegistrationRequest{},
 				kt.Opts...,
 			)
 			require.NoError(t, err)
+			storageId := te.Id
 
 			tests := []struct {
 				name string
