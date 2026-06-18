@@ -487,13 +487,13 @@ func TestNodeCredentials_CreateFetchNodeCredentialsServerLed(t *testing.T) {
 	mapOpt, err := structpb.NewStruct(applicationSpecificParamsMap)
 	require.NoError(t, err)
 
-	storageId, serverLedActivationToken, err := registration.CreateServerLedActivationToken(
+	te, serverLedActivationToken, err := registration.CreateServerLedActivationToken(
 		ctx,
 		storage,
 		&types.ServerLedRegistrationRequest{},
 	)
 	require.NoError(t, err)
-
+	storageId := te.Id
 	tests := []struct {
 		name string
 		// Return a modified node information and a "want err contains" string
@@ -588,6 +588,7 @@ func TestNodeCredentials_CreateFetchNodeCredentialsServerLed(t *testing.T) {
 			},
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require, assert := require.New(t), assert.New(t)
