@@ -71,36 +71,60 @@ func (s *ServerLedActivationToken) Store(ctx context.Context, storage nodeenroll
 			return fmt.Errorf("(%s) error marshaling wrapped creation time: %w", op, err)
 		}
 
-		blobInfo, err = opts.WithStorageWrapper.Encrypt(
-			ctx,
-			tokenToStore.ServerEncryptionPrivateKeyBytes,
-			wrapping.WithAad([]byte(tokenToStore.Id)),
-		)
-		if err != nil {
-			return fmt.Errorf("(%s) error wrapping private key %w", op, err)
-		}
-		tokenToStore.ServerEncryptionPrivateKeyBytes, err = proto.Marshal(blobInfo)
-		if err != nil {
-			return fmt.Errorf("(%s) error marshaling wrapped private key: %w", op, err)
+		if len(tokenToStore.ServerEncryptionPrivateKeyBytes) != 0 {
+			blobInfo, err = opts.WithStorageWrapper.Encrypt(
+				ctx,
+				tokenToStore.ServerEncryptionPrivateKeyBytes,
+				wrapping.WithAad([]byte(tokenToStore.Id)),
+			)
+			if err != nil {
+				return fmt.Errorf("(%s) error wrapping private key %w", op, err)
+			}
+			tokenToStore.ServerEncryptionPrivateKeyBytes, err = proto.Marshal(blobInfo)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling wrapped private key: %w", op, err)
+			}
 		}
 
-		marshaledRegistrationChallenge, err := proto.Marshal(tokenToStore.RegistrationChallenge)
-		if err != nil {
-			return fmt.Errorf("(%s) error marshaling registration challenge: %w", op, err)
+		if tokenToStore.MlkemParameters != nil {
+			marshaledMlkemParameters, err := proto.Marshal(tokenToStore.MlkemParameters)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling mlkem parameters: %w", op, err)
+			}
+			blobInfo, err := opts.WithStorageWrapper.Encrypt(
+				ctx,
+				marshaledMlkemParameters,
+				wrapping.WithAad([]byte(tokenToStore.Id)),
+			)
+			if err != nil {
+				return fmt.Errorf("(%s) error wrapping mlkem parameters: %w", op, err)
+			}
+			tokenToStore.EncryptedMlkemParameters, err = proto.Marshal(blobInfo)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling wrapped mlkem parameters: %w", op, err)
+			}
+			tokenToStore.MlkemParameters = nil
 		}
-		blobInfo, err = opts.WithStorageWrapper.Encrypt(
-			ctx,
-			marshaledRegistrationChallenge,
-			wrapping.WithAad([]byte(tokenToStore.Id)),
-		)
-		if err != nil {
-			return fmt.Errorf("(%s) error wrapping registration challenge: %w", op, err)
+
+		if tokenToStore.RegistrationChallenge != nil {
+			marshaledRegistrationChallenge, err := proto.Marshal(tokenToStore.RegistrationChallenge)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling registration challenge: %w", op, err)
+			}
+			blobInfo, err = opts.WithStorageWrapper.Encrypt(
+				ctx,
+				marshaledRegistrationChallenge,
+				wrapping.WithAad([]byte(tokenToStore.Id)),
+			)
+			if err != nil {
+				return fmt.Errorf("(%s) error wrapping registration challenge: %w", op, err)
+			}
+			tokenToStore.RegistrationChallengeBytes, err = proto.Marshal(blobInfo)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling wrapped registration challenge: %w", op, err)
+			}
+			tokenToStore.RegistrationChallenge = nil
 		}
-		tokenToStore.RegistrationChallengeBytes, err = proto.Marshal(blobInfo)
-		if err != nil {
-			return fmt.Errorf("(%s) error marshaling wrapped registration challenge: %w", op, err)
-		}
-		tokenToStore.RegistrationChallenge = nil
 	}
 
 	if err := storage.Store(ctx, tokenToStore); err != nil {
@@ -176,6 +200,28 @@ func LoadServerLedActivationToken(ctx context.Context, storage nodeenrollment.St
 				return nil, fmt.Errorf("(%s) error decrypting private key bytes: %w", op, err)
 			}
 			token.ServerEncryptionPrivateKeyBytes = pt
+		}
+
+		if len(token.EncryptedMlkemParameters) != 0 {
+			blobInfo := new(wrapping.BlobInfo)
+			if err := proto.Unmarshal(token.EncryptedMlkemParameters, blobInfo); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling mlkem parameters blob info: %w", op, err)
+			}
+			pt, err := opts.WithStorageWrapper.Decrypt(
+				ctx,
+				blobInfo,
+				wrapping.WithAad([]byte(token.Id)),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error decrypting mlkem parameters: %w", op, err)
+			}
+			if token.MlkemParameters == nil {
+				token.MlkemParameters = &MLKEMParameters{}
+			}
+			if err := proto.Unmarshal(pt, token.MlkemParameters); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling mlkem parameters: %w", op, err)
+			}
+			token.EncryptedMlkemParameters = nil
 		}
 
 		if len(token.RegistrationChallengeBytes) != 0 {

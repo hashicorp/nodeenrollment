@@ -242,4 +242,26 @@ func Test_GetOpts(t *testing.T) {
 		require.NoError(err)
 		assert.True(opts.WithoutRegistrationChallenge)
 	})
+	t.Run("with-encryption-private-key", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.Empty(opts.WithEncryptionPrivateKey)
+		assert.Equal(uint(0), opts.WithEncryptionPrivateKeyType)
+		key := []byte("foobar")
+		keyType := uint(2) // KEYTYPE_X25519
+		opts, err = GetOpts(WithEncryptionPrivateKey(key, keyType))
+		require.NoError(err)
+		assert.Equal(key, opts.WithEncryptionPrivateKey)
+		assert.Equal(keyType, opts.WithEncryptionPrivateKeyType)
+	})
+	t.Run("with-encryption-private-key-type", func(t *testing.T) {
+		assert, require := assert.New(t), require.New(t)
+		opts, err := GetOpts()
+		require.NoError(err)
+		assert.Equal(uint(0), opts.WithEncryptionPrivateKeyType)
+		opts, err = GetOpts(WithEncryptionPrivateKeyType(uint(3))) // KEYTYPE_MLKEM1024
+		require.NoError(err)
+		assert.Equal(uint(3), opts.WithEncryptionPrivateKeyType)
+	})
 }

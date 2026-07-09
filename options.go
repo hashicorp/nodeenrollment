@@ -6,12 +6,14 @@ package nodeenrollment
 import (
 	"crypto/rand"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
 	wrapping "github.com/hashicorp/go-kms-wrapping/v2"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -50,8 +52,9 @@ type Options struct {
 	WithExtraAlpnProtos                                   []string
 	WithReinitializeRoots                                 bool
 	WithActivationToken                                   string
-	WithPrivateKey                                        []byte
-	WithPrivateKeyType                                    uint
+	WithEncryptionPrivateKey                              []byte
+	WithEncryptionPrivateKeyType                          uint
+	WithMlkemParameters                                   proto.Message
 	WithoutRegistrationChallenge                          bool
 	WithMaximumServerLedActivationTokenLifetime           time.Duration
 	WithNativeConns                                       bool
@@ -245,11 +248,33 @@ func WithActivationToken(with string) Option {
 	}
 }
 
-// WithPrivateKey allows indicating a private key to be used for signing
-func WithPrivateKey(withKey []byte, withType uint) Option {
+// WithEncryptionPrivateKey allows indicating a private key to be used for encryption
+func WithEncryptionPrivateKey(withKey []byte, withType uint) Option {
 	return func(o *Options) error {
-		o.WithPrivateKey = withKey
-		o.WithPrivateKeyType = withType
+		o.WithEncryptionPrivateKey = withKey
+		o.WithEncryptionPrivateKeyType = withType
+		return nil
+	}
+}
+
+// WithEncryptionPrivateKeyType allows indicating a type of private key for generation
+func WithEncryptionPrivateKeyType(withType uint) Option {
+	return func(o *Options) error {
+		o.WithEncryptionPrivateKeyType = withType
+		return nil
+	}
+}
+
+// WithMlkemParameters allows passing existing MLKEM parameters
+func WithMlkemParameters(with proto.Message) Option {
+	return func(o *Options) error {
+		if IsNil(with) {
+			return errors.New("mlkem parameters cannot be nil")
+		}
+		if with.ProtoReflect().Descriptor().FullName() != "github.com.hashicorp.nodeenrollment.types.v1.MLKEMParameters" {
+			return fmt.Errorf("mlkem parameters must be github.com.hashicorp.nodeenrollment.types.v1.MLKEMParameters, got %s", with.ProtoReflect().Descriptor().FullName())
+		}
+		o.WithMlkemParameters = with
 		return nil
 	}
 }

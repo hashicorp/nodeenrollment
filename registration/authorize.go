@@ -6,6 +6,7 @@ package registration
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/mlkem"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
@@ -113,6 +114,7 @@ func authorizeNodeCommon(
 		PreviousCertificatePublicKeyPkix: reqInfo.PreviousCertificatePublicKeyPkix,
 		EncryptionPublicKeyBytes:         reqInfo.EncryptionPublicKeyBytes,
 		EncryptionPublicKeyType:          reqInfo.EncryptionPublicKeyType,
+		MlkemParameters:                  reqInfo.MlkemParameters,
 		RegistrationNonce:                reqInfo.Nonce,
 		RegistrationChallenge:            reqInfo.RegistrationChallenge,
 		State:                            opts.WithState,
@@ -176,11 +178,25 @@ func authorizeNodeCommon(
 		}
 	}
 
-	// Create server encryption keys. In the newer server-led flow these may already exist.
-	if len(opts.WithPrivateKey) > 0 && types.KEYTYPE(opts.WithPrivateKeyType) != types.KEYTYPE_UNSPECIFIED {
-		nodeInfo.ServerEncryptionPrivateKeyBytes = opts.WithPrivateKey
-		nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE(opts.WithPrivateKeyType)
-	} else {
+	// Server-side encryption key setup. In the newer server-led flow these may
+	// already exist and will be passed in via options.
+	switch {
+	case len(opts.WithEncryptionPrivateKey) > 0:
+		kt := types.KEYTYPE(opts.WithEncryptionPrivateKeyType)
+		switch kt {
+		case types.KEYTYPE_X25519:
+			// ok
+		case types.KEYTYPE_UNSPECIFIED:
+			return nil, fmt.Errorf("(%s) encryption private key bytes provided but encryption private key type is unspecified", op)
+		default:
+			return nil, fmt.Errorf("(%s) encryption private key bytes provided but unsupported encryption private key type: %s", op, kt.String())
+		}
+		if reqInfo.EncryptionPublicKeyType != kt {
+			return nil, fmt.Errorf("(%s) encryption private key type %s does not match request encryption public key type %s", op, kt.String(), reqInfo.EncryptionPublicKeyType.String())
+		}
+		nodeInfo.ServerEncryptionPrivateKeyBytes = opts.WithEncryptionPrivateKey
+		nodeInfo.ServerEncryptionPrivateKeyType = kt
+	case reqInfo.EncryptionPublicKeyType == types.KEYTYPE_X25519:
 		nodeInfo.ServerEncryptionPrivateKeyBytes = make([]byte, curve25519.ScalarSize)
 		n, err := opts.WithRandomReader.Read(nodeInfo.ServerEncryptionPrivateKeyBytes)
 		switch {
@@ -190,6 +206,32 @@ func authorizeNodeCommon(
 			return nil, fmt.Errorf("(%s) wrong number of random bytes read when generating server encryption key, expected %d but got %d", op, curve25519.ScalarSize, n)
 		}
 		nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE_X25519
+	case opts.WithMlkemParameters != nil:
+		if reqInfo.EncryptionPublicKeyType != types.KEYTYPE_MLKEM1024 {
+			return nil, fmt.Errorf("(%s) mlkem parameters provided but request encryption public key type is %s", op, reqInfo.EncryptionPublicKeyType.String())
+		}
+		mlkemParams, ok := opts.WithMlkemParameters.(*types.MLKEMParameters)
+		if !ok {
+			return nil, fmt.Errorf("(%s) wrong type parsing mlkem parameters from options", op)
+		}
+		nodeInfo.MlkemParameters = mlkemParams
+		nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE_MLKEM1024
+	case reqInfo.EncryptionPublicKeyType == types.KEYTYPE_MLKEM1024:
+		if reqInfo.MlkemParameters == nil {
+			return nil, fmt.Errorf("(%s) mlkem1024 encryption key type specified but mlkem parameters are nil", op)
+		}
+		if len(reqInfo.MlkemParameters.EncapsulationKey) == 0 {
+			return nil, fmt.Errorf("(%s) mlkem1024 encryption key type specified but encapsulation key is empty", op)
+		}
+		encapsulationKey, err := mlkem.NewEncapsulationKey1024(reqInfo.MlkemParameters.EncapsulationKey)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error parsing mlkem encapsulation key: %w", op, err)
+		}
+		nodeInfo.MlkemParameters = &types.MLKEMParameters{}
+		nodeInfo.MlkemParameters.SharedKey, nodeInfo.MlkemParameters.Ciphertext = encapsulationKey.Encapsulate()
+		nodeInfo.ServerEncryptionPrivateKeyType = types.KEYTYPE_MLKEM1024
+	default:
+		return nil, fmt.Errorf("(%s) unsupported node encryption public key type: %s", op, reqInfo.EncryptionPublicKeyType.String())
 	}
 
 	// Save the node information into storage if not skipped

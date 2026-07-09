@@ -42,3 +42,16 @@ func CommonTestParams(t *testing.T, opt ...nodeenrollment.Option) (context.Conte
 
 	return ctx, storage, node
 }
+
+type TestKeyTypeVariant struct {
+	Name    string
+	Opts    []nodeenrollment.Option
+	KeyType types.KEYTYPE
+}
+
+func TestKeyTypeVariants() []TestKeyTypeVariant {
+	return []TestKeyTypeVariant{
+		{"mlkem1024", nil, types.KEYTYPE_MLKEM1024},
+		{"x25519", []nodeenrollment.Option{nodeenrollment.WithEncryptionPrivateKeyType(uint(types.KEYTYPE_X25519))}, types.KEYTYPE_X25519},
+	}
+}

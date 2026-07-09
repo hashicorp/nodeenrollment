@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/ecdh"
 	"crypto/hmac"
+	"crypto/mlkem"
 	"crypto/sha256"
 	"crypto/subtle"
 	"errors"
@@ -85,25 +86,42 @@ func CreateServerLedActivationToken(
 		// Now, we're going to hmac the nonce; an encoding of the hmac value will
 		// give us the ID for storage of the activation token entry.
 		tokenEntry.Id = serverLedActivationTokenId(tokenNonce.Nonce, tokenNonce.HmacKeyBytes)
+		tokenNonce.ActivationTokenId = tokenEntry.Id
 	}
 	// Generate the server-side encryption key that will be used with this node
 	{
-		tokenNonce.ActivationTokenId = tokenEntry.Id
-		tokenEntry.ServerEncryptionPrivateKeyBytes = make([]byte, curve25519.ScalarSize)
-		num, err := opts.WithRandomReader.Read(tokenEntry.ServerEncryptionPrivateKeyBytes)
 		switch {
-		case err != nil:
-			return nil, "", fmt.Errorf("(%s) error reading random bytes to generate node encryption key: %w", op, err)
-		case num != curve25519.ScalarSize:
-			return nil, "", fmt.Errorf("(%s) wrong number of random bytes read when generating node encryption key, expected %d but got %d", op, curve25519.ScalarSize, num)
+		case opts.WithEncryptionPrivateKeyType == uint(types.KEYTYPE_MLKEM1024),
+			opts.WithEncryptionPrivateKeyType == uint(types.KEYTYPE_UNSPECIFIED):
+			decapsulationKey, err := mlkem.GenerateKey1024()
+			if err != nil {
+				return nil, "", fmt.Errorf("(%s) error generating mlkem decapsulation key: %w", op, err)
+			}
+			tokenEntry.MlkemParameters = &types.MLKEMParameters{
+				DecapsulationKey: decapsulationKey.Bytes(),
+			}
+			tokenEntry.ServerEncryptionPrivateKeyType = types.KEYTYPE_MLKEM1024
+			tokenNonce.ServerEncryptionPublicKeyType = types.KEYTYPE_MLKEM1024
+			tokenNonce.MlkemEncapsulationKeyBytes = decapsulationKey.EncapsulationKey().Bytes()
+		case opts.WithEncryptionPrivateKeyType == uint(types.KEYTYPE_X25519):
+			tokenEntry.ServerEncryptionPrivateKeyBytes = make([]byte, curve25519.ScalarSize)
+			num, err := opts.WithRandomReader.Read(tokenEntry.ServerEncryptionPrivateKeyBytes)
+			switch {
+			case err != nil:
+				return nil, "", fmt.Errorf("(%s) error reading random bytes to generate node encryption key: %w", op, err)
+			case num != curve25519.ScalarSize:
+				return nil, "", fmt.Errorf("(%s) wrong number of random bytes read when generating node encryption key, expected %d but got %d", op, curve25519.ScalarSize, num)
+			}
+			encryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(tokenEntry.ServerEncryptionPrivateKeyBytes)
+			if err != nil {
+				return nil, "", fmt.Errorf("(%s) error reading node private encryption key: %w", op, err)
+			}
+			tokenEntry.ServerEncryptionPrivateKeyType = types.KEYTYPE_X25519
+			tokenNonce.ServerEncryptionPublicKeyType = types.KEYTYPE_X25519
+			tokenNonce.ServerEncryptionPublicKeyBytes = encryptionPrivateKey.PublicKey().Bytes()
+		default:
+			return nil, "", fmt.Errorf("(%s) unsupported encryption private key type: %s", op, types.KEYTYPE(opts.WithEncryptionPrivateKeyType).String())
 		}
-		tokenEntry.ServerEncryptionPrivateKeyType = types.KEYTYPE_X25519
-		encryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(tokenEntry.ServerEncryptionPrivateKeyBytes)
-		if err != nil {
-			return nil, "", fmt.Errorf("(%s) error reading node private encryption key: %w", op, err)
-		}
-		tokenNonce.ServerEncryptionPublicKeyBytes = encryptionPrivateKey.PublicKey().Bytes()
-		tokenNonce.ServerEncryptionPublicKeyType = types.KEYTYPE_X25519
 	}
 
 	// Now generate the returned value that will be transmitted by marshaling the token
@@ -202,6 +220,62 @@ func validateServerLedActivationToken(
 		return nil, fmt.Errorf("(%s) activation token from lookup is nil: %w", op, nodeenrollment.ErrNotFound)
 	}
 
+	// Validate/derive encryption keys if available
+	switch {
+	case tokenEntry.ServerEncryptionPrivateKeyType == types.KEYTYPE_X25519:
+		switch {
+		case reqInfo.EncryptionPublicKeyType != types.KEYTYPE_X25519:
+			return nil, fmt.Errorf("(%s) request encryption public key type %s does not match activation token key type %s", op, reqInfo.EncryptionPublicKeyType.String(), tokenEntry.ServerEncryptionPrivateKeyType.String())
+		case len(tokenEntry.ServerEncryptionPrivateKeyBytes) == 0:
+			return nil, fmt.Errorf("(%s) missing server encryption private key bytes in activation token entry", op)
+		case len(reqInfo.EncryptionPublicKeyBytes) == 0:
+			return nil, fmt.Errorf("(%s) missing encryption public key bytes in req", op)
+		}
+		opt = append(opt, nodeenrollment.WithEncryptionPrivateKey(tokenEntry.ServerEncryptionPrivateKeyBytes, uint(tokenEntry.ServerEncryptionPrivateKeyType)))
+	case tokenEntry.ServerEncryptionPrivateKeyType == types.KEYTYPE_MLKEM1024:
+		switch {
+		case reqInfo.EncryptionPublicKeyType != types.KEYTYPE_MLKEM1024:
+			return nil, fmt.Errorf("(%s) request encryption public key type %s does not match activation token key type %s", op, reqInfo.EncryptionPublicKeyType.String(), tokenEntry.ServerEncryptionPrivateKeyType.String())
+		case tokenEntry.MlkemParameters == nil:
+			return nil, fmt.Errorf("(%s) missing mlkem parameters in activation token entry", op)
+		case len(tokenEntry.MlkemParameters.DecapsulationKey) == 0:
+			return nil, fmt.Errorf("(%s) missing mlkem decapsulation key in activation token entry", op)
+		case reqInfo.MlkemParameters == nil:
+			return nil, fmt.Errorf("(%s) missing mlkem parameters in request info", op)
+		case len(reqInfo.MlkemParameters.Ciphertext) == 0:
+			return nil, fmt.Errorf("(%s) missing mlkem ciphertext in request info", op)
+		case len(reqInfo.MlkemParameters.EncapsulationKey) == 0:
+			return nil, fmt.Errorf("(%s) missing mlkem encapsulation key bytes in request info", op)
+		}
+		decapKey, err := mlkem.NewDecapsulationKey1024(tokenEntry.MlkemParameters.DecapsulationKey)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error reading mlkem decapsulation key from activation token entry: %w", op, err)
+		}
+		// This is just a check for accidentally passing the wrong
+		// ciphertext, to make sure it was made by this key
+		if subtle.ConstantTimeCompare(decapKey.EncapsulationKey().Bytes(), reqInfo.MlkemParameters.EncapsulationKey) != 1 {
+			return nil, fmt.Errorf("(%s) mlkem decapsulation key in request does not match activation token entry", op)
+		}
+		tokenEntry.MlkemParameters.Ciphertext = reqInfo.MlkemParameters.Ciphertext
+		sharedKey, err := decapKey.Decapsulate(reqInfo.MlkemParameters.Ciphertext)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error decapsulating mlkem shared key: %w", op, err)
+		}
+		tokenEntry.MlkemParameters.SharedKey = sharedKey
+		tokenEntry.MlkemParameters.DecapsulationKey = nil // zero out the decapsulation key since we won't need it again and it's sensitive material
+		opt = append(opt, nodeenrollment.WithMlkemParameters(tokenEntry.MlkemParameters))
+	case tokenEntry.ServerEncryptionPrivateKeyType == types.KEYTYPE_UNSPECIFIED:
+		// Legacy tokens (stored before key type was tracked) fall through to the
+		// legacy nonce/challenge validation below, however, if the key exists
+		// provide the key to ensure we don't generate a fresh one. This is an
+		// upgrade unlikely corner case.
+		if len(tokenEntry.ServerEncryptionPrivateKeyBytes) != 0 && reqInfo.EncryptionPublicKeyType != types.KEYTYPE_UNSPECIFIED {
+			opt = append(opt, nodeenrollment.WithEncryptionPrivateKey(tokenEntry.ServerEncryptionPrivateKeyBytes, uint(reqInfo.EncryptionPublicKeyType)))
+		}
+	default:
+		return nil, fmt.Errorf("(%s) unknown server encryption private key type in activation token entry: %d", op, tokenEntry.ServerEncryptionPrivateKeyType)
+	}
+
 	if tokenEntry.RegistrationChallenge != nil {
 		switch {
 		case len(tokenEntry.RegistrationChallenge.Challenge) == 0:
@@ -209,21 +283,16 @@ func validateServerLedActivationToken(
 		}
 
 		if len(reqInfo.EncryptedRegistrationChallenge) > 0 {
-			// New protocol: validate proof of the stored challenge encrypted to
-			// the server's activation-token key.
-			switch {
-			case len(tokenEntry.ServerEncryptionPrivateKeyBytes) == 0:
-				return nil, fmt.Errorf("(%s) missing server encryption private key bytes in activation token entry", op)
-			case len(reqInfo.EncryptionPublicKeyBytes) == 0:
-				return nil, fmt.Errorf("(%s) missing encryption public key bytes in req", op)
-			}
 			ni := &types.NodeInformation{
-				ServerEncryptionPrivateKeyBytes: tokenEntry.ServerEncryptionPrivateKeyBytes,
 				ServerEncryptionPrivateKeyType:  tokenEntry.ServerEncryptionPrivateKeyType,
-				EncryptionPublicKeyBytes:        reqInfo.EncryptionPublicKeyBytes,
+				ServerEncryptionPrivateKeyBytes: tokenEntry.ServerEncryptionPrivateKeyBytes,
 				EncryptionPublicKeyType:         reqInfo.EncryptionPublicKeyType,
+				EncryptionPublicKeyBytes:        reqInfo.EncryptionPublicKeyBytes,
+				MlkemParameters:                 tokenEntry.MlkemParameters,
 				CertificatePublicKeyPkix:        reqInfo.CertificatePublicKeyPkix,
 			}
+			// New protocol: validate proof of the stored challenge encrypted to
+			// the server's activation-token key.
 			var challenge types.RegistrationChallenge
 			if err := nodeenrollment.DecryptMessage(ctx, reqInfo.EncryptedRegistrationChallenge, ni, &challenge); err != nil {
 				return nil, fmt.Errorf("(%s) error decrypting registration challenge: %w", op, err)
@@ -250,10 +319,6 @@ func validateServerLedActivationToken(
 			if subtle.ConstantTimeCompare(tokenNonce.Nonce, tokenEntry.RegistrationChallenge.Challenge) != 1 {
 				return nil, fmt.Errorf("(%s) invalid legacy registration challenge nonce", op)
 			}
-		}
-
-		if len(tokenEntry.ServerEncryptionPrivateKeyBytes) > 0 && tokenEntry.ServerEncryptionPrivateKeyType != types.KEYTYPE_UNSPECIFIED {
-			opt = append(opt, nodeenrollment.WithPrivateKey(tokenEntry.ServerEncryptionPrivateKeyBytes, uint(tokenEntry.ServerEncryptionPrivateKeyType)))
 		}
 	} else {
 		// Old stored server-led activation tokens do not have a challenge. They

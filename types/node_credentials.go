@@ -8,6 +8,7 @@ import (
 	"crypto"
 	"crypto/ecdh"
 	"crypto/ed25519"
+	"crypto/mlkem"
 	"crypto/subtle"
 	"crypto/x509"
 	"fmt"
@@ -22,7 +23,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-var _ nodeenrollment.X25519KeyProducer = (*NodeCredentials)(nil)
+var (
+	_ nodeenrollment.X25519KeyProducer = (*NodeCredentials)(nil)
+	_ nodeenrollment.KeyProducer       = (*NodeCredentials)(nil)
+)
 
 // Store stores node credentials to storage, wrapping values along the way if
 // given a wrapper
@@ -46,7 +50,7 @@ func (n *NodeCredentials) Store(ctx context.Context, storage nodeenrollment.Stor
 		// wrapping with nil AAD so we do a check here
 		return fmt.Errorf("(%s) refusing to store node credentials with no certificate pkix public key", op)
 
-	case len(n.EncryptionPrivateKeyBytes) == 0:
+	case len(n.EncryptionPrivateKeyBytes) == 0 && n.MlkemParameters == nil:
 		return fmt.Errorf("(%s) refusing to store node credentials with no encryption private key", op)
 
 	case n.Id == "":
@@ -89,17 +93,19 @@ func (n *NodeCredentials) Store(ctx context.Context, storage nodeenrollment.Stor
 			return fmt.Errorf("(%s) error marshaling wrapped certificate private key: %w", op, err)
 		}
 
-		blobInfo, err = opts.WithStorageWrapper.Encrypt(
-			ctx,
-			credsToStore.EncryptionPrivateKeyBytes,
-			wrapping.WithAad(credsToStore.CertificatePublicKeyPkix),
-		)
-		if err != nil {
-			return fmt.Errorf("(%s) error wrapping encryption private key: %w", op, err)
-		}
-		credsToStore.EncryptionPrivateKeyBytes, err = proto.Marshal(blobInfo)
-		if err != nil {
-			return fmt.Errorf("(%s) error marshaling wrapped encryption private key: %w", op, err)
+		if len(credsToStore.EncryptionPrivateKeyBytes) > 0 {
+			blobInfo, err = opts.WithStorageWrapper.Encrypt(
+				ctx,
+				credsToStore.EncryptionPrivateKeyBytes,
+				wrapping.WithAad(credsToStore.CertificatePublicKeyPkix),
+			)
+			if err != nil {
+				return fmt.Errorf("(%s) error wrapping encryption private key: %w", op, err)
+			}
+			credsToStore.EncryptionPrivateKeyBytes, err = proto.Marshal(blobInfo)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling wrapped encryption private key: %w", op, err)
+			}
 		}
 
 		if len(credsToStore.RegistrationNonce) != 0 {
@@ -134,6 +140,25 @@ func (n *NodeCredentials) Store(ctx context.Context, storage nodeenrollment.Stor
 				return fmt.Errorf("(%s) error marshaling wrapped registration challenge: %w", op, err)
 			}
 			credsToStore.RegistrationChallenge = nil
+		}
+		if credsToStore.MlkemParameters != nil {
+			marshaledMlkemParameters, err := proto.Marshal(credsToStore.MlkemParameters)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling mlkem parameters: %w", op, err)
+			}
+			blobInfo, err = opts.WithStorageWrapper.Encrypt(
+				ctx,
+				marshaledMlkemParameters,
+				wrapping.WithAad(credsToStore.CertificatePublicKeyPkix),
+			)
+			if err != nil {
+				return fmt.Errorf("(%s) error wrapping mlkem parameters: %w", op, err)
+			}
+			credsToStore.EncryptedMlkemParameters, err = proto.Marshal(blobInfo)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling wrapped mlkem parameters: %w", op, err)
+			}
+			credsToStore.MlkemParameters = nil
 		}
 	}
 
@@ -197,19 +222,21 @@ func LoadNodeCredentials(ctx context.Context, storage nodeenrollment.Storage, id
 		}
 		nodeCreds.CertificatePrivateKeyPkcs8 = pt
 
-		blobInfo = new(wrapping.BlobInfo)
-		if err := proto.Unmarshal(nodeCreds.EncryptionPrivateKeyBytes, blobInfo); err != nil {
-			return nil, fmt.Errorf("(%s) error unmarshaling encryption private key blob info: %w", op, err)
+		if len(nodeCreds.EncryptionPrivateKeyBytes) != 0 {
+			blobInfo = new(wrapping.BlobInfo)
+			if err := proto.Unmarshal(nodeCreds.EncryptionPrivateKeyBytes, blobInfo); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling encryption private key blob info: %w", op, err)
+			}
+			pt, err = opts.WithStorageWrapper.Decrypt(
+				ctx,
+				blobInfo,
+				wrapping.WithAad(nodeCreds.CertificatePublicKeyPkix),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error decrypting encryption private key: %w", op, err)
+			}
+			nodeCreds.EncryptionPrivateKeyBytes = pt
 		}
-		pt, err = opts.WithStorageWrapper.Decrypt(
-			ctx,
-			blobInfo,
-			wrapping.WithAad(nodeCreds.CertificatePublicKeyPkix),
-		)
-		if err != nil {
-			return nil, fmt.Errorf("(%s) error decrypting encryption private key: %w", op, err)
-		}
-		nodeCreds.EncryptionPrivateKeyBytes = pt
 
 		if len(nodeCreds.RegistrationNonce) != 0 {
 			blobInfo = new(wrapping.BlobInfo)
@@ -247,6 +274,27 @@ func LoadNodeCredentials(ctx context.Context, storage nodeenrollment.Storage, id
 			}
 			nodeCreds.EncryptedRegistrationChallenge = nil
 		}
+		if len(nodeCreds.EncryptedMlkemParameters) != 0 {
+			blobInfo = new(wrapping.BlobInfo)
+			if err := proto.Unmarshal(nodeCreds.EncryptedMlkemParameters, blobInfo); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling mlkem parameters blob info: %w", op, err)
+			}
+			pt, err := opts.WithStorageWrapper.Decrypt(
+				ctx,
+				blobInfo,
+				wrapping.WithAad(nodeCreds.CertificatePublicKeyPkix),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error decrypting mlkem parameters: %w", op, err)
+			}
+			if nodeCreds.MlkemParameters == nil {
+				nodeCreds.MlkemParameters = &MLKEMParameters{}
+			}
+			if err := proto.Unmarshal(pt, nodeCreds.MlkemParameters); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling mlkem parameters: %w", op, err)
+			}
+			nodeCreds.EncryptedMlkemParameters = nil
+		}
 
 		nodeCreds.WrappingKeyId = ""
 	}
@@ -254,8 +302,87 @@ func LoadNodeCredentials(ctx context.Context, storage nodeenrollment.Storage, id
 	return nodeCreds, nil
 }
 
+func (n *NodeCredentials) CurrentSharedEncryptionKey() (nodeenrollment.EncryptionKeyMaterial, error) {
+	const op = "nodeenrollment.types.(NodeCredentials).CurrentSharedEncryptionKey"
+	if nodeenrollment.IsNil(n) {
+		return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) node credentials is empty", op)
+	}
+
+	var out []byte
+	var err error
+
+	switch {
+	case n.EncryptionPrivateKeyType == KEYTYPE_MLKEM1024:
+		if n.MlkemParameters == nil {
+			return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) mlkem key type specified but mlkem parameters are nil", op)
+		}
+		if len(n.MlkemParameters.SharedKey) == 0 {
+			return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) mlkem key type specified but shared key is empty", op)
+		}
+		out = n.MlkemParameters.SharedKey
+	case n.EncryptionPrivateKeyType == KEYTYPE_X25519:
+		out, err = DeriveSharedX25519EncryptionKey(n.EncryptionPrivateKeyBytes, n.EncryptionPrivateKeyType, n.ServerEncryptionPublicKeyBytes, n.ServerEncryptionPublicKeyType)
+		if err != nil {
+			return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) error deriving encryption key: %w", op, err)
+		}
+	default:
+		return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) unsupported key type: %d", op, n.EncryptionPrivateKeyType)
+	}
+
+	keyId, err := nodeenrollment.KeyIdFromPkix(n.CertificatePublicKeyPkix)
+	if err != nil {
+		return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) error deriving key id: %w", op, err)
+	}
+
+	return nodeenrollment.EncryptionKeyMaterial{
+		KeyId:     keyId,
+		KeyType:   uint(n.EncryptionPrivateKeyType),
+		SharedKey: out,
+	}, nil
+}
+
+func (n *NodeCredentials) PreviousSharedEncryptionKey() (nodeenrollment.EncryptionKeyMaterial, error) {
+	const op = "nodeenrollment.types.(NodeCredentials).PreviousSharedEncryptionKey"
+
+	if nodeenrollment.IsNil(n) {
+		return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) node credentials is empty", op)
+	}
+
+	previousKey := n.PreviousEncryptionKey
+	if previousKey == nil {
+		return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) previous key is empty", op)
+	}
+
+	var out []byte
+	var err error
+
+	switch {
+	case previousKey.PrivateKeyType == KEYTYPE_X25519:
+		out, err = DeriveSharedX25519EncryptionKey(previousKey.PrivateKeyBytes, previousKey.PrivateKeyType, previousKey.PublicKeyBytes, previousKey.PublicKeyType)
+		if err != nil {
+			return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
+		}
+	case previousKey.PrivateKeyType == KEYTYPE_MLKEM1024:
+		if previousKey.MlkemParameters == nil {
+			return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) previous key has mlkem key type but mlkem parameters are nil", op)
+		}
+		if len(previousKey.MlkemParameters.SharedKey) == 0 {
+			return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) previous key has mlkem key type but shared key is empty", op)
+		}
+		out = previousKey.MlkemParameters.SharedKey
+	default:
+		return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) unsupported previous key type: %d", op, previousKey.PrivateKeyType)
+	}
+
+	return nodeenrollment.EncryptionKeyMaterial{
+		KeyId:     previousKey.KeyId,
+		KeyType:   uint(previousKey.PrivateKeyType),
+		SharedKey: out,
+	}, nil
+}
+
 // X25519EncryptionKey uses the NodeCredentials values to produce a shared
-// encryption key via X25519
+// encryption key via X25519.
 func (n *NodeCredentials) X25519EncryptionKey() (string, []byte, error) {
 	const op = "nodeenrollment.types.(NodeCredentials).X25519EncryptionKey"
 	if nodeenrollment.IsNil(n) {
@@ -276,7 +403,7 @@ func (n *NodeCredentials) X25519EncryptionKey() (string, []byte, error) {
 }
 
 // PreviousX25519EncryptionKey satisfies the X25519Producer and will produce a shared
-// encryption key via X25519 if previous key data is present
+// encryption key via X25519 if previous key data is present.
 func (n *NodeCredentials) PreviousX25519EncryptionKey() (string, []byte, error) {
 	const op = "nodeenrollment.types.(NodeCredentials).PreviousX25519EncryptionKey"
 
@@ -289,7 +416,7 @@ func (n *NodeCredentials) PreviousX25519EncryptionKey() (string, []byte, error) 
 		return "", nil, fmt.Errorf("(%s) previous key is empty", op)
 	}
 
-	out, err := X25519EncryptionKey(previousKey.PrivateKeyPkcs8, previousKey.PrivateKeyType, previousKey.PublicKeyPkix, previousKey.PublicKeyType)
+	out, err := X25519EncryptionKey(previousKey.PrivateKeyBytes, previousKey.PrivateKeyType, previousKey.PublicKeyBytes, previousKey.PublicKeyType)
 	if err != nil {
 		return "", nil, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
 	}
@@ -305,7 +432,8 @@ func (n *NodeCredentials) PreviousX25519EncryptionKey() (string, []byte, error) 
 // which can then be merged; this happens in a different function.
 //
 // Supported options: WithRandomReader, WithStorageWrapper (passed through to
-// NodeCredentials.Store), WithSkipStorage, WithActivationToken
+// NodeCredentials.Store), WithSkipStorage, WithActivationToken,
+// WithEncryptionPrivateKeyType
 func NewNodeCredentials(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -361,15 +489,29 @@ func NewNodeCredentials(
 
 	// Create node encryption keys
 	{
-		n.EncryptionPrivateKeyBytes = make([]byte, curve25519.ScalarSize)
-		num, err := opts.WithRandomReader.Read(n.EncryptionPrivateKeyBytes)
-		switch {
-		case err != nil:
-			return nil, fmt.Errorf("(%s) error reading random bytes to generate node encryption key: %w", op, err)
-		case num != curve25519.ScalarSize:
-			return nil, fmt.Errorf("(%s) wrong number of random bytes read when generating node encryption key, expected %d but got %d", op, curve25519.ScalarSize, num)
+		switch KEYTYPE(opts.WithEncryptionPrivateKeyType) {
+		case KEYTYPE_MLKEM1024, KEYTYPE_UNSPECIFIED:
+			decapsulationKey, err := mlkem.GenerateKey1024()
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error generating mlkem decapsulation key: %w", op, err)
+			}
+			n.MlkemParameters = &MLKEMParameters{
+				DecapsulationKey: decapsulationKey.Bytes(),
+			}
+			n.EncryptionPrivateKeyType = KEYTYPE_MLKEM1024
+		case KEYTYPE_X25519:
+			n.EncryptionPrivateKeyBytes = make([]byte, curve25519.ScalarSize)
+			num, err := opts.WithRandomReader.Read(n.EncryptionPrivateKeyBytes)
+			switch {
+			case err != nil:
+				return nil, fmt.Errorf("(%s) error reading random bytes to generate node encryption key: %w", op, err)
+			case num != curve25519.ScalarSize:
+				return nil, fmt.Errorf("(%s) wrong number of random bytes read when generating node encryption key, expected %d but got %d", op, curve25519.ScalarSize, num)
+			}
+			n.EncryptionPrivateKeyType = KEYTYPE_X25519
+		default:
+			return nil, fmt.Errorf("(%s) unsupported encryption private key type: %v", op, opts.WithEncryptionPrivateKeyType)
 		}
-		n.EncryptionPrivateKeyType = KEYTYPE_X25519
 	}
 
 	n.Id = string(nodeenrollment.CurrentId)
@@ -395,11 +537,28 @@ func (n *NodeCredentials) SetPreviousEncryptionKey(oldNodeCredentials *NodeCrede
 		return fmt.Errorf("(%s) error deriving key id: %w", op, err)
 	}
 	previousEncryptionKey := &EncryptionKey{
-		KeyId:           keyId,
-		PrivateKeyPkcs8: oldNodeCredentials.EncryptionPrivateKeyBytes,
-		PrivateKeyType:  oldNodeCredentials.EncryptionPrivateKeyType,
-		PublicKeyPkix:   oldNodeCredentials.ServerEncryptionPublicKeyBytes,
-		PublicKeyType:   oldNodeCredentials.ServerEncryptionPublicKeyType,
+		KeyId:          keyId,
+		PrivateKeyType: oldNodeCredentials.EncryptionPrivateKeyType,
+		PublicKeyType:  oldNodeCredentials.ServerEncryptionPublicKeyType,
+	}
+	if len(oldNodeCredentials.EncryptionPrivateKeyBytes) > 0 {
+		previousEncryptionKey.PrivateKeyBytes = make([]byte, len(oldNodeCredentials.EncryptionPrivateKeyBytes))
+		copy(previousEncryptionKey.PrivateKeyBytes, oldNodeCredentials.EncryptionPrivateKeyBytes)
+	}
+	if len(oldNodeCredentials.ServerEncryptionPublicKeyBytes) > 0 {
+		previousEncryptionKey.PublicKeyBytes = make([]byte, len(oldNodeCredentials.ServerEncryptionPublicKeyBytes))
+		copy(previousEncryptionKey.PublicKeyBytes, oldNodeCredentials.ServerEncryptionPublicKeyBytes)
+	}
+	if oldNodeCredentials.MlkemParameters != nil {
+		previousEncryptionKey.MlkemParameters = new(MLKEMParameters)
+		if len(oldNodeCredentials.MlkemParameters.Ciphertext) > 0 {
+			previousEncryptionKey.MlkemParameters.Ciphertext = make([]byte, len(oldNodeCredentials.MlkemParameters.Ciphertext))
+			copy(previousEncryptionKey.MlkemParameters.Ciphertext, oldNodeCredentials.MlkemParameters.Ciphertext)
+		}
+		if len(oldNodeCredentials.MlkemParameters.SharedKey) > 0 {
+			previousEncryptionKey.MlkemParameters.SharedKey = make([]byte, len(oldNodeCredentials.MlkemParameters.SharedKey))
+			copy(previousEncryptionKey.MlkemParameters.SharedKey, oldNodeCredentials.MlkemParameters.SharedKey)
+		}
 	}
 	n.PreviousEncryptionKey = previousEncryptionKey
 
@@ -413,7 +572,7 @@ func (n *NodeCredentials) SetPreviousEncryptionKey(oldNodeCredentials *NodeCrede
 // the node's nonce value if provided, for the server-led flow; note that this
 // should be the full string token, it will be decoded by this function),
 // WithRegistrationWrapper/WithWrappingRegistrationFlowApplicationSpecificParams,
-// WithRegistrationChallenge
+// WithRegistrationChallenge, WithEncryptionPrivateKeyType
 func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -432,7 +591,7 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		return nil, fmt.Errorf("(%s) node credentials registration challenge is missing", op)
 	case n.RegistrationChallenge != nil && len(n.RegistrationChallenge.Challenge) == 0:
 		return nil, fmt.Errorf("(%s) node credentials registration challenge is empty", op)
-	case len(n.EncryptionPrivateKeyBytes) == 0:
+	case len(n.EncryptionPrivateKeyBytes) == 0 && n.MlkemParameters == nil:
 		return nil, fmt.Errorf("(%s) node credentials encryption private key is empty", op)
 	}
 
@@ -451,7 +610,7 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		CertificatePublicKeyPkix:         n.CertificatePublicKeyPkix,
 		CertificatePublicKeyType:         n.CertificatePrivateKeyType,
 		PreviousCertificatePublicKeyPkix: n.PreviousCertificatePublicKeyPkix,
-		EncryptionPublicKeyType:          KEYTYPE_X25519,
+		EncryptionPublicKeyType:          n.EncryptionPrivateKeyType,
 		NotBefore:                        timestamppb.New(now),
 		NotAfter:                         timestamppb.New(now.Add(nodeenrollment.DefaultFetchCredentialsLifetime)),
 	}
@@ -461,11 +620,44 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		reqInfo.Nonce = n.RegistrationNonce
 	}
 
-	encryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(n.EncryptionPrivateKeyBytes)
-	if err != nil {
-		return nil, fmt.Errorf("(%s) error reading node private encryption key: %w", op, err)
+	switch n.EncryptionPrivateKeyType {
+	case KEYTYPE_MLKEM1024:
+		// If we're in a server flow we aren't providing the encapsulation key
+		if opts.WithActivationToken != "" {
+			break
+		}
+		if n.MlkemParameters == nil {
+			return nil, fmt.Errorf("(%s) node credentials has mlkem encryption key type but mlkem parameters are nil", op)
+		}
+		if len(n.MlkemParameters.Ciphertext) != 0 && len(n.MlkemParameters.SharedKey) != 0 {
+			// This isn't the first fetch request, and we don't want to send the
+			// encapsulation key again as a new encapsulation would change the
+			// shared key. We include the ciphertext to allow the server to optionally
+			// perform consistency checks across requests.
+			reqInfo.MlkemParameters = &MLKEMParameters{
+				Ciphertext: n.MlkemParameters.Ciphertext,
+			}
+			break
+		}
+		if len(n.MlkemParameters.DecapsulationKey) == 0 {
+			return nil, fmt.Errorf("(%s) node credentials has mlkem encryption key type but mlkem private key bytes are empty", op)
+		}
+		decapsulationKey, err := mlkem.NewDecapsulationKey1024(n.MlkemParameters.DecapsulationKey)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error reading mlkem decapsulation key: %w", op, err)
+		}
+		reqInfo.MlkemParameters = &MLKEMParameters{
+			EncapsulationKey: decapsulationKey.EncapsulationKey().Bytes(),
+		}
+	case KEYTYPE_X25519:
+		encryptionPrivateKey, err := ecdh.X25519().NewPrivateKey(n.EncryptionPrivateKeyBytes)
+		if err != nil {
+			return nil, fmt.Errorf("(%s) error reading node private encryption key: %w", op, err)
+		}
+		reqInfo.EncryptionPublicKeyBytes = encryptionPrivateKey.PublicKey().Bytes()
+	default:
+		return nil, fmt.Errorf("(%s) unknown encryption key type: %s", op, n.EncryptionPrivateKeyType.String())
 	}
-	reqInfo.EncryptionPublicKeyBytes = encryptionPrivateKey.PublicKey().Bytes()
 
 	switch {
 	case !nodeenrollment.IsNil(opts.WithRegistrationWrapper):
@@ -512,20 +704,43 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 			case len(tokenNonce.HmacKeyBytes) == 0:
 				return nil, fmt.Errorf("(%s) nil server-led activation token hmac key bytes", op)
 			}
+			if n.EncryptionPrivateKeyType != KEYTYPE_X25519 {
+				return nil, fmt.Errorf("(%s) server-led activation token without activation token ID is only supported with X25519 node encryption keys", op)
+			}
 			reqInfo.Nonce = nonce
 		} else {
-			n.ServerEncryptionPublicKeyBytes = tokenNonce.ServerEncryptionPublicKeyBytes
 			n.ServerEncryptionPublicKeyType = tokenNonce.ServerEncryptionPublicKeyType
-			if len(n.ServerEncryptionPublicKeyBytes) == 0 {
-				return nil, fmt.Errorf("(%s) server-led activation token includes server encryption key info but node credentials is missing server encryption public key bytes", op)
-			}
 			switch n.ServerEncryptionPublicKeyType {
 			case KEYTYPE_X25519:
+				n.ServerEncryptionPublicKeyBytes = tokenNonce.ServerEncryptionPublicKeyBytes
+				if len(n.ServerEncryptionPublicKeyBytes) == 0 {
+					return nil, fmt.Errorf("(%s) server-led activation token includes server encryption key info but node credentials is missing server encryption public key bytes", op)
+				}
 				if len(n.ServerEncryptionPublicKeyBytes) != curve25519.PointSize {
 					return nil, fmt.Errorf("(%s) server-led activation token includes server encryption key info but node credentials has invalid server encryption public key bytes length %d", op, len(n.ServerEncryptionPublicKeyBytes))
 				}
+			case KEYTYPE_MLKEM1024:
+				if n.EncryptionPrivateKeyType != KEYTYPE_MLKEM1024 {
+					return nil, fmt.Errorf("(%s) server-led activation token requires mlkem1024 but node credentials encryption key type is %s", op, n.EncryptionPrivateKeyType.String())
+				}
+				if len(tokenNonce.MlkemEncapsulationKeyBytes) == 0 {
+					return nil, fmt.Errorf("(%s) server-led activation token includes mlkem server encryption key type but mlkem encapsulation key bytes are empty", op)
+				}
+				n.MlkemParameters = &MLKEMParameters{
+					EncapsulationKey: tokenNonce.MlkemEncapsulationKeyBytes,
+				}
+				encapsulationKey, err := mlkem.NewEncapsulationKey1024(n.MlkemParameters.EncapsulationKey)
+				if err != nil {
+					return nil, fmt.Errorf("(%s) error parsing mlkem encapsulation key from server-led activation token: %w", op, err)
+				}
+				n.MlkemParameters.SharedKey, n.MlkemParameters.Ciphertext = encapsulationKey.Encapsulate()
+				if reqInfo.MlkemParameters == nil {
+					reqInfo.MlkemParameters = &MLKEMParameters{}
+				}
+				reqInfo.MlkemParameters.EncapsulationKey = n.MlkemParameters.EncapsulationKey
+				reqInfo.MlkemParameters.Ciphertext = n.MlkemParameters.Ciphertext
 			default:
-				return nil, fmt.Errorf("(%s) server-led activation token includes server encryption key info but node credentials has unknown server encryption public key type %q", op, n.ServerEncryptionPublicKeyType)
+				return nil, fmt.Errorf("(%s) server-led activation token includes unknown server encryption key type %d", op, tokenNonce.ServerEncryptionPublicKeyType)
 			}
 			reqInfo.ActivationTokenId = tokenNonce.ActivationTokenId
 			challenge := new(RegistrationChallenge)
@@ -589,9 +804,13 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 		return nil, fmt.Errorf("(%s) input is nil", op)
 	case len(input.EncryptedNodeCredentials) == 0:
 		return nil, fmt.Errorf("(%s) input encrypted node credentials is nil", op)
-	case len(input.ServerEncryptionPublicKeyBytes) == 0:
+	case input.ServerEncryptionPublicKeyType == KEYTYPE_X25519 && len(input.ServerEncryptionPublicKeyBytes) == 0:
 		return nil, fmt.Errorf("(%s) server encryption public key bytes is nil", op)
-	case input.ServerEncryptionPublicKeyType != KEYTYPE_X25519:
+	case input.ServerEncryptionPublicKeyType == KEYTYPE_MLKEM1024 && len(input.MlkemCiphertext) == 0:
+		return nil, fmt.Errorf("(%s) server encryption key type is mlkem1024 but mlkem ciphertext is nil", op)
+	case input.ServerEncryptionPublicKeyType == KEYTYPE_MLKEM1024 && n.MlkemParameters == nil:
+		return nil, fmt.Errorf("(%s) server encryption key type is mlkem1024 but mlkem parameters are nil", op)
+	case input.ServerEncryptionPublicKeyType != KEYTYPE_X25519 && input.ServerEncryptionPublicKeyType != KEYTYPE_MLKEM1024:
 		return nil, fmt.Errorf("(%s) server encryption public key type is unknown", op)
 	case nodeenrollment.IsNil(storage):
 		return nil, fmt.Errorf("(%s) nil storage", op)
@@ -604,12 +823,47 @@ func (n *NodeCredentials) HandleFetchNodeCredentialsResponse(
 
 	// If it's been set already by CreateFetchNodeCredentialsRequest (in the new
 	// protocol), don't overwrite it, but if not then set it from the input
-	// (legacy).
-	if len(n.ServerEncryptionPublicKeyBytes) == 0 {
-		n.ServerEncryptionPublicKeyBytes = input.ServerEncryptionPublicKeyBytes
-		n.ServerEncryptionPublicKeyType = input.ServerEncryptionPublicKeyType
-	} else if subtle.ConstantTimeCompare(n.ServerEncryptionPublicKeyBytes, input.ServerEncryptionPublicKeyBytes) == 0 {
-		return nil, fmt.Errorf("(%s) server encryption public key in response does not match expected value", op)
+	// (legacy). Node-led will always be missing this info the first time
+	// credentials are fetched.
+	switch input.ServerEncryptionPublicKeyType {
+	case KEYTYPE_X25519:
+		if len(n.ServerEncryptionPublicKeyBytes) == 0 {
+			n.ServerEncryptionPublicKeyBytes = input.ServerEncryptionPublicKeyBytes
+			n.ServerEncryptionPublicKeyType = input.ServerEncryptionPublicKeyType
+		} else if subtle.ConstantTimeCompare(n.ServerEncryptionPublicKeyBytes, input.ServerEncryptionPublicKeyBytes) == 0 {
+			return nil, fmt.Errorf("(%s) server encryption public key in response does not match expected value", op)
+		}
+	case KEYTYPE_MLKEM1024:
+		if len(n.MlkemParameters.Ciphertext) != 0 {
+			// Verify it hasn't changed
+			if subtle.ConstantTimeCompare(n.MlkemParameters.Ciphertext, input.MlkemCiphertext) == 0 {
+				return nil, fmt.Errorf("(%s) server mlkem ciphertext in response does not match expected value", op)
+			}
+			// Verify we have the shared key already calculated
+			if len(n.MlkemParameters.SharedKey) == 0 {
+				return nil, fmt.Errorf("(%s) node credentials has mlkem encryption key type and ciphertext but mlkem parameters shared key is empty", op)
+			}
+		} else {
+			// This is the first fetch, derive the key from the ciphertext
+			if len(n.MlkemParameters.DecapsulationKey) == 0 {
+				return nil, fmt.Errorf("(%s) node credentials has mlkem encryption key type but mlkem private key bytes are empty", op)
+			}
+			if len(input.MlkemCiphertext) == 0 {
+				return nil, fmt.Errorf("(%s) server mlkem ciphertext in response is empty", op)
+			}
+			decapsulationKey, err := mlkem.NewDecapsulationKey1024(n.MlkemParameters.DecapsulationKey)
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error reading mlkem decapsulation key: %w", op, err)
+			}
+			n.MlkemParameters.SharedKey, err = decapsulationKey.Decapsulate(input.MlkemCiphertext)
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error decapsulating mlkem shared key: %w", op, err)
+			}
+			n.MlkemParameters.Ciphertext = input.MlkemCiphertext
+			n.MlkemParameters.DecapsulationKey = nil
+		}
+	default:
+		return nil, fmt.Errorf("(%s) server encryption public key type in response is unknown", op)
 	}
 
 	newNodeCreds := new(NodeCredentials)

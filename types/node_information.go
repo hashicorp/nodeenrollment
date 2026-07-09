@@ -12,7 +12,10 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-var _ nodeenrollment.X25519KeyProducer = (*NodeInformation)(nil)
+var (
+	_ nodeenrollment.X25519KeyProducer = (*NodeInformation)(nil)
+	_ nodeenrollment.KeyProducer       = (*NodeInformation)(nil)
+)
 
 // Store stores node information to server storage, wrapping values along the
 // way if given a wrapper
@@ -58,7 +61,6 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 				return fmt.Errorf("(%s) error marshaling wrapped private key: %w", op, err)
 			}
 		}
-
 		if infoToStore.RegistrationChallenge != nil {
 			marshaledRegistrationChallenge, err := proto.Marshal(infoToStore.RegistrationChallenge)
 			if err != nil {
@@ -77,6 +79,25 @@ func (n *NodeInformation) Store(ctx context.Context, storage nodeenrollment.Stor
 				return fmt.Errorf("(%s) error marshaling wrapped registration challenge: %w", op, err)
 			}
 			infoToStore.RegistrationChallenge = nil
+		}
+		if infoToStore.MlkemParameters != nil {
+			marshaledMlkemParameters, err := proto.Marshal(infoToStore.MlkemParameters)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling mlkem parameters: %w", op, err)
+			}
+			blobInfo, err := opts.WithStorageWrapper.Encrypt(
+				ctx,
+				marshaledMlkemParameters,
+				wrapping.WithAad(infoToStore.CertificatePublicKeyPkix),
+			)
+			if err != nil {
+				return fmt.Errorf("(%s) error wrapping mlkem parameters: %w", op, err)
+			}
+			infoToStore.EncryptedMlkemParameters, err = proto.Marshal(blobInfo)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling wrapped mlkem parameters: %w", op, err)
+			}
+			infoToStore.MlkemParameters = nil
 		}
 	}
 
@@ -181,7 +202,6 @@ func decryptForLoad(ctx context.Context, nodeInfo *NodeInformation, opt ...nodee
 			}
 			nodeInfo.ServerEncryptionPrivateKeyBytes = pt
 		}
-
 		if len(nodeInfo.EncryptedRegistrationChallenge) > 0 {
 			blobInfo := new(wrapping.BlobInfo)
 			if err := proto.Unmarshal(nodeInfo.EncryptedRegistrationChallenge, blobInfo); err != nil {
@@ -198,6 +218,27 @@ func decryptForLoad(ctx context.Context, nodeInfo *NodeInformation, opt ...nodee
 			}
 			nodeInfo.RegistrationChallenge = regChallenge
 			nodeInfo.EncryptedRegistrationChallenge = nil
+		}
+		if len(nodeInfo.EncryptedMlkemParameters) != 0 {
+			blobInfo := new(wrapping.BlobInfo)
+			if err := proto.Unmarshal(nodeInfo.EncryptedMlkemParameters, blobInfo); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling mlkem parameters blob info: %w", op, err)
+			}
+			pt, err := opts.WithStorageWrapper.Decrypt(
+				ctx,
+				blobInfo,
+				wrapping.WithAad(nodeInfo.CertificatePublicKeyPkix),
+			)
+			if err != nil {
+				return nil, fmt.Errorf("(%s) error decrypting mlkem parameters: %w", op, err)
+			}
+			if nodeInfo.MlkemParameters == nil {
+				nodeInfo.MlkemParameters = &MLKEMParameters{}
+			}
+			if err := proto.Unmarshal(pt, nodeInfo.MlkemParameters); err != nil {
+				return nil, fmt.Errorf("(%s) error unmarshaling mlkem parameters: %w", op, err)
+			}
+			nodeInfo.EncryptedMlkemParameters = nil
 		}
 
 		nodeInfo.WrappingKeyId = ""
@@ -220,19 +261,120 @@ func (n *NodeInformation) SetPreviousEncryptionKey(oldNodeInformation *NodeInfor
 	}
 
 	previousEncryptionKey := &EncryptionKey{
-		KeyId:           keyId,
-		PrivateKeyPkcs8: oldNodeInformation.ServerEncryptionPrivateKeyBytes,
-		PrivateKeyType:  oldNodeInformation.ServerEncryptionPrivateKeyType,
-		PublicKeyPkix:   oldNodeInformation.EncryptionPublicKeyBytes,
-		PublicKeyType:   oldNodeInformation.EncryptionPublicKeyType,
+		KeyId:          keyId,
+		PrivateKeyType: oldNodeInformation.ServerEncryptionPrivateKeyType,
+		PublicKeyType:  oldNodeInformation.EncryptionPublicKeyType,
+	}
+	if len(oldNodeInformation.ServerEncryptionPrivateKeyBytes) > 0 {
+		previousEncryptionKey.PrivateKeyBytes = make([]byte, len(oldNodeInformation.ServerEncryptionPrivateKeyBytes))
+		copy(previousEncryptionKey.PrivateKeyBytes, oldNodeInformation.ServerEncryptionPrivateKeyBytes)
+	}
+	if len(oldNodeInformation.EncryptionPublicKeyBytes) > 0 {
+		previousEncryptionKey.PublicKeyBytes = make([]byte, len(oldNodeInformation.EncryptionPublicKeyBytes))
+		copy(previousEncryptionKey.PublicKeyBytes, oldNodeInformation.EncryptionPublicKeyBytes)
+	}
+	if oldNodeInformation.MlkemParameters != nil {
+		previousEncryptionKey.MlkemParameters = new(MLKEMParameters)
+		if len(oldNodeInformation.MlkemParameters.Ciphertext) > 0 {
+			previousEncryptionKey.MlkemParameters.Ciphertext = make([]byte, len(oldNodeInformation.MlkemParameters.Ciphertext))
+			copy(previousEncryptionKey.MlkemParameters.Ciphertext, oldNodeInformation.MlkemParameters.Ciphertext)
+		}
+		if len(oldNodeInformation.MlkemParameters.SharedKey) > 0 {
+			previousEncryptionKey.MlkemParameters.SharedKey = make([]byte, len(oldNodeInformation.MlkemParameters.SharedKey))
+			copy(previousEncryptionKey.MlkemParameters.SharedKey, oldNodeInformation.MlkemParameters.SharedKey)
+		}
 	}
 	n.PreviousEncryptionKey = previousEncryptionKey
 
 	return nil
 }
 
+// CurrentSharedEncryptionKey uses the NodeInformation's values to produce a
+// shared encryption key, using the appropriate method based on the key type.
+func (n *NodeInformation) CurrentSharedEncryptionKey() (nodeenrollment.EncryptionKeyMaterial, error) {
+	const op = "nodeenrollment.types.(NodeInformation).CurrentSharedEncryptionKey"
+
+	if nodeenrollment.IsNil(n) {
+		return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) node information is empty", op)
+	}
+
+	var out []byte
+	var err error
+
+	switch {
+	case n.ServerEncryptionPrivateKeyType == KEYTYPE_MLKEM1024:
+		if n.MlkemParameters == nil {
+			return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) mlkem key type specified but mlkem parameters are nil", op)
+		}
+		if len(n.MlkemParameters.SharedKey) == 0 {
+			return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) mlkem key type specified but shared key is empty", op)
+		}
+		out = n.MlkemParameters.SharedKey
+	case n.ServerEncryptionPrivateKeyType == KEYTYPE_X25519:
+		out, err = DeriveSharedX25519EncryptionKey(n.ServerEncryptionPrivateKeyBytes, n.ServerEncryptionPrivateKeyType, n.EncryptionPublicKeyBytes, n.EncryptionPublicKeyType)
+		if err != nil {
+			return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) error deriving encryption key: %w", op, err)
+		}
+	default:
+		return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) unsupported key type: %d", op, n.ServerEncryptionPrivateKeyType)
+	}
+
+	keyId, err := nodeenrollment.KeyIdFromPkix(n.CertificatePublicKeyPkix)
+	if err != nil {
+		return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) error deriving key id: %w", op, err)
+	}
+
+	return nodeenrollment.EncryptionKeyMaterial{
+		KeyId:     keyId,
+		KeyType:   uint(n.ServerEncryptionPrivateKeyType),
+		SharedKey: out,
+	}, nil
+}
+
+// PreviousSharedEncryptionKey will produce the shared encryption key material
+// for this NodeInformation's previous key, if set.
+func (n *NodeInformation) PreviousSharedEncryptionKey() (nodeenrollment.EncryptionKeyMaterial, error) {
+	const op = "nodeenrollment.types.(NodeInformation).PreviousSharedEncryptionKey"
+
+	if nodeenrollment.IsNil(n) {
+		return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) node information is empty", op)
+	}
+
+	previousKey := n.PreviousEncryptionKey
+	if previousKey == nil {
+		return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) previous key is empty", op)
+	}
+
+	var out []byte
+	var err error
+
+	switch previousKey.PrivateKeyType {
+	case KEYTYPE_MLKEM1024:
+		if previousKey.MlkemParameters == nil {
+			return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) previous key has mlkem key type but mlkem parameters are nil", op)
+		}
+		if len(previousKey.MlkemParameters.SharedKey) == 0 {
+			return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) previous key has mlkem key type but shared key is empty", op)
+		}
+		out = previousKey.MlkemParameters.SharedKey
+	case KEYTYPE_X25519:
+		out, err = DeriveSharedX25519EncryptionKey(previousKey.PrivateKeyBytes, previousKey.PrivateKeyType, previousKey.PublicKeyBytes, previousKey.PublicKeyType)
+		if err != nil {
+			return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
+		}
+	default:
+		return nodeenrollment.EncryptionKeyMaterial{}, fmt.Errorf("(%s) unsupported previous key type: %d", op, previousKey.PrivateKeyType)
+	}
+
+	return nodeenrollment.EncryptionKeyMaterial{
+		KeyId:     previousKey.KeyId,
+		KeyType:   uint(previousKey.PrivateKeyType),
+		SharedKey: out,
+	}, nil
+}
+
 // X25519EncryptionKey uses the NodeInformation's values to produce a shared
-// encryption key via X25519
+// encryption key via X25519.
 func (n *NodeInformation) X25519EncryptionKey() (string, []byte, error) {
 	const op = "nodeenrollment.types.(NodeInformation).X25519EncryptionKey"
 
@@ -254,7 +396,7 @@ func (n *NodeInformation) X25519EncryptionKey() (string, []byte, error) {
 }
 
 // PreviousX25519EncryptionKey satisfies the X25519Producer and will produce a shared
-// encryption key via X25519 if previous key data is present
+// encryption key via X25519 if previous key data is present.
 func (n *NodeInformation) PreviousX25519EncryptionKey() (string, []byte, error) {
 	const op = "nodeenrollment.types.(NodeInformation).PreviousX25519EncryptionKey"
 
@@ -267,7 +409,7 @@ func (n *NodeInformation) PreviousX25519EncryptionKey() (string, []byte, error) 
 		return "", nil, fmt.Errorf("(%s) previous key is empty", op)
 	}
 
-	out, err := X25519EncryptionKey(previousKey.PrivateKeyPkcs8, previousKey.PrivateKeyType, previousKey.PublicKeyPkix, previousKey.PublicKeyType)
+	out, err := X25519EncryptionKey(previousKey.PrivateKeyBytes, previousKey.PrivateKeyType, previousKey.PublicKeyBytes, previousKey.PublicKeyType)
 	if err != nil {
 		return "", nil, fmt.Errorf("(%s) error deriving previous encryption key: %w", op, err)
 	}
