@@ -106,23 +106,25 @@ func (s *ServerLedActivationToken) Store(ctx context.Context, storage nodeenroll
 			tokenToStore.MlkemParameters = nil
 		}
 
-		marshaledRegistrationChallenge, err := proto.Marshal(tokenToStore.RegistrationChallenge)
-		if err != nil {
-			return fmt.Errorf("(%s) error marshaling registration challenge: %w", op, err)
+		if tokenToStore.RegistrationChallenge != nil {
+			marshaledRegistrationChallenge, err := proto.Marshal(tokenToStore.RegistrationChallenge)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling registration challenge: %w", op, err)
+			}
+			blobInfo, err = opts.WithStorageWrapper.Encrypt(
+				ctx,
+				marshaledRegistrationChallenge,
+				wrapping.WithAad([]byte(tokenToStore.Id)),
+			)
+			if err != nil {
+				return fmt.Errorf("(%s) error wrapping registration challenge: %w", op, err)
+			}
+			tokenToStore.RegistrationChallengeBytes, err = proto.Marshal(blobInfo)
+			if err != nil {
+				return fmt.Errorf("(%s) error marshaling wrapped registration challenge: %w", op, err)
+			}
+			tokenToStore.RegistrationChallenge = nil
 		}
-		blobInfo, err = opts.WithStorageWrapper.Encrypt(
-			ctx,
-			marshaledRegistrationChallenge,
-			wrapping.WithAad([]byte(tokenToStore.Id)),
-		)
-		if err != nil {
-			return fmt.Errorf("(%s) error wrapping registration challenge: %w", op, err)
-		}
-		tokenToStore.RegistrationChallengeBytes, err = proto.Marshal(blobInfo)
-		if err != nil {
-			return fmt.Errorf("(%s) error marshaling wrapped registration challenge: %w", op, err)
-		}
-		tokenToStore.RegistrationChallenge = nil
 	}
 
 	if err := storage.Store(ctx, tokenToStore); err != nil {
