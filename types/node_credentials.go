@@ -413,7 +413,7 @@ func (n *NodeCredentials) SetPreviousEncryptionKey(oldNodeCredentials *NodeCrede
 // the node's nonce value if provided, for the server-led flow; note that this
 // should be the full string token, it will be decoded by this function),
 // WithRegistrationWrapper/WithWrappingRegistrationFlowApplicationSpecificParams,
-// WithRegistrationChallenge
+// WithoutRegistrationChallenge(applies to non-kms led registration)
 func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 	ctx context.Context,
 	storage nodeenrollment.Storage,
@@ -469,13 +469,18 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 
 	switch {
 	case !nodeenrollment.IsNil(opts.WithRegistrationWrapper):
-		// Create an encrypted registration request
-		regInfo := &WrappingRegistrationFlowInfo{
+		// Create an encrypted registration request, set Nonce to allow for backwards compatibility
+		wfi := &WrappingRegistrationFlowInfo{
 			CertificatePublicKeyPkix:  n.CertificatePublicKeyPkix,
 			Nonce:                     n.RegistrationNonce,
 			ApplicationSpecificParams: opts.WithWrappingRegistrationFlowApplicationSpecificParams,
 		}
-		regInfoBytes, err := proto.Marshal(regInfo)
+		// In the new protocol, nonce will be empty and a registration challenge will be provided
+		if n.RegistrationChallenge != nil {
+			wfi.RegistrationChallenge = n.RegistrationChallenge
+		}
+
+		regInfoBytes, err := proto.Marshal(wfi)
 		if err != nil {
 			return nil, fmt.Errorf("(%s) error marshaling wrapping flow registration info: %w", op, err)
 		}

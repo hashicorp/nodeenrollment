@@ -120,3 +120,5 @@ main
 /bin/
 
 .schema-diff/
+
+.env
