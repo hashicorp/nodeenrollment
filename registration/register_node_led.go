@@ -170,6 +170,14 @@ func FetchNodeCredentials(
 			}
 		}
 
+		// Check if pub key is empty before comparing, only need to check one
+		// to avoid them both being empty and equal
+		if len(registrationInfo.CertificatePublicKeyPkix) == 0 {
+			err := errors.New("empty public key in unwrapped registration info")
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
+		}
+
 		if subtle.ConstantTimeCompare(registrationInfo.CertificatePublicKeyPkix, reqInfo.CertificatePublicKeyPkix) != 1 {
 			err := errors.New("mismatched public key in unwrapped registration info")
 			opts.WithLogger.Error(err.Error(), "op", op)
@@ -246,10 +254,16 @@ func FetchNodeCredentials(
 		}
 	}
 
+	if len(nodeInfo.CertificatePublicKeyPkix) == 0 {
+		return nil, fmt.Errorf("(%s) nodeInfo is missing public key pkix", op)
+	}
 	if subtle.ConstantTimeCompare(nodeInfo.CertificatePublicKeyPkix, reqInfo.CertificatePublicKeyPkix) != 1 {
 		return nil, fmt.Errorf("(%s) mismatched certificate public keys between authorization and incoming fetch request", op)
 	}
 
+	if len(nodeInfo.EncryptionPublicKeyBytes) == 0 {
+		return nil, fmt.Errorf("(%s) nodeInfo is missing public key bytes", op)
+	}
 	if subtle.ConstantTimeCompare(nodeInfo.EncryptionPublicKeyBytes, reqInfo.EncryptionPublicKeyBytes) != 1 {
 		return nil, fmt.Errorf("(%s) mismatched encryption public keys between authorization and incoming fetch request", op)
 	}
