@@ -156,7 +156,7 @@ func FetchNodeCredentials(
 		// since here is where we validated the signature on the bundle and the
 		// overall validity of the bundle. Nonce shouldn't show up, but compare whatever is provided
 		if len(registrationInfo.Nonce) == 0 &&
-			(registrationInfo.RegistrationChallenge == nil && len(registrationInfo.RegistrationChallenge.Challenge) == 0) {
+			(registrationInfo.RegistrationChallenge == nil || len(registrationInfo.RegistrationChallenge.Challenge) == 0) {
 			err := errors.New("missing either a nonce or registration challenge in wrapped registration info")
 			opts.WithLogger.Error(err.Error(), "op", op)
 			return nil, fmt.Errorf("(%s) %s", op, err.Error())

@@ -473,11 +473,8 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 		wfi := &WrappingRegistrationFlowInfo{
 			CertificatePublicKeyPkix:  n.CertificatePublicKeyPkix,
 			Nonce:                     n.RegistrationNonce,
+			RegistrationChallenge:     n.RegistrationChallenge,
 			ApplicationSpecificParams: opts.WithWrappingRegistrationFlowApplicationSpecificParams,
-		}
-		// In the new protocol, nonce will be empty and a registration challenge will be provided
-		if n.RegistrationChallenge != nil {
-			wfi.RegistrationChallenge = n.RegistrationChallenge
 		}
 
 		regInfoBytes, err := proto.Marshal(wfi)
