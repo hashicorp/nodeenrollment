@@ -162,12 +162,20 @@ func FetchNodeCredentials(
 			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 
 		}
-		if len(registrationInfo.Nonce) != 0 {
-			if subtle.ConstantTimeCompare(registrationInfo.Nonce, reqInfo.Nonce) != 1 {
-				err := errors.New("mismatched nonce in unwrapped registration info")
-				opts.WithLogger.Error(err.Error(), "op", op)
-				return nil, fmt.Errorf("(%s) %s", op, err.Error())
-			}
+
+		if len(registrationInfo.Nonce) != 0 && subtle.ConstantTimeCompare(registrationInfo.Nonce, reqInfo.Nonce) != 1 {
+			err := errors.New("mismatched nonce in unwrapped registration info")
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
+		}
+
+		if registrationInfo.RegistrationChallenge != nil &&
+			len(registrationInfo.RegistrationChallenge.Challenge) != 0 &&
+			subtle.ConstantTimeCompare(registrationInfo.RegistrationChallenge.Challenge, reqInfo.RegistrationChallenge.Challenge) != 1 {
+			err := errors.New("mismatched registration challenge in unwrapped registration info")
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
+
 		}
 
 		// Check if pub key is empty before comparing, only need to check one

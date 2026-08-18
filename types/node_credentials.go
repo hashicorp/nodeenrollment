@@ -490,6 +490,7 @@ func (n *NodeCredentials) CreateFetchNodeCredentialsRequest(
 			return nil, fmt.Errorf("(%s) error marshaling encrypted wrapping flow registration info: %w", op, err)
 		}
 		reqInfo.WrappedRegistrationInfo = encryptedRegInfo
+		reqInfo.RegistrationChallenge = n.RegistrationChallenge
 
 	case opts.WithActivationToken != "":
 		reqInfo.Nonce = nil
