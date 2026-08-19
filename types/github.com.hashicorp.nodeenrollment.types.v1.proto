@@ -167,7 +167,7 @@ message NodeCredentials {
 // WrappingRegistrationFlowInfo is a message that can be encrypted via a shared
 // encryption wrapper and supplied to perform just-in-time registration. The
 // public key contained in this bundle must match that within
-// FetchNodeCredentialsInfo, as must the nonce. Forgeries by other users with
+// FetchNodeCredentialsInfo, as must the nonce or registration challenge. Forgeries by other users with
 // access to the wrapper are prevented due to the signature on the
 // FetchNodeCredentialsRequest including this; replays are prevented because the
 // returned credentials are still encrypted to the derived shared key.
@@ -202,6 +202,7 @@ message WrappingRegistrationFlowInfo {
   bytes certificate_public_key_pkix = 2 [json_name="certificate_public_key_pkix"];
 
   bytes nonce = 20;
+  RegistrationChallenge registration_challenge = 30 [json_name="registration_challenge"];;
 
   google.protobuf.Struct application_specific_params = 50;
 }

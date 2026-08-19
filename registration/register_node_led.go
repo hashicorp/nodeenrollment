@@ -154,12 +154,38 @@ func FetchNodeCredentials(
 
 		// Regardless of how we got the decrypted data, perform validation here
 		// since here is where we validated the signature on the bundle and the
-		// overall validity of the bundle
-		if subtle.ConstantTimeCompare(registrationInfo.Nonce, reqInfo.Nonce) != 1 {
+		// overall validity of the bundle. Nonce shouldn't show up, but compare whatever is provided
+		if len(registrationInfo.Nonce) == 0 &&
+			(registrationInfo.RegistrationChallenge == nil || len(registrationInfo.RegistrationChallenge.Challenge) == 0) {
+			err := errors.New("missing either a nonce or registration challenge in wrapped registration info")
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
+
+		}
+
+		if len(registrationInfo.Nonce) != 0 && subtle.ConstantTimeCompare(registrationInfo.Nonce, reqInfo.Nonce) != 1 {
 			err := errors.New("mismatched nonce in unwrapped registration info")
 			opts.WithLogger.Error(err.Error(), "op", op)
 			return nil, fmt.Errorf("(%s) %s", op, err.Error())
 		}
+
+		if registrationInfo.RegistrationChallenge != nil &&
+			len(registrationInfo.RegistrationChallenge.Challenge) != 0 &&
+			subtle.ConstantTimeCompare(registrationInfo.RegistrationChallenge.Challenge, reqInfo.RegistrationChallenge.Challenge) != 1 {
+			err := errors.New("mismatched registration challenge in unwrapped registration info")
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
+
+		}
+
+		// Check if pub key is empty before comparing, only need to check one
+		// to avoid them both being empty and equal
+		if len(registrationInfo.CertificatePublicKeyPkix) == 0 {
+			err := errors.New("empty public key in unwrapped registration info")
+			opts.WithLogger.Error(err.Error(), "op", op)
+			return nil, fmt.Errorf("(%s) %s", op, err.Error())
+		}
+
 		if subtle.ConstantTimeCompare(registrationInfo.CertificatePublicKeyPkix, reqInfo.CertificatePublicKeyPkix) != 1 {
 			err := errors.New("mismatched public key in unwrapped registration info")
 			opts.WithLogger.Error(err.Error(), "op", op)
@@ -236,10 +262,16 @@ func FetchNodeCredentials(
 		}
 	}
 
+	if len(nodeInfo.CertificatePublicKeyPkix) == 0 {
+		return nil, fmt.Errorf("(%s) nodeInfo is missing public key pkix", op)
+	}
 	if subtle.ConstantTimeCompare(nodeInfo.CertificatePublicKeyPkix, reqInfo.CertificatePublicKeyPkix) != 1 {
 		return nil, fmt.Errorf("(%s) mismatched certificate public keys between authorization and incoming fetch request", op)
 	}
 
+	if len(nodeInfo.EncryptionPublicKeyBytes) == 0 {
+		return nil, fmt.Errorf("(%s) nodeInfo is missing public key bytes", op)
+	}
 	if subtle.ConstantTimeCompare(nodeInfo.EncryptionPublicKeyBytes, reqInfo.EncryptionPublicKeyBytes) != 1 {
 		return nil, fmt.Errorf("(%s) mismatched encryption public keys between authorization and incoming fetch request", op)
 	}
@@ -251,7 +283,7 @@ func FetchNodeCredentials(
 		CertificateBundles:             nodeInfo.CertificateBundles,
 	}
 
-	// If it's node-led activation and there's a challenge, ensure we include
+	// If it's node-led or kms-led activation and there's a challenge, ensure we include
 	// the encrypted challenge back. In server-led, the node provides the
 	// encrypted registration challenge.
 	if nodeInfo.RegistrationChallenge != nil && reqInfo.EncryptedRegistrationChallenge == nil {

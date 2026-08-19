@@ -119,6 +119,14 @@ func authorizeNodeCommon(
 		WrappingRegistrationFlowInfo:     reqInfo.WrappingRegistrationFlowInfo,
 	}
 
+	// When WrappingRegistrationFlowInfo is present, in the new flow,
+	// a registration challenge will be present and needs to be copied to the resulting nodeInfo
+	if reqInfo.WrappingRegistrationFlowInfo != nil &&
+		reqInfo.WrappingRegistrationFlowInfo.RegistrationChallenge != nil &&
+		len(reqInfo.WrappingRegistrationFlowInfo.RegistrationChallenge.Challenge) != 0 {
+		nodeInfo.RegistrationChallenge = reqInfo.WrappingRegistrationFlowInfo.RegistrationChallenge
+	}
+
 	certPubKeyRaw, err := x509.ParsePKIXPublicKey(nodeInfo.CertificatePublicKeyPkix)
 	if err != nil {
 		return nil, fmt.Errorf("(%s) error parsing node certificate public key: %w", op, err)

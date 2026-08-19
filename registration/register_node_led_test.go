@@ -708,3 +708,54 @@ func TestNodeLedRegistration_FetchNodeCredentials(t *testing.T) {
 		})
 	}
 }
+
+// This test is similar to regular node-led registration but provides a registration wrapper
+func TestKmsLedRegistration(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := context.Background()
+
+	// Functions using nodeStorage happen node-side
+	nodeStorage, err := inmem.New(ctx)
+	require.NoError(err)
+
+	// Functions using controllerStorage happen controller-side
+	controllerStorage, err := inmem.New(ctx)
+	require.NoError(err)
+
+	_, err = rotation.RotateRootCertificates(ctx, controllerStorage)
+	require.NoError(err)
+
+	originalNodeCreds, err := types.NewNodeCredentials(ctx, nodeStorage)
+	require.NoError(err)
+
+	registrationWrapper := wrapping.NewTestWrapper([]byte("emi wuz here"))
+
+	fetchReq, err := originalNodeCreds.CreateFetchNodeCredentialsRequest(ctx, nodeStorage,
+		nodeenrollment.WithoutRegistrationChallenge(true),
+		nodeenrollment.WithRegistrationWrapper(registrationWrapper),
+	)
+	require.NoError(err)
+
+	keyId, err := nodeenrollment.KeyIdFromPkix(originalNodeCreds.CertificatePublicKeyPkix)
+	require.NoError(err)
+
+	resp, err := registration.FetchNodeCredentials(t.Context(), controllerStorage, fetchReq, nodeenrollment.WithRegistrationWrapper(registrationWrapper))
+	require.NoError(err)
+	require.NotNil(resp)
+
+	checkNodeInfo := &types.NodeInformation{Id: keyId}
+	require.NotNil(resp.EncryptedNodeCredentials)
+	require.NotNil(resp.ServerEncryptionPublicKeyBytes)
+	require.Equal(types.KEYTYPE_X25519, resp.ServerEncryptionPublicKeyType)
+
+	require.NoError(controllerStorage.Load(ctx, checkNodeInfo))
+	require.NotNil(checkNodeInfo)
+
+	newCreds, err := originalNodeCreds.HandleFetchNodeCredentialsResponse(t.Context(), nodeStorage, resp)
+	require.NoError(err)
+	require.NotNil(newCreds)
+	assert.NotEmpty(newCreds.ServerEncryptionPublicKeyBytes)
+	assert.Equal(types.KEYTYPE_X25519, newCreds.ServerEncryptionPublicKeyType)
+}

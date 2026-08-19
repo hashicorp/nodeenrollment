@@ -200,7 +200,7 @@ func ClientConfigs(ctx context.Context, n *types.NodeCredentials, opt ...nodeenr
 			for _, acceptableCa := range cri.AcceptableCAs {
 				// log.Println("GetClientCertificate", base64.RawStdEncoding.EncodeToString(acceptableCa))
 				for _, bundle := range certMap {
-					if subtle.ConstantTimeCompare(bundle.ca.RawSubject, acceptableCa) == 1 {
+					if len(bundle.ca.RawSubject) != 0 && subtle.ConstantTimeCompare(bundle.ca.RawSubject, acceptableCa) == 1 {
 						return &tls.Certificate{
 							Certificate: [][]byte{
 								bundle.leaf.Raw,
